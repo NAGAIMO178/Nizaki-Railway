@@ -12,9 +12,6 @@
 // ★ LINE Developers「Messaging API設定」タブの「チャネルアクセストークン（長期）」を貼り付け
 const CHANNEL_ACCESS_TOKEN = '★ここにLINEのチャネルアクセストークンを貼り付け★';
 
-// 運行情報API URL
-const WEB_APP_STATUS_API_URL = 'https://ais-pre-ohfkihkjtj5aocgi5fefnb-251112274276.asia-east1.run.app/api/status';
-
 // シート名定義
 const SHEET_RESERVATIONS = '予約台帳';
 const SHEET_COUPON_LOGS = 'クーポン発行ログ';
@@ -70,6 +67,14 @@ function doPost(e) {
     }
     if (json.action === 'verifyLineAndRegister') {
       return handleVerifyLineAndRegister(json.email, json.password, json.token, json.code, json.name);
+    }
+
+    // ①.6 運行情報・遅延指令(アプリ管理者コンソール・LINE応答で共有する単一の情報源)
+    if (json.action === 'getDisruptions') {
+      return handleGetDisruptions();
+    }
+    if (json.action === 'setDisruptions') {
+      return handleSetDisruptions(json.disruptions, json.forecasts);
     }
 
     // ② LINE Messaging APIからのWebhookイベント
@@ -237,23 +242,104 @@ function handleReservationInquiry(replyToken, userId, text) {
  * 運行情報の配信
  */
 function handleOperationStatus(replyToken) {
-  let statusText = "🚆【神埼鉄道 運行情報】\n\n・神埼線：平常運転\n・神埼高速線：平常運転\n・埼千環状線：平常運転\n・土浦線：平常運転\n\n現在、全線で平常通り運行しております。";
-  
-  try {
-    if (WEB_APP_STATUS_API_URL) {
-      const res = UrlFetchApp.fetch(WEB_APP_STATUS_API_URL, { muteHttpExceptions: true });
-      if (res.getResponseCode() === 200) {
-        const data = JSON.parse(res.getContentText());
-        if (data.lines && Array.isArray(data.lines)) {
-          statusText = "🚆【神埼鉄道 リアルタイム運行情報】\n\n" + data.lines.map(l => `・${l.lineName || l.name}：${l.status} (${l.message || '平常運転'})`).join('\n');
-        }
-      }
-    }
-  } catch (e) {
-    Logger.log('Status fetch fallback');
-  }
+  const summary = buildDisruptionSummary();
+  const statusText = "🚆【神埼鉄道 運行情報】\n\n" +
+    summary.lines.map(l => `・${l.lineName}：${l.status} (${l.message})`).join('\n') +
+    "\n\n" + summary.summary;
 
   replyToLine(replyToken, [{ type: 'text', text: statusText }]);
+}
+
+// アプリの管理者コンソール・LINE応答が共有する運行支障情報の保存キー
+const DISRUPTIONS_PROPERTY_KEY = 'OPERATION_DISRUPTIONS';
+
+const DISRUPTION_LINE_DEFS = [
+  { id: 'kanzaki', name: '神埼線' },
+  { id: 'kanzaki_kosoku', name: '神埼高速線' },
+  { id: 'saichi', name: '埼千環状線' },
+  { id: 'tsuchiura', name: '土浦線' },
+];
+
+/**
+ * 保存済みの運行支障・運行予報データを取得(無ければ空)
+ */
+function getStoredDisruptionsData() {
+  const props = PropertiesService.getScriptProperties();
+  const raw = props.getProperty(DISRUPTIONS_PROPERTY_KEY);
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      return { disruptions: parsed.disruptions || {}, forecasts: parsed.forecasts || [] };
+    } catch (err) {
+      Logger.log('運行支障データの解析に失敗: ' + err.toString());
+    }
+  }
+  return { disruptions: {}, forecasts: [] };
+}
+
+/**
+ * ① アプリ・LINEからの運行支障情報取得
+ */
+function handleGetDisruptions() {
+  const data = getStoredDisruptionsData();
+  return createJsonResponse({ status: 'success', disruptions: data.disruptions, forecasts: data.forecasts });
+}
+
+/**
+ * ② 管理者コンソールからの運行支障情報の保存
+ */
+function handleSetDisruptions(disruptions, forecasts) {
+  const props = PropertiesService.getScriptProperties();
+  const data = { disruptions: disruptions || {}, forecasts: forecasts || [] };
+  props.setProperty(DISRUPTIONS_PROPERTY_KEY, JSON.stringify(data));
+  return createJsonResponse({ status: 'success' });
+}
+
+/**
+ * 保存済みデータから、LINE返信・アプリ双方で使える運行情報サマリーを生成
+ */
+function buildDisruptionSummary() {
+  const disruptions = getStoredDisruptionsData().disruptions;
+  let hasDelay = false;
+  const delayedNames = [];
+
+  const lines = DISRUPTION_LINE_DEFS.map(function (def) {
+    const d = disruptions[def.id] || (def.id === 'saichi' ? disruptions['saichi_loop'] : null);
+    let status = '平常運転';
+    let message = '現在、全線でほぼ平常通り運転しております。';
+
+    if (d && d.statusType && d.statusType !== 'normal') {
+      hasDelay = true;
+      if (d.statusType === 'suspended') {
+        status = '運転見合わせ';
+        delayedNames.push(def.name + '(見合わせ)');
+      } else if (d.statusType === 'partially_suspended') {
+        status = '一部運休';
+        delayedNames.push(def.name + '(一部運休)');
+      } else {
+        status = d.maxDelayMinutes > 0 ? ('遅延 (最大約' + d.maxDelayMinutes + '分)') : '一部遅延';
+        delayedNames.push(def.name + '(遅延)');
+      }
+
+      if (d.useCustomMessage && d.customMessage && d.customMessage.trim()) {
+        message = d.customMessage.trim();
+      } else if (d.statusType === 'suspended') {
+        message = '現在、' + (d.section || '全線') + 'での' + (d.reason || '安全確認') + 'の影響により、運転を見合わせております。' + (d.durationUntil ? ('（' + d.durationUntil + '再開見込み）') : '');
+      } else if (d.statusType === 'partially_suspended') {
+        message = '現在、' + (d.reason || '安全確認') + 'の影響により、' + (d.section || '全線') + 'で一部列車の運転を取り止めております。';
+      } else {
+        message = '現在、' + (d.section || '全線') + 'での' + (d.reason || '安全確認') + 'の影響により、最大約' + (d.maxDelayMinutes || 5) + '分の遅延が発生しております。' + (d.durationUntil ? ('（' + d.durationUntil + '復旧見込み）') : '');
+      }
+    }
+
+    return { id: def.id, lineName: def.name, status: status, message: message };
+  });
+
+  const summary = hasDelay
+    ? ('【運行支障情報】' + delayedNames.join('、') + 'が発生しております。')
+    : '現在、神埼鉄道グループ全線でほぼ平常通り運転しております。';
+
+  return { hasDelay: hasDelay, summary: summary, lines: lines };
 }
 
 /**

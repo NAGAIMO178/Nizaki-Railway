@@ -13,9 +13,11 @@ interface GasResponse {
     rank: string;
     joinDate: string;
   };
+  disruptions?: Record<string, unknown>;
+  forecasts?: unknown[];
 }
 
-async function callGas(action: string, payload: Record<string, unknown>): Promise<GasResponse> {
+export async function callGas(action: string, payload: Record<string, unknown>): Promise<GasResponse> {
   if (!GAS_ACCOUNT_API_URL || GAS_ACCOUNT_API_URL.includes('★')) {
     throw new Error('GAS_ACCOUNT_API_URL が未設定です。gas/Code.gs をデプロイし、発行されたURLを src/utils/accountApi.ts に設定してください。');
   }

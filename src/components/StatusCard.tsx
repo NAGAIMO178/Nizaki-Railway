@@ -17,31 +17,13 @@ export const StatusCard: React.FC<StatusCardProps> = ({ lines }) => {
   const fetchStatus = async () => {
     setIsRefreshing(true);
     try {
-      // 1. まずローカルの運行指令マネージャーから即座に最新状態を取得
-      const localSummary = disruptionManager.getStatusSummary();
-      setStatusData(localSummary);
+      // 1. まずローカルの運行指令マネージャーから即座に最新状態を表示
+      setStatusData(disruptionManager.getStatusSummary());
       setLastUpdated(new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }));
 
-      // 2. サーバーAPIにも問い合わせて同期
-      const res = await fetch('/api/status');
-      if (res.ok) {
-        const data: any = await res.json();
-        if (data && Array.isArray(data.lines)) {
-          // 管理者指令がローカルにある場合はローカル優先
-          const allDisruptions = disruptionManager.getAllDisruptions();
-          if (Object.keys(allDisruptions).length === 0) {
-            setStatusData(data);
-          }
-          if (data.updatedAt) {
-            const timeOnly = data.updatedAt.split(' ')[1] || data.updatedAt;
-            setLastUpdated(timeOnly.slice(0, 5));
-          }
-        }
-      }
-    } catch {
-      // ローカルデータ利用
-      const localSummary = disruptionManager.getStatusSummary();
-      setStatusData(localSummary);
+      // 2. GASバックエンド(アプリ・LINE共有の情報源)から最新状態を取り込む
+      await disruptionManager.syncFromServer();
+      setStatusData(disruptionManager.getStatusSummary());
       setLastUpdated(new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }));
     } finally {
       setIsRefreshing(false);

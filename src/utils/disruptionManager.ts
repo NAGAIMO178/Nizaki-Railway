@@ -1,6 +1,8 @@
 // Disruption Dispatcher & Train Delay Manager for 神埼鉄道 NIZAKI App
 // Version 3.11.0 (Emergency Incident Response, Weather Forecast & Auto-Expiring Operation Alerts)
 
+import { callGas } from './accountApi';
+
 export type DisruptionStatusType = 'normal' | 'delay' | 'suspended' | 'partially_suspended';
 export type DisruptionDirection = 'both' | 'up' | 'down';
 
@@ -469,6 +471,12 @@ function notifyListeners() {
   });
 }
 
+// 管理者コンソールでの変更を、アプリ・LINE共有のGASバックエンドへ反映
+// (失敗してもローカル表示は継続。次回のsyncFromServerで復帰する)
+function pushDisruptionsToServer(disruptions: Record<string, LineDisruption>, forecasts: OperationForecast[]) {
+  callGas('setDisruptions', { disruptions, forecasts }).catch(() => {});
+}
+
 export const disruptionManager = {
   /**
    * 全路線の現在設定されている運行支障情報を取得
@@ -512,19 +520,7 @@ export const disruptionManager = {
       console.warn('Failed to save disruption to storage:', e);
     }
 
-    // サーバーにも非同期で通知（可能なら）
-    try {
-      fetch('/api/disruptions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ disruptions: all }),
-      }).catch(() => {
-        // Ignore server error in local mode
-      });
-    } catch {
-      // Ignore
-    }
-
+    pushDisruptionsToServer(all, disruptionManager.getOperationForecasts());
     notifyListeners();
   },
 
@@ -543,14 +539,7 @@ export const disruptionManager = {
       console.warn('Failed to clear disruption in storage:', e);
     }
 
-    try {
-      fetch('/api/disruptions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ disruptions: all }),
-      }).catch(() => {});
-    } catch {}
-
+    pushDisruptionsToServer(all, disruptionManager.getOperationForecasts());
     notifyListeners();
   },
 
@@ -562,14 +551,7 @@ export const disruptionManager = {
       localStorage.removeItem(STORAGE_KEY);
     } catch (e) {}
 
-    try {
-      fetch('/api/disruptions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ disruptions: {} }),
-      }).catch(() => {});
-    } catch {}
-
+    pushDisruptionsToServer({}, disruptionManager.getOperationForecasts());
     notifyListeners();
   },
 
@@ -731,6 +713,7 @@ export const disruptionManager = {
       console.warn('Failed to save forecast to storage:', e);
     }
 
+    pushDisruptionsToServer(disruptionManager.getAllDisruptions(), updated);
     notifyListeners();
     return newForecast;
   },
@@ -748,6 +731,7 @@ export const disruptionManager = {
       console.warn('Failed to update forecast storage:', e);
     }
 
+    pushDisruptionsToServer(disruptionManager.getAllDisruptions(), filtered);
     notifyListeners();
   },
 
@@ -759,6 +743,7 @@ export const disruptionManager = {
       localStorage.removeItem(FORECAST_STORAGE_KEY);
     } catch (e) {}
 
+    pushDisruptionsToServer(disruptionManager.getAllDisruptions(), []);
     notifyListeners();
   },
 
@@ -850,6 +835,28 @@ export const disruptionManager = {
       listeners = listeners.filter((l) => l !== listener);
     };
   },
+
+  /**
+   * GASバックエンドから最新の運行支障・予報情報を取り込み、ローカルを上書きする
+   * (アプリ本体・LINE応答が同じ情報源を見るようにするための同期)
+   */
+  syncFromServer: async (): Promise<void> => {
+    try {
+      const result = await callGas('getDisruptions', {});
+      if (result.status !== 'success') return;
+
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(result.disruptions || {}));
+      } catch (e) {}
+      try {
+        localStorage.setItem(FORECAST_STORAGE_KEY, JSON.stringify(result.forecasts || []));
+      } catch (e) {}
+
+      notifyListeners();
+    } catch {
+      // オフライン等の場合はローカルの表示をそのまま維持
+    }
+  },
 };
 
 // クライアント側で30秒ごとに自動失効チェックを実行
@@ -857,6 +864,13 @@ if (typeof window !== 'undefined') {
   setInterval(() => {
     disruptionManager.checkAndCleanupExpiredForecasts();
   }, 30000);
+
+  // 起動時、および20秒ごとにGASから最新の運行情報を取り込む
+  // (タブが何であっても常時バックグラウンドで同期する)
+  disruptionManager.syncFromServer();
+  setInterval(() => {
+    disruptionManager.syncFromServer();
+  }, 20000);
 }
 
 function stringToSeed(str: string): number {

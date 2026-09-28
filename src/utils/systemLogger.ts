@@ -384,7 +384,7 @@ export const systemLogger = {
     }
 
     return {
-      appVersion: 'v3.32.1',
+      appVersion: 'v3.33.0',
       environment: process.env.NODE_ENV === 'production' ? 'Production' : 'Development',
       userAgent: ua,
       deviceType,
