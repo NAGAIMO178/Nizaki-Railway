@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
+  <!-- Background -->
+  <rect width="1920" height="1080" fill="#521EB7"/>
+  
+  <g transform="translate(960, 500) scale(0.75)">
+    <!-- Slanted Bold White N -->
+    <path d="M -117.9 -187.4 H -59 L 17.8 4.6 L 56.2 -187.4 H 109.9 L 45.9 99.4 H -13 L -89.8 -92.6 L -128.2 99.4 H -181.9 Z" fill="#FFFFFF"/>
+    
+    <!-- Dynamic Purple Swoosh Arc -->
+    <path d="M -189.6 58.4 C -169.1 12.3 -102.6 -38.9 -10.4 -74.7 C 81.8 -110.6 143.2 -110.6 173.9 -105.4 C 97.1 -79.8 -15.5 -44 -117.9 22.6 C -164 53.3 -189.6 58.4 -189.6 58.4 Z" fill="#9772EC" opacity="0.95"/>
+  </g>
+  
+  <!-- Loading Text -->
+  <text x="960" y="670" text-anchor="middle" fill="#FFFFFF" font-family="'Plus Jakarta Sans', system-ui, -apple-system, sans-serif" font-weight="900" font-size="42" letter-spacing="3">ロード中...</text>
+</svg>

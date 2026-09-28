@@ -1,0 +1,6 @@
+{
+  "name": "神埼鉄道グループ NIZAKI",
+  "description": "神埼鉄道グループ（NIZAKI）の公式スマートフォンアプリ。運行情報、リアルタイム発車案内、特急めぐり「めぐしーと」座席配送予約、N-POINT連携機能等を備えた次世代鉄道アプリ。",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,25 @@
+{
+  "short_name": "神埼鉄道",
+  "name": "神埼鉄道 運行情報・特急予約",
+  "description": "神埼鉄道のリアルタイム運行情報・特急列車予約・車内デリバリーアプリ",
+  "icons": [
+    {
+      "src": "./icon.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "./",
+  "background_color": "#521EB7",
+  "theme_color": "#521EB7",
+  "display": "standalone",
+  "orientation": "portrait",
+  "scope": "./"
+}
