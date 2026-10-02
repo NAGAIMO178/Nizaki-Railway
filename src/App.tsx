@@ -29,6 +29,8 @@ const getPointStoragePrefix = (email?: string | null) => {
   return `kanzaki_npoint_${sanitized}`;
 };
 
+const MY_STATIONS_STORAGE_KEY = 'kanzaki_my_stations';
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>('home');
   const [currentStation, setCurrentStation] = useState<Station>(MOCK_STATIONS[0]); // 松戸駅
@@ -261,9 +263,26 @@ export default function App() {
   });
 
   // Registered My Stations state (Max 3, Default: Tokyo)
-  const [registeredStations, setRegisteredStations] = useState<RegisterableStation[]>([
-    { id: 'kanzaki_Y01', name: '東京', code: 'Y01', lineName: '1. 神埼線' },
-  ]);
+  const [registeredStations, setRegisteredStations] = useState<RegisterableStation[]>(() => {
+    try {
+      const saved = localStorage.getItem(MY_STATIONS_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed
+            .filter((st) => st && typeof st.name === 'string' && typeof st.lineName === 'string')
+            .slice(0, 3);
+        }
+      }
+    } catch {}
+    return [{ id: 'kanzaki_Y01', name: '東京', code: 'Y01', lineName: '1. 神埼線' }];
+  });
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem(MY_STATIONS_STORAGE_KEY, JSON.stringify(registeredStations));
+    } catch {}
+  }, [registeredStations]);
 
   // Modals state
   const [isEDeliveryModalOpen, setIsEDeliveryModalOpen] = useState(false);
@@ -325,7 +344,7 @@ export default function App() {
 
       nextOrder = {
         ...prevOrder,
-        orderId: order.orderId || prevOrder.orderId,
+        orderId: prevOrder.orderId,
         items: mergedItems,
         totalPrice: baseTicketFee + mergedItemTotalPrice,
       };
