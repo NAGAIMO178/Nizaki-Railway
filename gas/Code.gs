@@ -490,6 +490,9 @@ function handleDeleteAccount(email, password) {
     return createJsonResponse({ status: 'error', message: 'メールアドレスまたはパスワードが正しくありません。' });
   }
 
+  // 台帳に残る記録からLINEユーザーIDを消し、個人と結びつかない形にする(失敗時は会員行を消さずエラーにして再試行できるようにする)
+  anonymizeLineUserId(member.lineUserId);
+
   const sheet = getOrCreateMembersSheet();
   const data = sheet.getDataRange().getValues();
   const headers = data[0];
@@ -503,6 +506,27 @@ function handleDeleteAccount(email, password) {
   }
 
   return createJsonResponse({ status: 'success', message: 'アカウントを削除しました。' });
+}
+
+/**
+ * 予約台帳・クーポン発行ログの該当LINEユーザーIDを「削除済み」に置き換える
+ */
+function anonymizeLineUserId(lineUserId) {
+  if (!lineUserId) return;
+  const ss = getDataSpreadsheet();
+  [SHEET_RESERVATIONS, SHEET_COUPON_LOGS].forEach(function (sheetName) {
+    const sheet = ss.getSheetByName(sheetName);
+    if (!sheet) return;
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) return;
+    const idIdx = data[0].indexOf('LINE_USER_ID');
+    if (idIdx === -1) return;
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][idIdx]) === String(lineUserId)) {
+        sheet.getRange(i + 1, idIdx + 1).setValue('削除済み');
+      }
+    }
+  });
 }
 
 function findMemberByEmail(email) {
