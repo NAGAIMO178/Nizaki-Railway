@@ -68,11 +68,27 @@ export const SeatSelectionModal: React.FC<SeatSelectionModalProps> = ({
     );
   }, [todayStr, expressType, trainName, selectedCarNo]);
 
+  // 初期選択席: 既定席が埋まっていれば、その号車の最初の空席を選ぶ(満席なら空文字)
+  const pickDefaultSeat = (carNo: number): string => {
+    const isCarSpecial = carNo === 1;
+    const occupied = generateOccupiedSeats(todayStr, `${expressType}_${trainName}`, carNo, isCarSpecial);
+    const preferred = isCarSpecial ? '3A' : '4B';
+    if (!occupied.includes(preferred)) return preferred;
+    const rows = isCarSpecial ? 8 : 10;
+    const cols = isCarSpecial ? ['A', 'B', 'C'] : ['A', 'B', 'C', 'D'];
+    for (let r = 1; r <= rows; r++) {
+      for (const c of cols) {
+        if (!occupied.includes(`${r}${c}`)) return `${r}${c}`;
+      }
+    }
+    return '';
+  };
+
   useEffect(() => {
     if (isOpen) {
       const defaultCar = availableCars[0];
       setSelectedCarNo(defaultCar);
-      setSelectedSeatId(defaultCar === 1 ? '3A' : '4B');
+      setSelectedSeatId(pickDefaultSeat(defaultCar));
     }
   }, [isOpen, availableCars]);
 
@@ -82,8 +98,7 @@ export const SeatSelectionModal: React.FC<SeatSelectionModalProps> = ({
 
   const handleCarChange = (carNo: number) => {
     setSelectedCarNo(carNo);
-    const isCarSpecial = carNo === 1;
-    setSelectedSeatId(isCarSpecial ? '3A' : '4B');
+    setSelectedSeatId(pickDefaultSeat(carNo));
   };
 
   const handleSeatClick = (seatId: string) => {
@@ -92,6 +107,7 @@ export const SeatSelectionModal: React.FC<SeatSelectionModalProps> = ({
   };
 
   const handleConfirm = () => {
+    if (!selectedSeatId || currentOccupied.includes(selectedSeatId)) return;
     onConfirmSeat({
       carNo: selectedCarNo,
       seatNo: selectedSeatId,
@@ -318,10 +334,11 @@ export const SeatSelectionModal: React.FC<SeatSelectionModalProps> = ({
 
           <button
             onClick={handleConfirm}
-            className="w-full bg-gray-900 hover:bg-black text-white font-bold text-xs py-2.5 px-3 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+            disabled={!selectedSeatId}
+            className="w-full bg-gray-900 hover:bg-black text-white font-bold text-xs py-2.5 px-3 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Check className="w-4 h-4 text-white" />
-            <span>{selectedCarNo}号車 {selectedSeatId} で座席確定</span>
+            <span>{selectedSeatId ? `${selectedCarNo}号車 ${selectedSeatId} で座席確定` : `${selectedCarNo}号車は満席です`}</span>
           </button>
         </div>
       </div>
