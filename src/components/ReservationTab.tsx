@@ -20,6 +20,7 @@ import {
   ShieldAlert,
   Tag,
   Check,
+  Lock,
 } from 'lucide-react';
 import { ActiveOrder, EquipItem } from '../types';
 import { MOCK_EQUIP_ITEMS } from '../data/mockData';
