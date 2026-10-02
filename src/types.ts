@@ -103,6 +103,7 @@ export interface ActiveOrder {
   destinationStation?: string;
   departureTime?: string;
   arrivalTime?: string;
+  reservedDate?: string; // 予約日 (YYYY-MM-DD)。到着時刻を過ぎたら自動終了する基準
   items: { item: EquipItem; quantity: number }[];
   totalPrice: number;
   status: 'confirmed' | 'preparing' | 'delivering' | 'delivered';
