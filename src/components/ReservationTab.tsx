@@ -313,6 +313,10 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
 
   // 過去になっていない（予約可能）列車の中で最も早いものを初期選択
   React.useEffect(() => {
+    // 選択中の列車がまだ予約可能なら、ユーザーの選択を維持する
+    const selected = availableTrains.find((t) => t.no === selectedTrainNo);
+    if (selected && !isTrainEnded(selected.time)) return;
+
     const activeValidTrain = availableTrains.find((t) => !isTrainEnded(t.time));
     if (activeValidTrain) {
       setSelectedTrainNo(activeValidTrain.no);
