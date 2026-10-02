@@ -14,17 +14,21 @@ export const StatusCard: React.FC<StatusCardProps> = ({ lines }) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [statusData, setStatusData] = useState<DisruptionSummaryResponse>(() => disruptionManager.getStatusSummary());
 
+  const timeNow = () => new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+
+  // ローカルに保存済みの最新状態を画面へ反映するだけ(通信しない)
+  const refreshFromLocal = () => {
+    setStatusData(disruptionManager.getStatusSummary());
+    setLastUpdated(timeNow());
+  };
+
+  // GASバックエンド(アプリ・LINE共有の情報源)から取り込み直して反映(手動更新・初回用)
   const fetchStatus = async () => {
     setIsRefreshing(true);
     try {
-      // 1. まずローカルの運行指令マネージャーから即座に最新状態を表示
-      setStatusData(disruptionManager.getStatusSummary());
-      setLastUpdated(new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }));
-
-      // 2. GASバックエンド(アプリ・LINE共有の情報源)から最新状態を取り込む
+      refreshFromLocal();
       await disruptionManager.syncFromServer();
-      setStatusData(disruptionManager.getStatusSummary());
-      setLastUpdated(new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }));
+      refreshFromLocal();
     } finally {
       setIsRefreshing(false);
     }
@@ -32,12 +36,10 @@ export const StatusCard: React.FC<StatusCardProps> = ({ lines }) => {
 
   useEffect(() => {
     fetchStatus();
-    // 管理者コンソールからの発令・解除・予報更新をリアルタイムリスニング
-    const unsubscribe = disruptionManager.subscribe(() => {
-      fetchStatus();
-    });
-
-    const interval = setInterval(fetchStatus, 20000); // 20秒ごとに自動同期
+    // 変更通知では通信せず表示の更新だけ行う(通信すると通知が再び飛び、無限に繰り返すため)。
+    // サーバーとの定期同期は disruptionManager 側が20秒ごとに行う。
+    const unsubscribe = disruptionManager.subscribe(refreshFromLocal);
+    const interval = setInterval(refreshFromLocal, 20000);
     return () => {
       unsubscribe();
       clearInterval(interval);
