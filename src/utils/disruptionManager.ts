@@ -845,14 +845,24 @@ export const disruptionManager = {
       const result = await callGas('getDisruptions', {});
       if (result.status !== 'success') return;
 
+      const nextDisruptions = JSON.stringify(result.disruptions || {});
+      const nextForecasts = JSON.stringify(result.forecasts || []);
+      let changed = false;
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(result.disruptions || {}));
+        if (localStorage.getItem(STORAGE_KEY) !== nextDisruptions) {
+          localStorage.setItem(STORAGE_KEY, nextDisruptions);
+          changed = true;
+        }
       } catch (e) {}
       try {
-        localStorage.setItem(FORECAST_STORAGE_KEY, JSON.stringify(result.forecasts || []));
+        if (localStorage.getItem(FORECAST_STORAGE_KEY) !== nextForecasts) {
+          localStorage.setItem(FORECAST_STORAGE_KEY, nextForecasts);
+          changed = true;
+        }
       } catch (e) {}
 
-      notifyListeners();
+      // 内容が変わったときだけ通知(同じ内容で毎回通知すると画面の再描画が止まらなくなる)
+      if (changed) notifyListeners();
     } catch {
       // オフライン等の場合はローカルの表示をそのまま維持
     }
