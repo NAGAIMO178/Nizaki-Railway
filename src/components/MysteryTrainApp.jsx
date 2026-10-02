@@ -510,9 +510,6 @@ export const MysteryTrainApp = ({ onAddNPoints, onExit, posterImageUrl }) => {
             <span className="bg-[#991B1B] text-amber-100 text-[10px] font-bold px-2.5 py-1 rounded shadow border border-amber-400 font-serif">
               公式企画ポスター
             </span>
-            <span className="text-[10px] text-amber-200/80 bg-black/60 px-2 py-0.5 rounded font-mono">
-              16:9 / 1200×675px
-            </span>
           </div>
         </div>
       ) : null}
