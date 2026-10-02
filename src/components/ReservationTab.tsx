@@ -131,9 +131,24 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
     const normalized = raw.replace(/　/g, ' ').replace(/\s+/g, ' ').toUpperCase();
     const compactCode = normalized.replace(/\s+/g, '');
 
-    // 既に同一端末で使用済みかチェック
+    // 別名コードも含め、まずクーポン本体(正規コード)を特定する
+    let coupon: { code: string; label: string; type: 'ayami300' | 'fare10' | 'freePass'; successText: string } | null = null;
+    if (compactCode === 'AYAMI300') {
+      coupon = { code: 'AYAMI 300', label: '特急あやみ 普通指定席 300円引き', type: 'ayami300', successText: 'クーポンを適用しました。' };
+    } else if (compactCode === 'KZ-STEP-10' || compactCode === 'KZSTEP10' || compactCode === 'KZ-STEP-500' || compactCode === 'KZSTEP500') {
+      coupon = { code: 'KZ-STEP-10', label: '【中級制覇特典】乗車運賃 10%OFF', type: 'fare10', successText: '中級制覇クーポン（乗車運賃10%OFF）を適用しました！' };
+    } else if (compactCode === 'KZ-DEEP-FREE' || compactCode === 'KZDEEPFREE' || compactCode === 'KZ-DEEP-1000' || compactCode === 'KZDEEP1000') {
+      coupon = { code: 'KZ-DEEP-FREE', label: '【上級制覇特典】1日フリー乗車券（乗車運賃 ¥0 無料）', type: 'freePass', successText: '上級制覇クーポン（乗車運賃 ¥0 タダ）を適用しました！' };
+    }
+
+    if (!coupon) {
+      setCouponMessage({ type: 'error', text: '無効なクーポンコードです。' });
+      return;
+    }
+
+    // 使用済み判定は正規コードで行う(別名コードでの再利用を防ぐ)
     const usedList = getUsedCoupons();
-    if (usedList.includes(compactCode)) {
+    if (usedList.includes(coupon.code.replace(/\s+/g, '').toUpperCase())) {
       setCouponMessage({
         type: 'error',
         text: 'このクーポンコードは既に使用済みのためご利用いただけません。',
@@ -141,33 +156,9 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
       return;
     }
 
-    if (compactCode === 'AYAMI300') {
-      setAppliedCoupon({ code: 'AYAMI 300', label: '特急あやみ 普通指定席 300円引き', type: 'ayami300' });
-      setCouponMessage({
-        type: 'success',
-        text: 'クーポンを適用しました。',
-      });
-      setCouponInput('');
-    } else if (compactCode === 'KZ-STEP-10' || compactCode === 'KZSTEP10' || compactCode === 'KZ-STEP-500' || compactCode === 'KZSTEP500') {
-      setAppliedCoupon({ code: 'KZ-STEP-10', label: '【中級制覇特典】乗車運賃 10%OFF', type: 'fare10' });
-      setCouponMessage({
-        type: 'success',
-        text: '中級制覇クーポン（乗車運賃10%OFF）を適用しました！',
-      });
-      setCouponInput('');
-    } else if (compactCode === 'KZ-DEEP-FREE' || compactCode === 'KZDEEPFREE' || compactCode === 'KZ-DEEP-1000' || compactCode === 'KZDEEP1000') {
-      setAppliedCoupon({ code: 'KZ-DEEP-FREE', label: '【上級制覇特典】1日フリー乗車券（乗車運賃 ¥0 無料）', type: 'freePass' });
-      setCouponMessage({
-        type: 'success',
-        text: '上級制覇クーポン（乗車運賃 ¥0 タダ）を適用しました！',
-      });
-      setCouponInput('');
-    } else {
-      setCouponMessage({
-        type: 'error',
-        text: '無効なクーポンコードです。',
-      });
-    }
+    setAppliedCoupon({ code: coupon.code, label: coupon.label, type: coupon.type });
+    setCouponMessage({ type: 'success', text: coupon.successText });
+    setCouponInput('');
   };
 
   const handleRemoveCoupon = () => {
@@ -526,9 +517,11 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
       deliveryStation: boardingStation,
     };
 
-    // クーポンが適用されていた場合、端末で使用済みとして記録
+    // クーポンが実際に割引として使われた場合のみ、端末で使用済みとして記録(割引がなければ消費しない)
     if (appliedCoupon) {
-      recordCouponUsage(appliedCoupon.code);
+      if (prices.fareDiscount > 0 || prices.expressDiscount > 0) {
+        recordCouponUsage(appliedCoupon.code);
+      }
       setAppliedCoupon(null);
     }
 

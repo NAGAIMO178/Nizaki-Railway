@@ -606,7 +606,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           className="text-[10px] font-medium text-[#6B6380] hover:text-[#5B21B6] transition-colors cursor-pointer"
           title="管理者コンソールを開く"
         >
-          神埼鉄道 NIZAKI App v3.36.6
+          神埼鉄道 NIZAKI App v3.36.7
         </button>
         <p className="text-[9px] text-[#857D99]">© Nizaki Electric Railway Co., Ltd.</p>
       </div>
