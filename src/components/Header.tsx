@@ -37,34 +37,7 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="flex items-center gap-2.5 min-w-0">
             {/* Custom Brand Logo Icon */}
             <div className="w-8 h-8 shrink-0 relative">
-              <svg
-                viewBox="0 0 100 100"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-                className="w-full h-full rounded-xl shadow-xs"
-              >
-                {/* Background */}
-                <rect width="100" height="100" rx="22" fill="#521EB7" />
-                
-                {/* Slanted Bold White N */}
-                <path
-                  d="M 34 22 H 45.5 L 60.5 59.5 L 68 22 H 78.5 L 66 78 H 54.5 L 39.5 40.5 L 32 78 H 21.5 Z"
-                  fill="white"
-                />
-                
-                {/* Dynamic Purple Swoosh Arc */}
-                <path
-                  d="M 20 70 C 24 61 37 51 55 44 C 73 37 85 37 91 38 C 76 43 54 50 34 63 C 25 69 20 70 20 70 Z"
-                  fill="#9772EC"
-                  fillOpacity="0.95"
-                />
-
-                {/* 4-point Sparkle Star */}
-                <path
-                  d="M 88 83 C 88 85.5 89.5 87 92 87 C 89.5 87 88 88.5 88 91 C 88 88.5 86.5 87 84 87 C 86.5 87 88 85.5 88 91 Z"
-                  fill="#C4B5FD"
-                />
-              </svg>
+              <img src="./icon.png" alt="神埼線アプリ" className="w-full h-full rounded-xl shadow-xs" />
             </div>
 
             {/* Title: 神埼線アプリ */}

@@ -4,21 +4,27 @@
   "description": "神埼鉄道のリアルタイム運行情報・特急列車予約・車内デリバリーアプリ",
   "icons": [
     {
+      "src": "./icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any"
+    },
+    {
       "src": "./icon.png",
       "type": "image/png",
       "sizes": "512x512",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
-      "src": "./icon.svg",
-      "type": "image/svg+xml",
-      "sizes": "any",
-      "purpose": "any maskable"
+      "src": "./icon-maskable.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable"
     }
   ],
   "start_url": "./",
-  "background_color": "#521EB7",
-  "theme_color": "#521EB7",
+  "background_color": "#5324AA",
+  "theme_color": "#5324AA",
   "display": "standalone",
   "orientation": "portrait",
   "scope": "./"
