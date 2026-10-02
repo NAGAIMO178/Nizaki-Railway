@@ -25,6 +25,7 @@ import {
 import { ActiveOrder, EquipItem } from '../types';
 import { MOCK_EQUIP_ITEMS } from '../data/mockData';
 import { SeatSelectionModal } from './SeatSelectionModal';
+import { getLocalDateString } from '../utils/orderExpiry';
 
 interface ReservationTabProps {
   activeOrder: ActiveOrder | null;
@@ -510,6 +511,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
       destinationStation,
       departureTime: currentTrainInfo.time,
       arrivalTime,
+      reservedDate: getLocalDateString(),
       items,
       totalPrice: finalTotalPrice,
       status: 'confirmed',

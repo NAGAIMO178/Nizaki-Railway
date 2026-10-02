@@ -20,6 +20,7 @@ import { LoginModal } from './components/LoginModal';
 import { MyPageModal } from './components/MyPageModal';
 import { MOCK_LINES, MOCK_STATIONS, MOCK_EQUIP_ITEMS, MOCK_LIVE_TRAINS } from './data/mockData';
 import { POINT_CODES, normalizePointCode } from './data/pointCodes';
+import { getLocalDateString, isOrderExpired } from './utils/orderExpiry';
 import { TabType, Station, ActiveOrder, DepartureInfo, EquipItem, PointHistoryItem, UserProfile } from './types';
 
 // Helper to sanitize email for storage key
@@ -254,13 +255,35 @@ export default function App() {
           localStorage.removeItem('kanzaki_active_order');
           return null;
         }
-        return parsed;
+        // 日付なしの旧データは「今日の予約」とみなす
+        const order: ActiveOrder = parsed.reservedDate ? parsed : { ...parsed, reservedDate: getLocalDateString() };
+        if (isOrderExpired(order)) {
+          localStorage.removeItem('kanzaki_active_order');
+          return null;
+        }
+        return order;
       }
     } catch (e) {
       console.warn('Failed to parse saved active order:', e);
     }
     return null;
   });
+
+  // 到着時刻を過ぎた予約は自動で終了し、新しい予約ができるようにする
+  React.useEffect(() => {
+    if (!activeOrder) return;
+    const expireIfNeeded = () => {
+      if (isOrderExpired(activeOrder)) {
+        setActiveOrder(null);
+        try {
+          localStorage.removeItem('kanzaki_active_order');
+        } catch {}
+      }
+    };
+    expireIfNeeded();
+    const timer = setInterval(expireIfNeeded, 30000);
+    return () => clearInterval(timer);
+  }, [activeOrder]);
 
   // Registered My Stations state (Max 3, Default: Tokyo)
   const [registeredStations, setRegisteredStations] = useState<RegisterableStation[]>(() => {
