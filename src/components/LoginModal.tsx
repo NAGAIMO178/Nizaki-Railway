@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Lock, Mail, ShieldCheck, ArrowRight, Sparkles, Train, KeyRound } from 'lucide-react';
 import { UserProfile } from '../types';
+import { PrivacyPolicyModal } from './PrivacyPolicyModal';
 import {
   loginWithPassword,
   startLineVerification,
@@ -46,6 +47,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
+  const [isPolicyOpen, setIsPolicyOpen] = useState(false);
 
   useEffect(() => {
     if (resendCooldown <= 0) return;
@@ -537,9 +539,18 @@ export const LoginModal: React.FC<LoginModalProps> = ({
 
         {/* フッター規約 */}
         <div className="p-3 bg-[#F8F7FC] border-t border-[#E5E2EE] text-center text-[10px] text-[#857D99]">
-          神埼鉄道 NIZAKI ID 会員規約およびプライバシーポリシーに同意して利用します。
+          神埼鉄道 NIZAKI ID{' '}
+          <button
+            type="button"
+            onClick={() => setIsPolicyOpen(true)}
+            className="text-[#5B21B6] font-bold underline cursor-pointer"
+          >
+            会員規約およびプライバシーポリシー
+          </button>
+          に同意して利用します。
         </div>
       </div>
+      <PrivacyPolicyModal isOpen={isPolicyOpen} onClose={() => setIsPolicyOpen(false)} />
     </div>
   );
 };
