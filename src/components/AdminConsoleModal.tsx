@@ -70,6 +70,21 @@ const toLocalInputValue = (ts: number): string => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 };
 
+// 自動解除の時刻から、お知らせ文に載せる「復旧見込み」の文言を作る(例: 18:30頃まで)
+const buildDurationLabel = (ts: number): string => {
+  const d = new Date(ts);
+  const now = new Date();
+  const clock = `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}頃まで`;
+  return d.toDateString() === now.toDateString() ? clock : `${d.getMonth() + 1}/${d.getDate()} ${clock}`;
+};
+
+// 空、または時刻(HH:MM)を含む文言だけを自動で書き換える対象とする(「点検完了次第」などは触らない)
+const isTimeBasedDuration = (text: string): boolean => !text.trim() || /\d{1,2}:\d{2}/.test(text);
+
+// 元の文言に付いていた「（※架空設定）」の注記は残したまま、時刻だけを差し替える
+const rewriteDuration = (prev: string, ts: number): string =>
+  buildDurationLabel(ts) + (/※架空/.test(prev) ? '（※架空設定）' : '');
+
 const DEFAULT_PIN = '1925'; // 神埼鉄道 創業年 (初期値)
 const PIN_STORAGE_KEY = 'nizaki_admin_pin';
 const EMERGENCY_ALERT_KEY = 'nizaki_emergency_alert_manual';
@@ -218,6 +233,8 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
       setLinkToSystem(true);
       setDisruptionExpiryChoice('1');
       setDisruptionCustomExpiry('');
+      const defaultOption = getExpiryOptions()[1];
+      if (defaultOption) setDurationUntil(buildDurationLabel(defaultOption.date.getTime()));
     }
   };
 
@@ -259,6 +276,11 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
       setSection('下り線のみ');
       setTargetDirection('down');
     }
+  };
+
+  // 自動解除の時刻を選んだら、復旧見込みの文言も同じ時刻に揃える
+  const syncDurationWithExpiry = (ts: number) => {
+    setDurationUntil((prev) => (isTimeBasedDuration(prev) ? rewriteDuration(prev, ts) : prev));
   };
 
   // Handle reason change with smart duration adaptation
@@ -380,6 +402,13 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
       if (option) expiresAtTimestamp = option.date.getTime();
     }
 
+    // 復旧見込みが時刻の文言なら、実際の自動解除の時刻に揃える(選択後に時間が経っていてもずれない)
+    let durationText = durationUntil.trim();
+    if (expiresAtTimestamp && isTimeBasedDuration(durationText)) {
+      durationText = rewriteDuration(durationText, expiresAtTimestamp);
+      setDurationUntil(durationText);
+    }
+
     const lineDef = DEFAULT_LINE_INFOS.find((l) => l.id === selectedLineId) || DEFAULT_LINE_INFOS[0];
     const generatedText = generateDisruptionText(
       lineDef.name,
@@ -387,7 +416,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
       maxDelayMinutes,
       section,
       reason,
-      durationUntil,
+      durationText,
       targetDirection
     );
 
@@ -398,7 +427,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
       statusType: disruptionStatusType,
       targetDirection,
       maxDelayMinutes: Number(maxDelayMinutes) || 0,
-      durationUntil: durationUntil.trim(),
+      durationUntil: durationText,
       section: section.trim() || '全線',
       reason: reason.trim() || '安全確認のため',
       customMessage: customMessage.trim() || generatedText,
@@ -1616,7 +1645,10 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                                 <button
                                   key={idx}
                                   type="button"
-                                  onClick={() => setDisruptionExpiryChoice(String(idx))}
+                                  onClick={() => {
+                                    setDisruptionExpiryChoice(String(idx));
+                                    syncDurationWithExpiry(opt.date.getTime());
+                                  }}
                                   className={`px-1.5 py-1.5 rounded-md border text-[10px] leading-tight text-center cursor-pointer transition-all ${
                                     disruptionExpiryChoice === String(idx)
                                       ? 'bg-amber-400/20 border-amber-400 text-amber-200 font-bold'
@@ -1653,7 +1685,13 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                               <input
                                 type="datetime-local"
                                 value={disruptionCustomExpiry}
-                                onChange={(e) => setDisruptionCustomExpiry(e.target.value)}
+                                onChange={(e) => {
+                                  setDisruptionCustomExpiry(e.target.value);
+                                  const picked = new Date(e.target.value);
+                                  if (!isNaN(picked.getTime()) && picked.getTime() > Date.now()) {
+                                    syncDurationWithExpiry(picked.getTime());
+                                  }
+                                }}
                                 className="w-full bg-slate-900 border border-slate-600 rounded-md px-2 py-1.5 text-[11px] text-slate-100 focus:outline-none focus:border-amber-400"
                               />
                             )}
