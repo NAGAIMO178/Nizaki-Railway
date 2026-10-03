@@ -839,7 +839,7 @@ export const MysteryTrainApp = ({ onAddNPoints, onExit, posterImageUrl }) => {
                 onClick={() => setIsStationModalOpen(true)}
                 className="text-xs text-amber-400 hover:underline cursor-pointer"
               >
-                全72駅から選ぶ →
+                全{KANZAKI_STATIONS_72.length}駅から選ぶ →
               </button>
             </div>
 
@@ -1032,9 +1032,9 @@ export const MysteryTrainApp = ({ onAddNPoints, onExit, posterImageUrl }) => {
                 </text>
 
                 {/* 中心：松戸駅 */}
-                <circle cx="325" cy="115" r="10" fill="#EF4444" stroke="#F59E0B" strokeWidth="3" className="animate-ping opacity-75" />
-                <circle cx="325" cy="115" r="7" fill="#EF4444" stroke="#FFF" strokeWidth="2" />
-                <text x="325" y="140" fill="#FCA5A5" fontSize="12" fontWeight="black" textAnchor="middle">
+                <circle cx="263" cy="108" r="10" fill="#EF4444" stroke="#F59E0B" strokeWidth="3" className="animate-ping opacity-75" />
+                <circle cx="263" cy="108" r="7" fill="#EF4444" stroke="#FFF" strokeWidth="2" />
+                <text x="263" y="133" fill="#FCA5A5" fontSize="12" fontWeight="black" textAnchor="middle">
                   ？（三角形の中心）
                 </text>
               </svg>
@@ -1220,7 +1220,7 @@ export const MysteryTrainApp = ({ onAddNPoints, onExit, posterImageUrl }) => {
               <div className="flex items-center gap-2">
                 <Compass className="w-4 h-4 text-amber-400" />
                 <h3 className="text-sm sm:text-base font-bold text-amber-100 font-serif">
-                  神埼鉄道 全線72駅一覧
+                  神埼鉄道 全線{KANZAKI_STATIONS_72.length}駅一覧
                 </h3>
               </div>
               <button

@@ -708,7 +708,7 @@ export const MysteryTrainEvent: React.FC<MysteryTrainEventProps> = ({
                   </p>
 
                   <div className="text-right text-[10px] text-stone-400 tracking-widest font-sans font-bold">
-                    ※全72駅から該当する駅を特定せよ
+                    ※全{KANZAKI_ALL_STATIONS_72.length}駅から該当する駅を特定せよ
                   </div>
                 </div>
 
@@ -780,7 +780,7 @@ export const MysteryTrainEvent: React.FC<MysteryTrainEventProps> = ({
                       className="absolute right-1.5 px-3 py-1.5 rounded bg-amber-900/40 hover:bg-amber-600 text-amber-200 hover:text-slate-950 text-xs font-bold transition-all cursor-pointer flex items-center gap-1 active:scale-[0.98] border border-amber-600/30"
                     >
                       <BookOpen className="w-3.5 h-3.5" />
-                      <span>全72駅一覧</span>
+                      <span>全{KANZAKI_ALL_STATIONS_72.length}駅一覧</span>
                     </button>
                   </div>
 
@@ -1123,7 +1123,7 @@ export const MysteryTrainEvent: React.FC<MysteryTrainEventProps> = ({
                   神埼鉄道 全線路線図
                 </h2>
                 <p className="text-[11px] text-stone-400 font-sans">
-                  全72駅 路線ネットワーク
+                  全{KANZAKI_ALL_STATIONS_72.length}駅 路線ネットワーク
                 </p>
               </div>
             </div>

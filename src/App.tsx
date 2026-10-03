@@ -147,6 +147,26 @@ export default function App() {
     });
   };
 
+  // 謎解きイベントの報酬(幕クリアなど)は、アカウントごとに1回だけ付与する(この端末内で記録)
+  // ログインしていない場合は、従来どおりポイントは付与されない
+  const addEventRewardOnce = (points: number, title?: string, type: 'reservation' | 'stamp' | 'coupon' | 'equip' = 'stamp') => {
+    if (!currentUser || !currentUser.email) return;
+    const prefix = getPointStoragePrefix(currentUser.email);
+    if (!prefix) return;
+    const rewardKey = title || `event_${points}`;
+    const storageKey = `${prefix}_event_rewards`;
+    let granted: string[] = [];
+    try {
+      const parsed = JSON.parse(localStorage.getItem(storageKey) || '[]');
+      if (Array.isArray(parsed)) granted = parsed;
+    } catch {}
+    if (granted.includes(rewardKey)) return;
+    addPoints(points, title, type);
+    try {
+      localStorage.setItem(storageKey, JSON.stringify([...granted, rewardKey]));
+    } catch {}
+  };
+
   const redeemPointCode = (rawCode: string): { ok: boolean; message: string } => {
     if (!currentUser || !currentUser.email) {
       return { ok: false, message: 'コードのご利用には神埼IDログインが必要です。' };
@@ -509,7 +529,7 @@ export default function App() {
         {activeTab === 'events' && (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-28 md:pb-12">
             <EventsTab
-              onAddNPoints={(points, title, type) => addPoints(points, title, type || 'stamp')}
+              onAddNPoints={(points, title, type) => addEventRewardOnce(points, title, type || 'stamp')}
               isLoggedIn={isLoggedIn}
               onRequireLogin={handleRequireLogin}
             />
