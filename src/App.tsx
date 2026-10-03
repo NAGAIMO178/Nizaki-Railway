@@ -20,6 +20,7 @@ import { MyPageModal } from './components/MyPageModal';
 import { MOCK_LINES, MOCK_EQUIP_ITEMS } from './data/mockData';
 import { POINT_CODES, normalizePointCode } from './data/pointCodes';
 import { getLocalDateString, isOrderExpired } from './utils/orderExpiry';
+import { callGas } from './utils/accountApi';
 import { TabType, ActiveOrder, EquipItem, PointHistoryItem, UserProfile } from './types';
 
 // Helper to sanitize email for storage key
@@ -313,7 +314,9 @@ export default function App() {
   const [isMyPageOpen, setIsMyPageOpen] = useState(false);
   const [selectedCart, setSelectedCart] = useState<{ [key: string]: number }>({});
 
-  // 予約状態が更新されたらローカルストレージとサーバー（/api/reservation）に同期
+  // 予約状態が更新されたらローカルストレージに保存し、ログイン済みの会員ならGAS(予約台帳)にも記録する
+  // (LINEの「予約確認」はこの台帳を見る。デモ会員など、ログイン証が無い場合は端末内のみ)
+  const sessionToken = currentUser?.sessionToken;
   React.useEffect(() => {
     if (activeOrder) {
       try {
@@ -322,20 +325,20 @@ export default function App() {
         console.warn('localStorage save failed:', e);
       }
 
-      fetch('/api/reservation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ order: activeOrder }),
-      }).catch((err) => console.error('Failed to sync reservation:', err));
+      if (sessionToken) {
+        // 画像などを含めず、台帳に必要な項目だけを送る
+        const { orderId, trainName, carNo, seatNo, seatType, boardingStation, destinationStation, departureTime, arrivalTime, reservedDate, totalPrice } = activeOrder;
+        callGas('createReservation', {
+          sessionToken,
+          order: { orderId, trainName, carNo, seatNo, seatType, boardingStation, destinationStation, departureTime, arrivalTime, reservedDate, totalPrice },
+        }).catch((err) => console.warn('Failed to sync reservation:', err));
+      }
     }
-  }, [activeOrder]);
+  }, [activeOrder, sessionToken]);
 
   const handleConfirmOrder = (order: ActiveOrder) => {
-    let nextOrder: ActiveOrder = order;
-
     setActiveOrder((prevOrder) => {
       if (!prevOrder) {
-        nextOrder = order;
         return order;
       }
 
@@ -363,7 +366,7 @@ export default function App() {
       // 基本運賃・特急料金
       const baseTicketFee = prevOrder.totalPrice - (prevOrder.items || []).reduce((sum, ci) => sum + ci.item.price * ci.quantity, 0);
 
-      nextOrder = {
+      const nextOrder: ActiveOrder = {
         ...prevOrder,
         orderId: prevOrder.orderId,
         items: mergedItems,
@@ -372,13 +375,6 @@ export default function App() {
 
       return nextOrder;
     });
-
-    // サーバーへ即時送信
-    fetch('/api/reservation', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ order: nextOrder }),
-    }).catch((err) => console.error('Immediate sync failed:', err));
 
     // 特急券・注文金額に応じた N-POINT 還元 (合計金額の3% 還元、最低50pt)
     const earnedPoints = Math.max(50, Math.floor((order.totalPrice || 2000) * 0.03));
@@ -394,12 +390,10 @@ export default function App() {
       localStorage.removeItem('kanzaki_active_order');
     } catch (e) {}
 
-    if (cancelId) {
-      fetch('/api/reservation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cancelOrderId: cancelId }),
-      }).catch((err) => console.error('Cancel sync failed:', err));
+    if (cancelId && sessionToken) {
+      callGas('cancelReservation', { sessionToken, orderId: cancelId }).catch((err) =>
+        console.warn('Cancel sync failed:', err)
+      );
     }
   };
 

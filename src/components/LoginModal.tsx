@@ -112,6 +112,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
           email: result.user.email,
           rank: result.user.rank as UserProfile['rank'],
           joinDate: result.user.joinDate,
+          sessionToken: result.sessionToken,
         };
         onLogin(user);
         resetAll();
@@ -196,6 +197,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
           email: result.user.email,
           rank: result.user.rank as UserProfile['rank'],
           joinDate: result.user.joinDate,
+          sessionToken: result.sessionToken,
         };
         onLogin(user);
         resetAll();

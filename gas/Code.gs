@@ -48,9 +48,12 @@ function doPost(e) {
 
     const json = JSON.parse(e.postData.contents);
 
-    // ① Webアプリからの特急予約登録(現在は無効。未認証で台帳に書き込めてしまうため受け付けない)
+    // ① Webアプリからの特急予約の登録・取消(ログイン証が必要)
     if (json.action === 'createReservation') {
-      return createJsonResponse({ status: 'error', message: 'この操作は現在受け付けていません。' });
+      return handleCreateReservation(json.sessionToken, json.order);
+    }
+    if (json.action === 'cancelReservation') {
+      return handleCancelReservation(json.sessionToken, json.orderId);
     }
 
     // ①.5 神埼ID 会員認証まわり（LINE経由の新規登録／ログイン）
@@ -193,6 +196,7 @@ function handleReservationInquiry(replyToken, userId, text) {
     const trainIndex = headers.indexOf('列車名');
     const seatIndex = headers.indexOf('座席番号');
     const totalIndex = headers.indexOf('合計金額');
+    const statusIndex = headers.indexOf('ステータス');
 
     // 検索: ユーザーID または 送信された予約番号
     const matched = [];
@@ -200,6 +204,10 @@ function handleReservationInquiry(replyToken, userId, text) {
       const row = data[i];
       const rowOrderId = idIndex !== -1 ? String(row[idIndex]) : '';
       const rowUserId = userIndex !== -1 ? String(row[userIndex]) : '';
+
+      // キャンセル済み、または到着時刻を過ぎた予約は対象外
+      if (statusIndex !== -1 && String(row[statusIndex]) === 'キャンセル') continue;
+      if (isReservationRowExpired(headers, row)) continue;
 
       if ((userId !== 'unknown' && rowUserId === userId) || (rowOrderId && text.toUpperCase().includes(rowOrderId))) {
         matched.push({
@@ -234,6 +242,29 @@ function handleReservationInquiry(replyToken, userId, text) {
     Logger.log('予約照会エラー: ' + err.toString());
     replyToLine(replyToken, [{ type: 'text', text: '予約照会処理中にエラーが発生しました。' }]);
   }
+}
+
+/**
+ * 予約台帳の1行が、到着時刻を過ぎているか(日付・時刻が無い古い行は期限なし扱い)
+ */
+function isReservationRowExpired(headers, row) {
+  const dateIdx = headers.indexOf('予約日');
+  const depIdx = headers.indexOf('出発時刻');
+  const arrIdx = headers.indexOf('到着時刻');
+  if (dateIdx === -1 || arrIdx === -1) return false;
+  const toText = function (v, pattern) {
+    return v instanceof Date ? Utilities.formatDate(v, 'Asia/Tokyo', pattern) : String(v || '');
+  };
+  const date = toText(row[dateIdx], 'yyyy-MM-dd');
+  const arrival = toText(row[arrIdx], 'HH:mm');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{1,2}:\d{2}$/.test(arrival)) return false;
+  let ts = new Date(date + 'T' + (arrival.length === 4 ? '0' + arrival : arrival) + ':00+09:00').getTime();
+  const departure = depIdx === -1 ? '' : toText(row[depIdx], 'HH:mm');
+  if (/^\d{1,2}:\d{2}$/.test(departure)) {
+    const toMin = function (t) { const p = t.split(':'); return Number(p[0]) * 60 + Number(p[1]); };
+    if (toMin(arrival) < toMin(departure)) ts += 24 * 60 * 60 * 1000;
+  }
+  return Date.now() >= ts;
 }
 
 /**
@@ -414,52 +445,145 @@ function logCouponIssue(userId, course) {
   }
 }
 
-/**
- * スプレッドシート「予約台帳」への予約データ保存
- */
-function saveOrderToSheet(order) {
-  try {
-    const ss = getDataSpreadsheet();
-    let sheet = ss.getSheetByName(SHEET_RESERVATIONS);
+// 予約台帳の列(この順で作成。既存の台帳には不足している列だけ後ろへ追加する)
+const RESERVATION_HEADERS = [
+  '予約日時', '予約番号', 'LINE_USER_ID', '列車名', '号車', '座席番号', '席種',
+  '乗車駅', '降車駅', '合計金額', 'ステータス', '会員ID', '予約日', '出発時刻', '到着時刻'
+];
 
-    if (!sheet) {
-      sheet = ss.insertSheet(SHEET_RESERVATIONS);
-      sheet.appendRow([
-        '予約日時',
-        '予約番号',
-        'LINE_USER_ID',
-        '列車名',
-        '号車',
-        '座席番号',
-        '席種',
-        '乗車駅',
-        '降車駅',
-        '合計金額',
-        'ステータス'
-      ]);
-      sheet.getRange('A1:K1').setBackground('#5B21B6').setFontColor('#FFFFFF').setFontWeight('bold');
-      sheet.setFrozenRows(1);
+function getOrCreateReservationsSheet() {
+  const ss = getDataSpreadsheet();
+  let sheet = ss.getSheetByName(SHEET_RESERVATIONS);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_RESERVATIONS);
+    sheet.appendRow(RESERVATION_HEADERS);
+    sheet.getRange(1, 1, 1, RESERVATION_HEADERS.length).setBackground('#5B21B6').setFontColor('#FFFFFF').setFontWeight('bold');
+    sheet.setFrozenRows(1);
+  } else {
+    // 古い台帳(11列)には、不足している見出しを後ろへ追加する
+    const lastCol = Math.max(sheet.getLastColumn(), 1);
+    const existing = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    RESERVATION_HEADERS.forEach(function (h) {
+      if (existing.indexOf(h) === -1) {
+        const col = existing.filter(function (v) { return v !== ''; }).length + 1;
+        sheet.getRange(1, col).setValue(h);
+        existing[col - 1] = h;
+      }
+    });
+  }
+  return sheet;
+}
+
+function limitText(value, max) {
+  return String(value === undefined || value === null ? '' : value).slice(0, max);
+}
+
+/**
+ * 予約の登録・更新(予約番号が同じ行があれば更新する)
+ */
+function handleCreateReservation(sessionToken, order) {
+  const memberId = verifySessionToken(sessionToken);
+  if (!memberId) {
+    return createJsonResponse({ status: 'error', message: 'ログインの有効期限が切れています。もう一度ログインしてください。' });
+  }
+  if (!order || typeof order !== 'object' || !/^[A-Za-z0-9-]{3,40}$/.test(String(order.orderId || ''))) {
+    return createJsonResponse({ status: 'error', message: '予約内容が正しくありません。' });
+  }
+
+  const member = findMemberById(memberId);
+  if (!member) {
+    return createJsonResponse({ status: 'error', message: '会員情報が見つかりません。' });
+  }
+
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+  } catch (err) {
+    return createJsonResponse({ status: 'error', message: '混み合っています。しばらくしてからもう一度お試しください。' });
+  }
+
+  try {
+    const sheet = getOrCreateReservationsSheet();
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const col = {};
+    headers.forEach(function (h, i) { col[h] = i; });
+
+    const values = {
+      '予約日時': Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm:ss'),
+      '予約番号': String(order.orderId),
+      'LINE_USER_ID': member.lineUserId || '',
+      '列車名': limitText(order.trainName, 60),
+      '号車': Number(order.carNo) || '',
+      '座席番号': limitText(order.seatNo, 10),
+      '席種': limitText(order.seatType, 20),
+      '乗車駅': limitText(order.boardingStation, 30),
+      '降車駅': limitText(order.destinationStation, 30),
+      '合計金額': Math.max(0, Math.min(Number(order.totalPrice) || 0, 1000000)),
+      'ステータス': '予約確定',
+      '会員ID': memberId,
+      '予約日': limitText(order.reservedDate, 10),
+      '出発時刻': limitText(order.departureTime, 5),
+      '到着時刻': limitText(order.arrivalTime, 5)
+    };
+
+    let targetRow = -1;
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][col['予約番号']]) === values['予約番号']) {
+        if (String(data[i][col['会員ID']]) !== memberId) {
+          return createJsonResponse({ status: 'error', message: 'この予約番号は使用できません。' });
+        }
+        targetRow = i + 1;
+        break;
+      }
     }
 
-    const timestamp = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm:ss');
-    sheet.appendRow([
-      timestamp,
-      order.orderId || ('NZ-' + Math.floor(1000 + Math.random() * 9000)),
-      order.lineUserId || order.userId || '',
-      order.trainName || '',
-      order.carNo || '',
-      order.seatNo || '',
-      order.seatType || '',
-      order.departureStation || '',
-      order.arrivalStation || '',
-      order.totalPrice || order.price || 0,
-      '予約確定'
-    ]);
-    return true;
-  } catch (err) {
-    Logger.log('予約台帳保存エラー: ' + err.toString());
-    return false;
+    const row = headers.map(function (h) { return values[h] !== undefined ? values[h] : ''; });
+    if (targetRow === -1) {
+      sheet.appendRow(row);
+      targetRow = sheet.getLastRow();
+    } else {
+      sheet.getRange(targetRow, 1, 1, row.length).setValues([row]);
+    }
+    // 日付・時刻は文字列のまま保存する(シートが日付型に変換しないように)
+    ['予約日', '出発時刻', '到着時刻'].forEach(function (h) {
+      const c = headers.indexOf(h);
+      if (c !== -1) {
+        const cell = sheet.getRange(targetRow, c + 1);
+        cell.setNumberFormat('@');
+        cell.setValue(values[h]);
+      }
+    });
+
+    return createJsonResponse({ status: 'success' });
+  } finally {
+    lock.releaseLock();
   }
+}
+
+/**
+ * 予約の取消(行は残し、ステータスを「キャンセル」にする)
+ */
+function handleCancelReservation(sessionToken, orderId) {
+  const memberId = verifySessionToken(sessionToken);
+  if (!memberId) {
+    return createJsonResponse({ status: 'error', message: 'ログインの有効期限が切れています。もう一度ログインしてください。' });
+  }
+
+  const sheet = getDataSpreadsheet().getSheetByName(SHEET_RESERVATIONS);
+  if (!sheet) return createJsonResponse({ status: 'success' });
+
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const idCol = headers.indexOf('予約番号');
+  const memberCol = headers.indexOf('会員ID');
+  const statusCol = headers.indexOf('ステータス');
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][idCol]) === String(orderId) && String(data[i][memberCol]) === memberId) {
+      sheet.getRange(i + 1, statusCol + 1).setValue('キャンセル');
+    }
+  }
+  return createJsonResponse({ status: 'success' });
 }
 
 // シート名定義（会員台帳）
@@ -487,7 +611,8 @@ function handleLogin(email, password) {
 
   return createJsonResponse({
     status: 'success',
-    user: { memberId: member.memberId, name: member.name, email: member.email, rank: member.rank, joinDate: member.joinDate }
+    user: { memberId: member.memberId, name: member.name, email: member.email, rank: member.rank, joinDate: member.joinDate },
+    sessionToken: createSessionToken(String(member.memberId))
   });
 }
 
@@ -512,7 +637,7 @@ function handleDeleteAccount(email, password) {
   clearLoginFailures(email);
 
   // 台帳に残る記録からLINEユーザーIDを消し、個人と結びつかない形にする(失敗時は会員行を消さずエラーにして再試行できるようにする)
-  anonymizeLineUserId(member.lineUserId);
+  anonymizeLineUserId(member.lineUserId, member.memberId);
 
   const sheet = getOrCreateMembersSheet();
   const data = sheet.getDataRange().getValues();
@@ -532,8 +657,8 @@ function handleDeleteAccount(email, password) {
 /**
  * 予約台帳・クーポン発行ログの該当LINEユーザーIDを「削除済み」に置き換える
  */
-function anonymizeLineUserId(lineUserId) {
-  if (!lineUserId) return;
+function anonymizeLineUserId(lineUserId, memberId) {
+  if (!lineUserId && !memberId) return;
   const ss = getDataSpreadsheet();
   [SHEET_RESERVATIONS, SHEET_COUPON_LOGS].forEach(function (sheetName) {
     const sheet = ss.getSheetByName(sheetName);
@@ -541,10 +666,13 @@ function anonymizeLineUserId(lineUserId) {
     const data = sheet.getDataRange().getValues();
     if (data.length <= 1) return;
     const idIdx = data[0].indexOf('LINE_USER_ID');
-    if (idIdx === -1) return;
+    const memberIdx = data[0].indexOf('会員ID');
     for (let i = 1; i < data.length; i++) {
-      if (String(data[i][idIdx]) === String(lineUserId)) {
+      if (lineUserId && idIdx !== -1 && String(data[i][idIdx]) === String(lineUserId)) {
         sheet.getRange(i + 1, idIdx + 1).setValue('削除済み');
+      }
+      if (memberId && memberIdx !== -1 && String(data[i][memberIdx]) === String(memberId)) {
+        sheet.getRange(i + 1, memberIdx + 1).setValue('削除済み');
       }
     }
   });
@@ -693,7 +821,8 @@ function handleVerifyLineAndRegister(email, password, token, code, name) {
 
     return createJsonResponse({
       status: 'success',
-      user: { memberId: memberId, name: name || email.split('@')[0], email: email, rank: 'レギュラー', joinDate: joinDate }
+      user: { memberId: memberId, name: name || email.split('@')[0], email: email, rank: 'レギュラー', joinDate: joinDate },
+      sessionToken: createSessionToken(memberId)
     });
   } finally {
     lock.releaseLock();
@@ -710,6 +839,55 @@ function generateToken(len) {
     out += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   return out;
+}
+
+// ログイン証(署名つき・有効30日)。保存はせず、署名で正しさを確かめる
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+function getSessionSecret() {
+  const props = PropertiesService.getScriptProperties();
+  let secret = props.getProperty('SESSION_SECRET');
+  if (!secret) {
+    secret = Utilities.getUuid() + Utilities.getUuid();
+    props.setProperty('SESSION_SECRET', secret);
+  }
+  return secret;
+}
+
+function signSessionPayload(payload) {
+  return Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(payload, getSessionSecret()));
+}
+
+function createSessionToken(memberId) {
+  const payload = memberId + '.' + (Date.now() + SESSION_TTL_MS);
+  return payload + '.' + signSessionPayload(payload);
+}
+
+// 正しく期限内なら会員IDを、そうでなければ null を返す
+function verifySessionToken(token) {
+  if (typeof token !== 'string') return null;
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  const payload = parts[0] + '.' + parts[1];
+  if (signSessionPayload(payload) !== parts[2]) return null;
+  if (!(Number(parts[1]) > Date.now())) return null;
+  return parts[0];
+}
+
+function findMemberById(memberId) {
+  const sheet = getDataSpreadsheet().getSheetByName(SHEET_MEMBERS);
+  if (!sheet) return null;
+  const data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return null;
+  const headers = data[0];
+  const idCol = headers.indexOf('会員ID');
+  const lineCol = headers.indexOf('LINE_USER_ID');
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][idCol]) === String(memberId)) {
+      return { memberId: String(memberId), lineUserId: lineCol !== -1 ? data[i][lineCol] : '' };
+    }
+  }
+  return null;
 }
 
 function hashPassword(password, salt) {

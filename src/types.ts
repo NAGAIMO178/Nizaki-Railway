@@ -125,6 +125,7 @@ export interface UserProfile {
   email: string;
   rank: 'レギュラー' | 'ゴールド' | 'プレミアム';
   joinDate: string;
+  sessionToken?: string; // GASが発行するログイン証(予約の記録などに使う。デモ会員は無し)
 }
 
 export interface AccountActivityItem {
