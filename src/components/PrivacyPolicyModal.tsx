@@ -67,6 +67,9 @@ export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, 
             <p>
               ※ログイン状態、N-POINTの残高・履歴、使用済みクーポン、マイ駅設定などは、お使いの端末（ブラウザのLocalStorage等）内に保存されます。
             </p>
+            <p>
+              ※最寄り駅の表示のために、お使いの端末の位置情報を利用します（許可した場合のみ）。位置情報は端末内で計算し、サーバーへは送信・保存しません。
+            </p>
           </Section>
 
           <Section title="2. 利用目的">
