@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Users, ChevronLeft, ChevronRight, MapPin, Moon, Clock, Sparkles, Navigation, Star } from 'lucide-react';
-import { RegisterableStation, REGISTERABLE_LINES } from './MyStationRegisterCard';
+import { Users, ChevronLeft, ChevronRight, MapPin, Moon, Clock, Navigation } from 'lucide-react';
+import { RegisterableStation } from './MyStationRegisterCard';
 import { findNearestStation } from '../utils/nearestStation';
-import { getTsuchiuraDeparturesForStation } from '../utils/tsuchiuraTimetable';
 import { disruptionManager } from '../utils/disruptionManager';
+import { computeBoard, formatDiaTime, getCachedBoardData, loadBoardData } from '../utils/diaTimetable';
+import type { BoardData, BoardResult } from '../utils/diaTimetable';
 
 interface MyStationCardProps {
   registeredStations: RegisterableStation[];
@@ -25,87 +26,6 @@ export interface DynamicDeparture {
   isSuspended?: boolean;  // 運休・見合わせフラグ
   carCount?: number;      // 両数
 }
-
-// 各路線の初電・終電運用スケジュール情報
-export interface LineOperatingSchedule {
-  lineCode: string;
-  firstTrain: string; // "04:30"
-  firstTrainMin: number; // 4*60+30 = 270
-  firstTrainStation: string; // "大宮"
-  lastTrain: string; // "00:15"
-  lastTrainMin: number; // 0*60+15 = 15
-  lastTrainStation: string; // "東京"
-  nightNote: string;
-}
-
-export const getLineSchedule = (lineName: string): LineOperatingSchedule => {
-  if (lineName.includes('神埼線') || lineName.includes('Y')) {
-    return {
-      lineCode: 'Y',
-      firstTrain: '04:30',
-      firstTrainMin: 270, // 4:30
-      firstTrainStation: '大宮',
-      lastTrain: '00:15',
-      lastTrainMin: 15, // 00:15
-      lastTrainStation: '東京',
-      nightNote: '終電は大宮止まり',
-    };
-  }
-  if (lineName.includes('神埼高速') || lineName.includes('NI')) {
-    return {
-      lineCode: 'NI',
-      firstTrain: '05:00',
-      firstTrainMin: 300, // 5:00
-      firstTrainStation: '東京',
-      lastTrain: '00:30',
-      lastTrainMin: 30, // 00:30
-      lastTrainStation: '横浜',
-      nightNote: '終電は東京・横浜止まり',
-    };
-  }
-  if (lineName.includes('環状') || lineName.includes('SC')) {
-    return {
-      lineCode: 'SC',
-      firstTrain: '04:50',
-      firstTrainMin: 290, // 4:50
-      firstTrainStation: '大宮',
-      lastTrain: '00:10',
-      lastTrainMin: 10, // 00:10
-      lastTrainStation: '新宿',
-      nightNote: '終電は大宮止まり',
-    };
-  }
-  // 土浦線 (TC) デフォルト
-  return {
-    lineCode: 'TC',
-    firstTrain: '04:40',
-    firstTrainMin: 280, // 4:40
-    firstTrainStation: '日立',
-    lastTrain: '00:00',
-    lastTrainMin: 0, // 00:00
-    lastTrainStation: '松戸',
-    nightNote: '終点は鹿島旭止まり',
-  };
-};
-
-// 指定タイムスタンプが営業中か深夜運休帯かを判定
-export const isLineInService = (lineName: string, timestamp: number): boolean => {
-  const d = new Date(timestamp);
-  const minutesFromMidnight = d.getHours() * 60 + d.getMinutes();
-  const schedule = getLineSchedule(lineName);
-
-  if (schedule.lastTrainMin === 0) {
-    // 00:00 終電の場合 (土浦線: 00:00〜04:40 は運休)
-    return minutesFromMidnight >= schedule.firstTrainMin;
-  }
-
-  // 00:15 / 00:30 / 00:10 等の終電の場合
-  // 終電分以上かつ初電分未満なら「深夜営業外」
-  if (minutesFromMidnight >= schedule.lastTrainMin && minutesFromMidnight < schedule.firstTrainMin) {
-    return false;
-  }
-  return true;
-};
 
 // 種別ごとの指定カラーを取得する関数 (浮かない洗練されたトーン＆マナー)
 const getTrainTypeBadgeStyle = (trainType: string): { bg: string; dot: string } => {
@@ -224,431 +144,6 @@ const getStationPlatformConfig = (stationName: string): { platforms: (1 | 2)[]; 
   return { platforms: [1, 2], defaultPlatform: 1 };
 };
 
-export interface StationLineOption {
-  key: string;
-  name: string;
-  code: string;
-  color: string;
-}
-
-// ターミナル駅対応: その駅に発着する路線候補を返す
-const getPossibleLinesForStation = (stationName: string, primaryLine: string = ''): StationLineOption[] => {
-  const lineOptions: StationLineOption[] = [];
-
-  if (stationName.includes('東京')) {
-    lineOptions.push(
-      { key: 'Y', name: '神埼線', code: 'Y', color: '#8B5CF6' },
-      { key: 'NI', name: '神埼高速線', code: 'NI', color: '#3B82F6' },
-      { key: 'SC', name: '埼千環状線', code: 'SC', color: '#EC4899' }
-    );
-  } else if (stationName.includes('品川')) {
-    lineOptions.push(
-      { key: 'NI', name: '神埼高速線', code: 'NI', color: '#3B82F6' }
-    );
-  } else if (stationName.includes('大宮')) {
-    lineOptions.push(
-      { key: 'Y', name: '神埼線', code: 'Y', color: '#8B5CF6' },
-      { key: 'SC', name: '埼千環状線', code: 'SC', color: '#EC4899' }
-    );
-  } else if (stationName.includes('池袋') || stationName.includes('新宿')) {
-    lineOptions.push(
-      { key: 'SC', name: '埼千環状線', code: 'SC', color: '#EC4899' }
-    );
-  } else if (stationName.includes('横浜')) {
-    lineOptions.push(
-      { key: 'Y', name: '神埼線', code: 'Y', color: '#8B5CF6' },
-      { key: 'NI', name: '神埼高速線', code: 'NI', color: '#3B82F6' }
-    );
-  } else if (stationName.includes('北千住')) {
-    lineOptions.push(
-      { key: 'Y', name: '神埼線', code: 'Y', color: '#8B5CF6' },
-      { key: 'SC', name: '埼千環状線', code: 'SC', color: '#EC4899' }
-    );
-  } else if (stationName.includes('松戸') || stationName.includes('柏')) {
-    lineOptions.push(
-      { key: 'TC', name: '土浦線', code: 'TC', color: '#10B981' },
-      { key: 'SC', name: '埼千環状線', code: 'SC', color: '#EC4899' }
-    );
-  }
-
-  if (lineOptions.length > 0) {
-    return lineOptions;
-  }
-
-  // デフォルトは登録された路線
-  if (primaryLine.includes('神埼高速') || primaryLine.includes('NI')) {
-    return [{ key: 'NI', name: '神埼高速線', code: 'NI', color: '#3B82F6' }];
-  } else if (primaryLine.includes('神埼線') || primaryLine.includes('Y')) {
-    return [{ key: 'Y', name: '神埼線', code: 'Y', color: '#8B5CF6' }];
-  } else if (primaryLine.includes('環状') || primaryLine.includes('SC')) {
-    return [{ key: 'SC', name: '埼千環状線', code: 'SC', color: '#EC4899' }];
-  }
-  return [{ key: 'TC', name: '土浦線', code: 'TC', color: '#10B981' }];
-};
-
-// 路線・種別ごとの停車駅マップ
-const LINE_STOP_STATIONS: Record<string, Record<string, string[]>> = {
-  TC: { // 土浦線
-    '普通': [],
-    '各停': [],
-    '区間快速': [
-      '松戸', '新松戸', '松が丘', '柏', '守谷', '谷井田', '森の里', '荒川沖', '土浦',
-      '高浜', '茨城空港', '鹿島旭', '大洗', '那珂湊', '平磯', 'ひたちなか海浜公園', '日立'
-    ],
-    '快速': ['松戸', '柏', '守谷', '谷井田', '森の里', '土浦', '高浜', '茨城空港', '平磯', 'ひたちなか海浜公園', '日立'],
-    '特別快速': ['松戸', '柏', '土浦', '高浜', '茨城空港'],
-    '通勤特快': ['松戸', '柏', '守谷', '森の里', '高浜', '茨城空港'],
-    '特急めぐり': ['松戸', '柏', '土浦', 'ひたちなか海浜公園', '日立'],
-  },
-  Y: { // 神埼線
-    '各停': [],
-    '普通': [],
-    '急行': [
-      '東京', '北千住', '草加', '越谷レイクタウン', '大宮',
-      '朝霞台', 'ひばりヶ丘', '調布', '生田', '溝の口', '新横浜', '横浜'
-    ],
-    '特急Nライナー': [
-      '東京', '北千住', '越谷レイクタウン', '大宮',
-      'ひばりヶ丘', '調布', '溝の口', '新横浜', '横浜'
-    ],
-    '特急（Nライナー）': [
-      '東京', '北千住', '越谷レイクタウン', '大宮',
-      'ひばりヶ丘', '調布', '溝の口', '新横浜', '横浜'
-    ],
-  },
-  NI: { // 神埼高速線
-    '各停': [],
-    '普通': [],
-    '急行': ['東京', '新橋', '品川', '川崎', '横浜'],
-    '特急めぐり': ['東京', '品川', '川崎', '横浜'],
-  },
-  SC: { // 埼千環状線
-    '各停': [],
-    '普通': [],
-    '快速': ['東京', '南千住', '北千住', '松戸', '柏', '春日部', '地下鉄岩槻', '大宮', 'さいたま新都心', '川口', '赤羽', '小竹向原', '池袋', '新宿'],
-    '急行': ['東京', '北千住', '松戸', '柏', '春日部', '地下鉄岩槻', '大宮', '池袋', '新宿'],
-    '特急（サークルエクスプレス）': ['東京', '松戸', '柏', '大宮', '池袋', '新宿'],
-  },
-};
-
-const isTrainStoppingAtStation = (lineKey: string, trainType: string, stationName: string): boolean => {
-  const lineStops = LINE_STOP_STATIONS[lineKey];
-  if (!lineStops) return true;
-
-  const stops = lineStops[trainType];
-  if (!stops || stops.length === 0) return true;
-
-  return stops.some((s) => stationName.includes(s) || s.includes(stationName));
-};
-
-const getStoppingTrainTypesAndRatio = (
-  lineKey: string,
-  stationName: string
-): { availableTypes: { trainType: string; weight: number }[]; ratio: number } => {
-  let allTypes: { trainType: string; weight: number }[] = [];
-
-  if (lineKey === 'TC') {
-    allTypes = [
-      { trainType: '特急めぐり', weight: 1 },
-      { trainType: '通勤特快', weight: 1 },
-      { trainType: '特別快速', weight: 1.5 },
-      { trainType: '快速', weight: 2 },
-      { trainType: '区間快速', weight: 2.5 },
-      { trainType: '普通', weight: 5 },
-    ];
-  } else if (lineKey === 'Y') {
-    allTypes = [
-      { trainType: '特急（Nライナー）', weight: 1.5 },
-      { trainType: '急行', weight: 3.5 },
-      { trainType: '区間急行', weight: 3 },
-      { trainType: '各停', weight: 6 },
-    ];
-  } else if (lineKey === 'NI') {
-    allTypes = [
-      { trainType: '特急めぐり', weight: 2 },
-      { trainType: '急行', weight: 3 },
-      { trainType: '各停', weight: 5 },
-    ];
-  } else if (lineKey === 'SC') {
-    allTypes = [
-      { trainType: '特急（サークルエクスプレス）', weight: 1.5 },
-      { trainType: '急行', weight: 2.5 },
-      { trainType: '快速', weight: 3.5 },
-      { trainType: '各停', weight: 5.5 },
-    ];
-  } else {
-    allTypes = [{ trainType: '各停', weight: 1 }];
-  }
-
-  const totalWeight = allTypes.reduce((sum, item) => sum + item.weight, 0);
-  const availableTypes = allTypes.filter((item) =>
-    isTrainStoppingAtStation(lineKey, item.trainType, stationName)
-  );
-
-  const availableWeight = availableTypes.reduce((sum, item) => sum + item.weight, 0);
-  const ratio = totalWeight > 0 ? availableWeight / totalWeight : 1;
-
-  if (availableTypes.length === 0) {
-    const fallbackType = lineKey === 'Y' || lineKey === 'NI' || lineKey === 'SC' ? '各停' : '普通';
-    return {
-      availableTypes: [{ trainType: fallbackType, weight: 1 }],
-      ratio: 1,
-    };
-  }
-
-  return { availableTypes, ratio };
-};
-
-// シード値を用いた確定的擬似乱数生成関数
-function seededRandom(seed: number): number {
-  let x = Math.sin(seed) * 10000;
-  return x - Math.floor(x);
-}
-
-function stringToSeed(str: string): number {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = (hash << 5) - hash + str.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash) + 1;
-}
-
-// 路線内での駅の並び順(0始まり)。見つからなければ -1
-const getStationOrder = (lineKey: string, name: string): number => {
-  const stations = REGISTERABLE_LINES.find((l) => l.code === lineKey)?.stations;
-  if (!stations) return -1;
-  const exact = stations.findIndex((s) => s.name === name);
-  if (exact >= 0) return exact;
-  return stations.findIndex((s) => s.name.startsWith(name) || name.startsWith(s.name));
-};
-
-// 行き先が、そのホームの進行方向(1番線=下り=駅番号が増える側 / 2番線=上り)にあるか
-// 環状線(SC)や並びが分からない行き先は常に有効とする
-const isDestinationInDirection = (
-  lineKey: string,
-  stationName: string,
-  platform: 1 | 2,
-  destination: string
-): boolean => {
-  if (lineKey === 'SC') return true;
-  const from = getStationOrder(lineKey, stationName);
-  const to = getStationOrder(lineKey, destination);
-  if (from < 0 || to < 0) return true;
-  return platform === 1 ? to > from : to < from;
-};
-
-// 単一路線に特化した決定論的列車生成ロジック
-const generateDeterministicDepartureForLine = (
-  lineKey: string,
-  stationName: string,
-  platform: 1 | 2,
-  baseTimestamp: number
-): DynamicDeparture => {
-  const seed = stringToSeed(`${lineKey}_${stationName}_${platform}_${baseTimestamp}`);
-
-  const lineNames: Record<string, string> = {
-    Y: '神埼線',
-    NI: '神埼高速線',
-    SC: '埼千環状線',
-    TC: '土浦線',
-  };
-  const fullLineName = lineNames[lineKey] || '神埼線';
-
-  const { availableTypes } = getStoppingTrainTypesAndRatio(lineKey, stationName);
-  const totalWeight = availableTypes.reduce((sum, item) => sum + item.weight, 0);
-  let randomVal = seededRandom(seed + 1) * totalWeight;
-  let trainType = availableTypes[0]?.trainType || '各停';
-
-  for (const item of availableTypes) {
-    if (randomVal < item.weight) {
-      trainType = item.trainType;
-      break;
-    }
-    randomVal -= item.weight;
-  }
-
-  let rawDestinations: string[] = [];
-
-  // 1. 土浦線 (TC)
-  if (lineKey === 'TC') {
-    if (platform === 1) {
-      rawDestinations = ['守谷', '土浦', '茨城空港', '大洗', 'ひたちなか海浜公園', '日立'];
-    } else {
-      rawDestinations = ['新松戸', '松戸'];
-    }
-  }
-  // 2. 神埼線 (Y)
-  else if (lineKey === 'Y') {
-    if (trainType.includes('特急')) {
-      rawDestinations = platform === 1 ? ['大宮', '新横浜', '横浜'] : ['東京', '北千住'];
-    } else if (platform === 1) {
-      rawDestinations = ['草加', '越谷レイクタウン', '地下鉄岩槻', '大宮', '朝霞台', '田無', '調布', '新横浜', '横浜'];
-    } else {
-      rawDestinations = ['東京', '浅草', '北千住', '大宮'];
-    }
-  }
-  // 3. 神埼高速線 (NI)
-  else if (lineKey === 'NI') {
-    if (platform === 1) {
-      rawDestinations = ['品川', '川崎', '横浜'];
-    } else {
-      rawDestinations = ['新橋', '東京'];
-    }
-  }
-  // 4. 埼千環状線 (SC)
-  else if (lineKey === 'SC') {
-    if (platform === 1) {
-      rawDestinations = ['北千住', '松戸', '柏', '春日部', '大宮', '新宿', '外回り(新宿方面)'];
-    } else {
-      rawDestinations = ['新宿', '池袋', '小竹向原', '川口', '大宮', '東京', '内回り(東京方面)'];
-    }
-  }
-
-  // 自駅と、進行方向と逆にある駅を行き先から排除
-  const filteredDestinations = rawDestinations.filter(
-    (d) => !d.includes(stationName) && d !== stationName && isDestinationInDirection(lineKey, stationName, platform, d)
-  );
-  const destIdx = Math.floor(seededRandom(seed + 2) * (filteredDestinations.length || 1));
-  let destination: string;
-  if (filteredDestinations.length > 0) {
-    destination = filteredDestinations[destIdx];
-  } else if (lineKey === 'SC') {
-    destination = platform === 1 ? '大宮' : '新宿';
-  } else {
-    // 終着駅で進行方向に行き先が無い場合は、反対方向の終点へ向かう折り返し列車にする
-    const stations = REGISTERABLE_LINES.find((l) => l.code === lineKey)?.stations || [];
-    const fromEnd = getStationOrder(lineKey, stationName) === 0;
-    destination = (fromEnd ? stations[stations.length - 1] : stations[0])?.name || stationName;
-  }
-
-  const d = new Date(baseTimestamp);
-  const minutesFromMidnight = d.getHours() * 60 + d.getMinutes();
-  const hours = String(d.getHours()).padStart(2, '0');
-  const minutes = String(d.getMinutes()).padStart(2, '0');
-
-  const schedule = getLineSchedule(fullLineName);
-  let isFirstTrain = false;
-  let isLastTrain = false;
-
-  if (
-    minutesFromMidnight >= schedule.firstTrainMin &&
-    minutesFromMidnight < schedule.firstTrainMin + 20
-  ) {
-    isFirstTrain = true;
-    let firstDest = destination;
-    if (lineKey === 'TC') firstDest = platform === 1 ? '日立' : '松戸';
-    else if (lineKey === 'Y') firstDest = platform === 1 ? '大宮' : '東京';
-    else if (lineKey === 'NI') firstDest = platform === 1 ? '横浜' : '東京';
-    else if (lineKey === 'SC') firstDest = platform === 1 ? '大宮' : '東京';
-    if (firstDest !== stationName && isDestinationInDirection(lineKey, stationName, platform, firstDest)) {
-      destination = firstDest;
-    }
-  }
-
-  const isAroundLastTrain =
-    (schedule.lastTrainMin === 0 && (minutesFromMidnight >= 23 * 60 + 45 || minutesFromMidnight === 0)) ||
-    (schedule.lastTrainMin > 0 &&
-      ((minutesFromMidnight >= 23 * 60 + 50) ||
-        (minutesFromMidnight >= 0 && minutesFromMidnight <= schedule.lastTrainMin)));
-
-  if (isAroundLastTrain) {
-    isLastTrain = true;
-    let lastDest = destination;
-    if (lineKey === 'TC') lastDest = platform === 1 ? '鹿島旭' : '松戸';
-    else if (lineKey === 'Y') lastDest = platform === 1 ? '大宮' : '東京';
-    else if (lineKey === 'NI') lastDest = platform === 1 ? '横浜' : '東京';
-    else if (lineKey === 'SC') lastDest = platform === 1 ? '大宮' : '新宿';
-    if (lastDest !== stationName && isDestinationInDirection(lineKey, stationName, platform, lastDest)) {
-      destination = lastDest;
-    }
-  }
-
-  const originStations = ['松戸', '土浦', '東京', '大宮', '横浜', '池袋', '新宿'];
-  const isSC = lineKey === 'SC';
-  const isOrigin = !isSC && platform === 1 && originStations.some((s) => stationName.includes(s));
-
-  const lineCodeToId: Record<string, string> = {
-    Y: 'kanzaki',
-    NI: 'kanzaki_kosoku',
-    SC: 'saichi',
-    TC: 'tsuchiura',
-  };
-  const lineId = lineCodeToId[lineKey] || 'kanzaki';
-  const effectiveDelay = disruptionManager.getEffectiveDelayForTrain(lineId, baseTimestamp, platform, { stationName });
-
-  return {
-    id: `train-${lineKey}-${stationName}-${platform}-${baseTimestamp}`,
-    lineName: fullLineName,
-    trainType,
-    destination,
-    departureTime: `${hours}:${minutes}`,
-    departureTimestamp: baseTimestamp,
-    isFirstTrain,
-    isLastTrain,
-    isOrigin,
-    delayMinutes: effectiveDelay.delayMinutes,
-    isSuspended: effectiveDelay.isSuspended,
-  };
-};
-
-// 確定的な駅別発車リスト生成関数（複数路線駅は乱数・確率的に路線をミックス）
-const getDeterministicDeparturesForStation = (
-  station: RegisterableStation,
-  platform: 1 | 2,
-  baseTimestamp: number,
-  limit: number = 3
-): DynamicDeparture[] => {
-  const stationName = station.name || '';
-  const possibleLines = getPossibleLinesForStation(stationName, station.lineName || '');
-
-  // 1路線のみで公式時刻表（土浦線専用駅）がある場合
-  if (possibleLines.length === 1 && possibleLines[0].key === 'TC') {
-    const tcList = getTsuchiuraDeparturesForStation(stationName, platform, baseTimestamp, limit);
-    if (tcList.length > 0) {
-      return tcList.map((dep) => {
-        const eff = disruptionManager.getEffectiveDelayForTrain('tsuchiura', dep.departureTimestamp || dep.id, platform, { stationName });
-        return {
-          ...dep,
-          delayMinutes: eff.delayMinutes,
-          isSuspended: eff.isSuspended,
-        };
-      });
-    }
-  }
-
-  // 複数路線乗り入れ駅または一般駅：3〜4分間隔で乱数的に路線を振り分けて列車を生成
-  const intervalMinutes = 4;
-  const offsetMinutes = platform === 1 ? 1 : 3;
-  const result: DynamicDeparture[] = [];
-  const baseDate = new Date(baseTimestamp);
-
-  const startMs = new Date(
-    baseDate.getFullYear(),
-    baseDate.getMonth(),
-    baseDate.getDate(),
-    baseDate.getHours(),
-    0,
-    0,
-    0
-  ).getTime();
-
-  for (let min = 0; min <= 360; min += intervalMinutes) {
-    const ts = startMs + (min + offsetMinutes) * 60 * 1000;
-    if (ts >= baseTimestamp - 30 * 1000) {
-      // 乱数シードを用いてその駅の乗り入れ路線からランダムに1本選出
-      const seed = stringToSeed(`${stationName}_${platform}_${ts}`);
-      const lineIdx = Math.floor(seededRandom(seed) * possibleLines.length);
-      const chosenLine = possibleLines[lineIdx] || possibleLines[0];
-
-      result.push(generateDeterministicDepartureForLine(chosenLine.key, stationName, platform, ts));
-      if (result.length >= limit) break;
-    }
-  }
-
-  return result;
-};
-
 export const MyStationCard: React.FC<MyStationCardProps> = ({
   registeredStations,
   onActiveStationChange,
@@ -699,12 +194,38 @@ export const MyStationCard: React.FC<MyStationCardProps> = ({
   const safeIndex = Math.min(activeIndex, Math.max(0, displayStations.length - 1));
   const currentStation = displayStations[safeIndex];
 
-  // 現在時刻(now)・駅・ホーム(platform)に基づく確定的列車リスト(常に3本維持)
-  // 描画と同時に計算する(初回描画で空のまま夜間バナーが一瞬出るのを防ぐ)
-  const departures: DynamicDeparture[] = React.useMemo(() => {
-    if (!isLineInService(currentStation.lineName, now)) return [];
-    return getDeterministicDeparturesForStation(currentStation, platform, now, 3);
-  }, [now, platform, currentStation.name, currentStation.lineName]);
+  // 全駅ダイヤ(小分けJSON)の読み込み。駅ごとに必要な分だけ読み、2回目以降は読み込み済みのものを使う
+  const [, setLoadTick] = useState(0);
+  const [boardError, setBoardError] = useState(false);
+  const [boardRetry, setBoardRetry] = useState(0);
+  const boardData: BoardData | undefined = getCachedBoardData(currentStation.name);
+
+  useEffect(() => {
+    if (getCachedBoardData(currentStation.name)) {
+      setBoardError(false);
+      return;
+    }
+    let alive = true;
+    setBoardError(false);
+    loadBoardData(currentStation.name)
+      .then(() => {
+        if (alive) setLoadTick((t) => t + 1);
+      })
+      .catch(() => {
+        if (alive) setBoardError(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [currentStation.name, boardRetry]);
+
+  // 現在時刻(now)・駅・ホーム(platform)に基づく発車リスト(常に3本)
+  // 描画と同時に計算する(読み込み前は null にして、運行終了のバナーを誤って出さない)
+  const board: BoardResult | null = React.useMemo(
+    () => (boardData ? computeBoard(boardData, platform, now, 3) : null),
+    [boardData, platform, now]
+  );
+  const departures: DynamicDeparture[] = board?.departures ?? [];
 
   // GPSによる最寄駅の完全独立判定（マイ駅リスト registeredStations には一切追加・干渉しない）
   useEffect(() => {
@@ -898,7 +419,28 @@ export const MyStationCard: React.FC<MyStationCardProps> = ({
 
       {/* 3 Dynamic Departure Cards or Night Service Over Notice */}
       <div className="space-y-2 relative">
-        {!isLineInService(currentStation.lineName, now) || departures.length === 0 ? (
+        {boardError ? (
+          <div className="bg-white border border-[#E6E2EE] rounded-2xl p-4 text-center space-y-2 shadow-xs">
+            <p className="text-sm font-bold text-[#221C35]">時刻表を読み込めませんでした</p>
+            <p className="text-[11px] text-[#716986]">通信状況をご確認のうえ、もう一度お試しください。</p>
+            <button
+              type="button"
+              onClick={() => setBoardRetry((n) => n + 1)}
+              className="px-3 py-1.5 rounded-lg bg-[#5B21B6] text-white text-xs font-bold cursor-pointer"
+            >
+              再読み込み
+            </button>
+          </div>
+        ) : !board ? (
+          <div className="bg-white border border-[#E6E2EE] rounded-2xl p-4 text-center text-xs text-[#716986] shadow-xs">
+            時刻表を読み込み中…
+          </div>
+        ) : board.status === 'terminal' ? (
+          <div className="bg-white border border-[#E6E2EE] rounded-2xl p-4 text-center space-y-1 shadow-xs">
+            <p className="text-sm font-bold text-[#221C35]">この番線から発車する列車はありません</p>
+            <p className="text-[11px] text-[#716986]">終着駅のため、この方向は到着のみです。もう一方の番線をご覧ください。</p>
+          </div>
+        ) : board.status === 'ended' ? (
           <div className="bg-gradient-to-br from-[#1E1B2E] via-[#2A2440] to-[#1E1B2E] border border-purple-800/50 text-white rounded-2xl p-4 sm:p-5 shadow-md space-y-3 relative overflow-hidden">
             {/* Subtle glow background element */}
             <div className="absolute -top-12 -right-12 w-36 h-36 bg-purple-500/20 rounded-full blur-2xl pointer-events-none" />
@@ -924,20 +466,19 @@ export const MyStationCard: React.FC<MyStationCardProps> = ({
 
             {/* Schedule Info Box & Real-time Countdown */}
             {(() => {
-              const sched = getLineSchedule(currentStation.lineName);
-              const d = new Date(now);
-              const currentMinutes = d.getHours() * 60 + d.getMinutes();
-              let diffMin = sched.firstTrainMin - currentMinutes;
-              if (diffMin <= 0) diffMin += 24 * 60;
+              const untilFirst = board.untilFirstSec ?? 0;
+              const diffMin = Math.max(1, Math.ceil(untilFirst / 60));
               const hoursLeft = Math.floor(diffMin / 60);
               const minsLeft = diffMin % 60;
+              const firstLabel = formatDiaTime(board.firstSec ?? 0);
+              const lastLabel = formatDiaTime(board.lastSec ?? 0);
 
               return (
                 <div className="bg-black/30 backdrop-blur-xs rounded-xl p-3 border border-white/10 space-y-2.5 text-xs">
                   <div className="flex items-center justify-between bg-purple-950/60 p-2.5 rounded-lg border border-purple-400/20">
                     <span className="text-purple-200 text-xs font-bold flex items-center gap-1.5">
                       <Clock className="w-4 h-4 text-purple-300 animate-spin" />
-                      明日の初電 ({sched.firstTrain}発) まで
+                      次の初電 ({firstLabel}発) まで
                     </span>
                     <span className="text-sm font-extrabold text-amber-300 font-mono">
                       あと {hoursLeft > 0 ? `${hoursLeft}時間 ` : ''}{minsLeft}分
@@ -947,28 +488,24 @@ export const MyStationCard: React.FC<MyStationCardProps> = ({
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-0.5 bg-white/5 p-2 rounded-lg">
                       <span className="text-[10px] text-purple-300 font-medium flex items-center gap-1">
-                        <Clock className="w-3 h-3 text-purple-300" /> 明日の初電時刻
+                        <Clock className="w-3 h-3 text-purple-300" /> 初電時刻
                       </span>
                       <div className="text-base font-extrabold text-white font-mono">
-                        {sched.firstTrain} <span className="text-[10px] font-normal text-purple-200">({sched.firstTrainStation}発)</span>
+                        {firstLabel} <span className="text-[10px] font-normal text-purple-200">(当駅発)</span>
                       </div>
                     </div>
 
                     <div className="space-y-0.5 bg-white/5 p-2 rounded-lg">
                       <span className="text-[10px] text-purple-300 font-medium flex items-center gap-1">
-                        <Clock className="w-3 h-3 text-rose-400" /> 本日の終電時刻
+                        <Clock className="w-3 h-3 text-rose-400" /> 終電時刻
                       </span>
                       <div className="text-base font-extrabold text-white font-mono">
-                        {sched.lastTrain} <span className="text-[10px] font-normal text-purple-200">({sched.lastTrainStation}発)</span>
+                        {lastLabel} <span className="text-[10px] font-normal text-purple-200">(当駅発)</span>
                       </div>
                     </div>
                   </div>
 
-                  <div className="pt-1 border-t border-white/10 text-[11px] text-purple-200/90 flex items-center justify-between gap-1 flex-wrap">
-                    <span className="flex items-center gap-1">
-                      <Sparkles className="w-3 h-3 text-amber-300 shrink-0" />
-                      運用メモ: {sched.nightNote}
-                    </span>
+                  <div className="pt-1 border-t border-white/10 text-[11px] text-purple-200/90 flex items-center justify-end gap-1 flex-wrap">
                     <span className="text-[10px] text-amber-300 font-mono font-bold">神埼鉄道中央指令所</span>
                   </div>
                 </div>
