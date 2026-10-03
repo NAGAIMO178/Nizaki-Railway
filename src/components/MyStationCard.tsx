@@ -624,7 +624,7 @@ export const MyStationCard: React.FC<MyStationCardProps> = ({
       </div>
 
       <p className="text-[10px] text-[#857D99] text-center leading-relaxed px-2">
-        ※発車案内は模擬ダイヤに基づく表示です(実在の運行ではありません)。
+        ※発車案内と遅れは模擬ダイヤに基づく表示です(実在の運行ではありません)。
       </p>
     </div>
   );
