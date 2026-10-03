@@ -474,8 +474,35 @@ function notifyListeners() {
 
 // 管理者コンソールでの変更を、アプリ・LINE共有のGASバックエンドへ反映
 // (失敗してもローカル表示は継続。次回のsyncFromServerで復帰する)
+const ADMIN_TOKEN_STORAGE_KEY = 'nizaki_admin_token';
+
+export const getAdminToken = (): string => {
+  try {
+    return localStorage.getItem(ADMIN_TOKEN_STORAGE_KEY) || '';
+  } catch {
+    return '';
+  }
+};
+
+export const setAdminToken = (token: string): void => {
+  try {
+    if (token) localStorage.setItem(ADMIN_TOKEN_STORAGE_KEY, token);
+    else localStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY);
+  } catch {}
+};
+
+export const DISRUPTION_PUSH_EVENT = 'nizaki-disruption-push';
+
+function reportPushResult(ok: boolean, message?: string) {
+  try {
+    window.dispatchEvent(new CustomEvent(DISRUPTION_PUSH_EVENT, { detail: { ok, message } }));
+  } catch {}
+}
+
 function pushDisruptionsToServer(disruptions: Record<string, LineDisruption>, forecasts: OperationForecast[]) {
-  callGas('setDisruptions', { disruptions, forecasts }).catch(() => {});
+  callGas('setDisruptions', { disruptions, forecasts, adminToken: getAdminToken() })
+    .then((res) => reportPushResult(res.status === 'success', res.message))
+    .catch(() => reportPushResult(false, '通信に失敗しました。'));
 }
 
 export const disruptionManager = {

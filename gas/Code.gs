@@ -48,11 +48,9 @@ function doPost(e) {
 
     const json = JSON.parse(e.postData.contents);
 
-    // ① Webアプリからの特急予約登録
-    if (json.action === 'createReservation' || json.order) {
-      const orderData = json.order || json;
-      const saved = saveOrderToSheet(orderData);
-      return createJsonResponse({ status: 'success', saved: saved });
+    // ① Webアプリからの特急予約登録(現在は無効。未認証で台帳に書き込めてしまうため受け付けない)
+    if (json.action === 'createReservation') {
+      return createJsonResponse({ status: 'error', message: 'この操作は現在受け付けていません。' });
     }
 
     // ①.5 神埼ID 会員認証まわり（LINE経由の新規登録／ログイン）
@@ -74,7 +72,7 @@ function doPost(e) {
       return handleGetDisruptions();
     }
     if (json.action === 'setDisruptions') {
-      return handleSetDisruptions(json.disruptions, json.forecasts);
+      return handleSetDisruptions(json.disruptions, json.forecasts, json.adminToken);
     }
 
     // ② LINE Messaging APIからのWebhookイベント
@@ -299,7 +297,11 @@ function handleGetDisruptions() {
 /**
  * ② 管理者コンソールからの運行支障情報の保存
  */
-function handleSetDisruptions(disruptions, forecasts) {
+function handleSetDisruptions(disruptions, forecasts, adminToken) {
+  // 管理トークン(スクリプトプロパティ ADMIN_TOKEN)が未設定、または一致しなければ書き換えさせない
+  if (!isValidAdminToken(adminToken)) {
+    return createJsonResponse({ status: 'error', message: '管理トークンが正しくないか、サーバーに設定されていません。' });
+  }
   const props = PropertiesService.getScriptProperties();
   const data = { disruptions: disruptions || {}, forecasts: forecasts || [] };
   props.setProperty(DISRUPTIONS_PROPERTY_KEY, JSON.stringify(data));
@@ -468,16 +470,20 @@ const SHEET_MEMBERS = '会員台帳';
  */
 function handleLogin(email, password) {
   email = (email || '').trim().toLowerCase();
+  if (isLoginLocked(email)) return loginLockedResponse();
   const member = findMemberByEmail(email);
 
   if (!member) {
+    recordLoginFailure(email);
     return createJsonResponse({ status: 'error', message: 'メールアドレスまたはパスワードが正しくありません。' });
   }
 
   const inputHash = hashPassword(password, member.salt);
   if (inputHash !== member.passwordHash) {
+    recordLoginFailure(email);
     return createJsonResponse({ status: 'error', message: 'メールアドレスまたはパスワードが正しくありません。' });
   }
+  clearLoginFailures(email);
 
   return createJsonResponse({
     status: 'success',
@@ -490,16 +496,20 @@ function handleLogin(email, password) {
  */
 function handleDeleteAccount(email, password) {
   email = (email || '').trim().toLowerCase();
+  if (isLoginLocked(email)) return loginLockedResponse();
   const member = findMemberByEmail(email);
 
   if (!member) {
+    recordLoginFailure(email);
     return createJsonResponse({ status: 'error', message: 'メールアドレスまたはパスワードが正しくありません。' });
   }
 
   const inputHash = hashPassword(password, member.salt);
   if (inputHash !== member.passwordHash) {
+    recordLoginFailure(email);
     return createJsonResponse({ status: 'error', message: 'メールアドレスまたはパスワードが正しくありません。' });
   }
+  clearLoginFailures(email);
 
   // 台帳に残る記録からLINEユーザーIDを消し、個人と結びつかない形にする(失敗時は会員行を消さずエラーにして再試行できるようにする)
   anonymizeLineUserId(member.lineUserId);
@@ -623,8 +633,9 @@ function handleVerifyLineAndRegister(email, password, token, code, name) {
     return createJsonResponse({ status: 'error', message: 'メールアドレスの形式が正しくありません。' });
   }
 
-  if (findMemberByEmail(email)) {
-    return createJsonResponse({ status: 'error', message: 'このメールアドレスは既に登録されています。ログインをお試しください。' });
+  const passwordError = validatePasswordServer(password);
+  if (passwordError) {
+    return createJsonResponse({ status: 'error', message: passwordError });
   }
 
   const normalizedToken = (token || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -636,24 +647,57 @@ function handleVerifyLineAndRegister(email, password, token, code, name) {
 
   const data = JSON.parse(raw);
   if (String(code).trim() !== data.code) {
+    // 認証コードの当てずっぽうを防ぐ(5回間違えたらこの合言葉は無効)
+    const failKey = 'line_otp_fail_' + normalizedToken;
+    const fails = Number(cache.get(failKey) || 0) + 1;
+    if (fails >= 5) {
+      cache.remove('line_otp_' + normalizedToken);
+      cache.remove(failKey);
+      return createJsonResponse({ status: 'error', message: '認証コードの誤りが続いたため、合言葉を無効にしました。最初からやり直してください。' });
+    }
+    cache.put(failKey, String(fails), 600);
     return createJsonResponse({ status: 'error', message: '認証コードが正しくありません。' });
   }
 
-  const salt = Utilities.getUuid();
-  const passwordHash = hashPassword(password, salt);
-  const memberId = 'KZ-' + Math.floor(10000 + Math.random() * 90000);
-  const joinDate = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
+  // 同時登録による重複(同じメール・同じ会員ID)を防ぐため、台帳への書き込み中は排他する
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+  } catch (err) {
+    return createJsonResponse({ status: 'error', message: '混み合っています。しばらくしてからもう一度お試しください。' });
+  }
 
-  const sheet = getOrCreateMembersSheet();
-  const timestamp = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm:ss');
-  sheet.appendRow([timestamp, email, memberId, name || email.split('@')[0], salt, passwordHash, 'レギュラー', joinDate, data.lineUserId || '']);
+  try {
+    if (findMemberByEmail(email)) {
+      return createJsonResponse({ status: 'error', message: 'このメールアドレスは既に登録されています。ログインをお試しください。' });
+    }
 
-  cache.remove('line_otp_' + normalizedToken);
+    const sheet = getOrCreateMembersSheet();
+    const existingIds = {};
+    const memberData = sheet.getDataRange().getValues();
+    const idCol = memberData[0].indexOf('会員ID');
+    for (let i = 1; i < memberData.length; i++) existingIds[String(memberData[i][idCol])] = true;
 
-  return createJsonResponse({
-    status: 'success',
-    user: { memberId: memberId, name: name || email.split('@')[0], email: email, rank: 'レギュラー', joinDate: joinDate }
-  });
+    let memberId = 'KZ-' + Math.floor(10000 + Math.random() * 90000);
+    for (let tries = 0; existingIds[memberId] && tries < 50; tries++) {
+      memberId = 'KZ-' + Math.floor(10000 + Math.random() * 90000);
+    }
+
+    const salt = Utilities.getUuid();
+    const passwordHash = hashPassword(password, salt);
+    const joinDate = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
+    const timestamp = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm:ss');
+    sheet.appendRow([timestamp, email, memberId, name || email.split('@')[0], salt, passwordHash, 'レギュラー', joinDate, data.lineUserId || '']);
+
+    cache.remove('line_otp_' + normalizedToken);
+
+    return createJsonResponse({
+      status: 'success',
+      user: { memberId: memberId, name: name || email.split('@')[0], email: email, rank: 'レギュラー', joinDate: joinDate }
+    });
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /**
@@ -674,6 +718,57 @@ function hashPassword(password, salt) {
     const v = (byte < 0 ? byte + 256 : byte).toString(16);
     return v.length === 1 ? '0' + v : v;
   }).join('');
+}
+
+/**
+ * 管理トークンの照合(スクリプトプロパティ ADMIN_TOKEN と一致するか)
+ */
+function isValidAdminToken(token) {
+  const expected = PropertiesService.getScriptProperties().getProperty('ADMIN_TOKEN');
+  return !!expected && typeof token === 'string' && token === expected;
+}
+
+/**
+ * パスワード規則のサーバー側チェック(クライアントと同じ条件)
+ */
+function validatePasswordServer(pw) {
+  pw = String(pw || '');
+  if (pw.length < 6) return 'パスワードは6文字以上で入力してください。';
+  if (pw.length > 128) return 'パスワードが長すぎます。';
+  if (!/[a-z]/.test(pw)) return 'パスワードには英字の小文字を1文字以上含めてください。';
+  if (!/[A-Z]/.test(pw)) return 'パスワードには英字の大文字を1文字以上含めてください。';
+  if (!/[0-9]/.test(pw)) return 'パスワードには数字を1文字以上含めてください。';
+  if (!/[!-\/:-@\[-`{-~]/.test(pw)) return 'パスワードには記号を1文字以上含めてください。';
+  return null;
+}
+
+// ログイン失敗の回数制限(同一メールで10分間に5回まで)
+const LOGIN_MAX_FAILURES = 5;
+const LOGIN_LOCK_SECONDS = 600;
+
+function loginFailureKey(email) {
+  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, 'login_fail:' + email, Utilities.Charset.UTF_8);
+  return 'login_fail_' + Utilities.base64EncodeWebSafe(digest);
+}
+
+function isLoginLocked(email) {
+  const count = Number(CacheService.getScriptCache().get(loginFailureKey(email)) || 0);
+  return count >= LOGIN_MAX_FAILURES;
+}
+
+function recordLoginFailure(email) {
+  const cache = CacheService.getScriptCache();
+  const key = loginFailureKey(email);
+  const count = Number(cache.get(key) || 0) + 1;
+  cache.put(key, String(count), LOGIN_LOCK_SECONDS);
+}
+
+function clearLoginFailures(email) {
+  CacheService.getScriptCache().remove(loginFailureKey(email));
+}
+
+function loginLockedResponse() {
+  return createJsonResponse({ status: 'error', message: 'ログインの失敗が続いたため、しばらくしてからお試しください(約10分)。' });
 }
 
 /**
