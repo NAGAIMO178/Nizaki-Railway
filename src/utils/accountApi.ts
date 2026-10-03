@@ -6,6 +6,7 @@ interface GasResponse {
   status: 'success' | 'error';
   message?: string;
   token?: string;
+  sessionToken?: string;
   user?: {
     memberId: string;
     name: string;
