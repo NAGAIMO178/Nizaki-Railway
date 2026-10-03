@@ -4,7 +4,7 @@ import { PhoneContainer } from './components/PhoneContainer';
 import { Header } from './components/Header';
 import { StatusCard } from './components/StatusCard';
 import { MyStationCard } from './components/MyStationCard';
-import { MyStationRegisterCard, RegisterableStation } from './components/MyStationRegisterCard';
+import { MyStationRegisterCard, RegisterableStation, REGISTERABLE_LINES } from './components/MyStationRegisterCard';
 import { FooterNav } from './components/FooterNav';
 import { TrainLocationTab } from './components/TrainLocationTab';
 import { ReservationTab } from './components/ReservationTab';
@@ -311,9 +311,17 @@ export default function App() {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) {
-          return parsed
-            .filter((st) => st && typeof st.name === 'string' && typeof st.lineName === 'string')
-            .slice(0, 3);
+          // 駅の名前・並びが変わっても壊れないよう、現在の駅一覧と照合して作り直す(無くなった駅は外す)
+          const normalized: RegisterableStation[] = [];
+          parsed.forEach((st) => {
+            if (!st || typeof st.name !== 'string' || typeof st.lineName !== 'string') return;
+            const line = REGISTERABLE_LINES.find((l) => l.name === st.lineName);
+            const found = line?.stations.find((s) => s.name === st.name);
+            if (line && found) {
+              normalized.push({ id: `${line.id}_${found.id}`, name: found.name, code: found.code, lineName: line.name });
+            }
+          });
+          if (normalized.length > 0) return normalized.slice(0, 3);
         }
       }
     } catch {}
