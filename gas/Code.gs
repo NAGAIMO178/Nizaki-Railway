@@ -14,6 +14,8 @@ const CHANNEL_ACCESS_TOKEN = '★ここにLINEのチャネルアクセストー�
 
 // シート名定義
 const SHEET_RESERVATIONS = '予約台帳';
+const SHEET_ACCESS = 'アクセス統計';
+const SHEET_ACCESS_SUMMARY = 'アクセス日計';
 const SHEET_COUPON_LOGS = 'クーポン発行ログ';
 
 const CONFIG = {
@@ -65,6 +67,11 @@ function doPost(e) {
     }
     if (json.action === 'verifyLineAndRegister') {
       return handleVerifyLineAndRegister(json.email, json.password, json.token, json.code, json.name);
+    }
+
+    // ①.55 アクセス数の記録(端末ごとの乱数ID・日付・起動回数のみ。個人情報は含まない)
+    if (json.action === 'accessPing') {
+      return handleAccessPing(json.deviceId, json.version);
     }
 
     // ①.6 運行情報・遅延指令(アプリ管理者コンソール・LINE応答で共有する単一の情報源)
@@ -469,6 +476,84 @@ function getOrCreateReservationsSheet() {
     });
   }
   return sheet;
+}
+
+/**
+ * アクセス数の記録用シート(日付, 端末ID, 起動回数, 初回起動, 最終起動, アプリ版数)
+ * 横の「アクセス日計」シートに、日ごとの端末数・起動回数を自動集計する
+ */
+function getOrCreateAccessSheet() {
+  const ss = getDataSpreadsheet();
+  let sheet = ss.getSheetByName(SHEET_ACCESS);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_ACCESS);
+    const headers = ['日付', '端末ID', '起動回数', '初回起動', '最終起動', 'アプリ版数'];
+    sheet.appendRow(headers);
+    sheet.getRange(1, 1, 1, headers.length).setBackground('#5B21B6').setFontColor('#FFFFFF').setFontWeight('bold');
+    sheet.getRange('A:A').setNumberFormat('@'); // 日付を文字列のまま保持する
+    sheet.setFrozenRows(1);
+
+    const summary = ss.insertSheet(SHEET_ACCESS_SUMMARY);
+    summary.getRange('A1').setFormula(
+      '=QUERY(\'' + SHEET_ACCESS + '\'!A:C, "select A, count(B), sum(C) where A is not null and A <> \'日付\' group by A order by A desc label A \'日付\', count(B) \'端末数\', sum(C) \'起動回数\'", 1)'
+    );
+  }
+  return sheet;
+}
+
+/**
+ * アプリを開いたことを1件記録する(同じ日・同じ端末は起動回数を増やす)
+ * 保存するのは、端末ごとに自動で作られる乱数ID・日付・起動回数・アプリ版数のみ
+ */
+function handleAccessPing(deviceId, version) {
+  const id = String(deviceId || '');
+  if (!/^[A-Za-z0-9-]{16,64}$/.test(id)) {
+    return createJsonResponse({ status: 'ignored' });
+  }
+
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+  } catch (err) {
+    return createJsonResponse({ status: 'ignored' });
+  }
+
+  try {
+    const sheet = getOrCreateAccessSheet();
+    const now = new Date();
+    const today = Utilities.formatDate(now, 'Asia/Tokyo', 'yyyy-MM-dd');
+    const nowText = Utilities.formatDate(now, 'Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss');
+    const ver = limitText(version, 20);
+
+    // 行は日付順に追記されるので、末尾から今日の分だけ調べる
+    const lastRow = sheet.getLastRow();
+    const startRow = Math.max(2, lastRow - 4999);
+    const todayRows = [];
+    let found = -1;
+    if (lastRow >= 2) {
+      const values = sheet.getRange(startRow, 1, lastRow - startRow + 1, 3).getValues();
+      for (let i = values.length - 1; i >= 0; i--) {
+        const d = values[i][0] instanceof Date
+          ? Utilities.formatDate(values[i][0], 'Asia/Tokyo', 'yyyy-MM-dd')
+          : String(values[i][0]);
+        if (d !== today) break;
+        todayRows.push(i);
+        if (String(values[i][1]) === id) { found = startRow + i; break; }
+      }
+    }
+
+    if (found > 0) {
+      const count = Number(sheet.getRange(found, 3).getValue()) || 0;
+      sheet.getRange(found, 3).setValue(count + 1);
+      sheet.getRange(found, 5, 1, 2).setValues([[nowText, ver]]);
+    } else if (todayRows.length < 3000) {
+      // 1日3000端末を超える記録は行わない(いたずらでシートが膨らむのを防ぐ)
+      sheet.appendRow([today, id, 1, nowText, nowText, ver]);
+    }
+    return createJsonResponse({ status: 'success' });
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function limitText(value, max) {
