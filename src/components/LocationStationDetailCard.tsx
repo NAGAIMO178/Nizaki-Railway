@@ -180,9 +180,6 @@ const OTHER_LINES_DATABASE: Record<string, OtherLineInfo[]> = {
     { name: '東武スカイツリーライン（伊勢崎線）', badge: '東武', bgClass: 'bg-amber-100 border-amber-300', textClass: 'text-amber-900', gateNotice: '東口・西口改札' },
     { name: '東武アーバンパークライン（野田線）', badge: '東武', bgClass: 'bg-amber-100 border-amber-300', textClass: 'text-amber-900', gateNotice: '7・8番線ホーム乗り換え' },
   ],
-  '岩槻': [
-    { name: '東武アーバンパークライン（野田線）', badge: '東武', bgClass: 'bg-amber-100 border-amber-300', textClass: 'text-amber-900', gateNotice: '橋上駅舎改札口' },
-  ],
   '大宮公園': [
     { name: '東武アーバンパークライン（野田線）', badge: '東武', bgClass: 'bg-amber-100 border-amber-300', textClass: 'text-amber-900', gateNotice: '大宮公園入口改札' },
   ],
@@ -192,11 +189,11 @@ const OTHER_LINES_DATABASE: Record<string, OtherLineInfo[]> = {
   '南浦和': [
     { name: 'JR東日本（京浜東北線・武蔵野線）', badge: 'JR', bgClass: 'bg-emerald-100 border-emerald-300', textClass: 'text-emerald-900', gateNotice: 'コンコース経由（階段・エレベーター）' },
   ],
-  '西青木': [
-    { name: '埼玉高速鉄道（鳩ヶ谷・川口元郷駅アクセスバス）', badge: 'バス', bgClass: 'bg-stone-100 border-stone-300', textClass: 'text-stone-900', gateNotice: '駅前バスのりば' },
-  ],
   '川口': [
     { name: 'JR東日本（京浜東北線）', badge: 'JR', bgClass: 'bg-emerald-100 border-emerald-300', textClass: 'text-emerald-900', gateNotice: 'JR川口駅 東口・西口改札' },
+  ],
+  '赤羽': [
+    { name: 'JR東日本（京浜東北線・埼京線・湘南新宿ライン・宇都宮線・高崎線）', badge: 'JR', bgClass: 'bg-emerald-100 border-emerald-300', textClass: 'text-emerald-900' },
   ],
   '志村坂上': [
     { name: '都営地下鉄三田線', badge: '地下鉄', bgClass: 'bg-blue-100 border-blue-300', textClass: 'text-blue-900', gateNotice: 'A1・A2出入口' },

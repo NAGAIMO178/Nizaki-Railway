@@ -166,13 +166,13 @@ const LINES_DATA: DisplayLine[] = [
       { id: 'SC06', code: 'SC06', name: '柏', transfers: ['TC', 'JR', '東武'] },
       { id: 'SC07', code: 'SC07', name: '七光台', transfers: ['Y', '東武'] },
       { id: 'SC08', code: 'SC08', name: '春日部', transfers: ['東武'] },
-      { id: 'SC09', code: 'SC09', name: '岩槻', transfers: ['東武'] },
+      { id: 'SC09', code: 'SC09', name: '地下鉄岩槻', transfers: ['Y', '地下鉄', '東武'] },
       { id: 'SC10', code: 'SC10', name: '大宮公園', transfers: ['東武'] },
       { id: 'SC11', code: 'SC11', name: '大宮', transfers: ['Y', 'JR', '新幹線', '東武', 'ニューシャトル'] },
       { id: 'SC12', code: 'SC12', name: 'さいたま新都心', transfers: ['JR'] },
       { id: 'SC13', code: 'SC13', name: '南浦和', transfers: ['JR'] },
-      { id: 'SC14', code: 'SC14', name: '西青木', transfers: ['バス'] },
-      { id: 'SC15', code: 'SC15', name: '川口', transfers: ['JR'] },
+      { id: 'SC14', code: 'SC14', name: '川口', transfers: ['JR'] },
+      { id: 'SC15', code: 'SC15', name: '赤羽', transfers: ['JR'] },
       { id: 'SC16', code: 'SC16', name: '志村坂上', transfers: ['地下鉄'] },
       { id: 'SC17', code: 'SC17', name: '上板橋', transfers: ['東武'] },
       { id: 'SC18', code: 'SC18', name: '小竹向原', transfers: ['地下鉄', '西武'] },
@@ -372,8 +372,8 @@ const LIVE_LINE_STOP_STATIONS: Record<string, Record<string, string[]>> = {
   },
   saichi_loop: {
     '各停': [
-      '東京', '南千住', '北千住', '綾瀬', '松戸', '柏', '七光台', '春日部', '岩槻',
-      '大宮公園', '大宮', 'さいたま新都心', '南浦和', '西青木', '川口', '志村坂上',
+      '東京', '南千住', '北千住', '綾瀬', '松戸', '柏', '七光台', '春日部', '地下鉄岩槻',
+      '大宮公園', '大宮', 'さいたま新都心', '南浦和', '川口', '赤羽', '志村坂上',
       '上板橋', '小竹向原', '池袋', '新宿'
     ],
     '急行': ['東京', '北千住', '松戸', '柏', '春日部', '大宮', '川口', '池袋', '新宿'],
