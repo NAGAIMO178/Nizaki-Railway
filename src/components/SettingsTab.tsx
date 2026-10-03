@@ -204,16 +204,16 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
         <div className="bg-white rounded-2xl p-4 border border-[#E6E2EE] shadow-xs space-y-3.5">
           {/* 神埼ID ログインステータス */}
           {isLoggedIn && currentUser ? (
-            <div className="bg-[#F8F7FC] rounded-xl p-3 border border-[#EDE9FE] flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5 min-w-0">
+            <div className="bg-[#F8F7FC] rounded-xl p-3 border border-[#EDE9FE] flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0 flex-1 basis-60">
                 <div className="w-10 h-10 rounded-full overflow-hidden shrink-0 shadow-2xs ring-2 ring-[#708BD6]/40">
                   <UserAvatar className="w-full h-full" />
                 </div>
                 <div className="space-y-0.5 min-w-0">
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 min-w-0">
                     <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-                    <span className="text-xs font-bold text-[#221C35] truncate">{currentUser.name} 様</span>
-                    <span className="text-[10px] bg-[#5B21B6] text-white font-bold px-1.5 py-0.2 rounded font-mono">
+                    <span className="text-xs font-bold text-[#221C35] truncate min-w-0">{currentUser.name} 様</span>
+                    <span className="text-[10px] bg-[#5B21B6] text-white font-bold px-1.5 py-0.5 rounded font-mono whitespace-nowrap shrink-0">
                       {currentUser.rank}
                     </span>
                   </div>
