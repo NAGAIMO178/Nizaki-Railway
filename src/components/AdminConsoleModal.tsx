@@ -61,6 +61,12 @@ interface AdminConsoleModalProps {
   onRefreshAppState?: () => void;
 }
 
+const toLocalInputValue = (ts: number): string => {
+  const d = new Date(ts);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
 const DEFAULT_PIN = '1925'; // 神埼鉄道 創業年 (初期値)
 const PIN_STORAGE_KEY = 'nizaki_admin_pin';
 const EMERGENCY_ALERT_KEY = 'nizaki_emergency_alert_manual';
@@ -95,6 +101,9 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
   const [useCustomMessage, setUseCustomMessage] = useState<boolean>(false);
   const [customMessage, setCustomMessage] = useState<string>('');
   const [linkToSystem, setLinkToSystem] = useState<boolean>(true);
+  // 自動解除: 'none'(手動のみ) / 'custom'(日時指定) / プリセット番号(getExpiryOptions の添字)
+  const [disruptionExpiryChoice, setDisruptionExpiryChoice] = useState<string>('1');
+  const [disruptionCustomExpiry, setDisruptionCustomExpiry] = useState<string>('');
   const [activeDisruptionsMap, setActiveDisruptionsMap] = useState<Record<string, LineDisruption>>(() =>
     disruptionManager.getAllDisruptions()
   );
@@ -151,6 +160,13 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
       setUseCustomMessage(existing.useCustomMessage || false);
       setCustomMessage(existing.customMessage || '');
       setLinkToSystem(existing.linkToSystem ?? true);
+      if (existing.expiresAtTimestamp) {
+        setDisruptionExpiryChoice('custom');
+        setDisruptionCustomExpiry(toLocalInputValue(existing.expiresAtTimestamp));
+      } else {
+        setDisruptionExpiryChoice('none');
+        setDisruptionCustomExpiry('');
+      }
 
       // Determine sectionMode & stations
       if (existingSec === '全線') {
@@ -195,6 +211,8 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
       setUseCustomMessage(false);
       setCustomMessage('');
       setLinkToSystem(true);
+      setDisruptionExpiryChoice('1');
+      setDisruptionCustomExpiry('');
     }
   };
 
@@ -343,6 +361,20 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
 
   // Dispatch disruption
   const handleDispatchDisruption = () => {
+    // 自動解除の時刻を決定
+    let expiresAtTimestamp: number | undefined;
+    if (disruptionExpiryChoice === 'custom') {
+      const customDate = new Date(disruptionCustomExpiry);
+      if (!disruptionCustomExpiry || isNaN(customDate.getTime()) || customDate.getTime() <= Date.now()) {
+        alert('自動解除の日時は、現在より未来の日時を指定してください。');
+        return;
+      }
+      expiresAtTimestamp = customDate.getTime();
+    } else if (disruptionExpiryChoice !== 'none') {
+      const option = getExpiryOptions()[Number(disruptionExpiryChoice)];
+      if (option) expiresAtTimestamp = option.date.getTime();
+    }
+
     const lineDef = DEFAULT_LINE_INFOS.find((l) => l.id === selectedLineId) || DEFAULT_LINE_INFOS[0];
     const generatedText = generateDisruptionText(
       lineDef.name,
@@ -368,6 +400,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
       useCustomMessage,
       linkToSystem,
       updatedAt: new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
+      expiresAtTimestamp,
     };
 
     disruptionManager.setLineDisruption(disruptionData);
@@ -449,6 +482,14 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
       // Ignore
     }
   }, [isOpen]);
+
+  // 自動解除などで運行支障・予報が変わったら、一覧の表示も更新する
+  useEffect(() => {
+    return disruptionManager.subscribe(() => {
+      setActiveDisruptionsMap(disruptionManager.getAllDisruptions());
+      setActiveForecastsList(disruptionManager.getOperationForecasts());
+    });
+  }, []);
 
   // Subscribe to logs and fetch metrics
   useEffect(() => {
@@ -1542,6 +1583,63 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                               />
                             </button>
                           </div>
+
+                          {/* 自動解除の時刻 */}
+                          <div className="p-2 bg-slate-950/60 rounded-md border border-slate-700 space-y-1.5">
+                            <div className="flex items-center gap-1 text-[11px] font-bold text-slate-200">
+                              <Clock className="w-3.5 h-3.5 text-amber-400" />
+                              <span>自動解除の時刻</span>
+                            </div>
+                            <p className="text-[10px] text-slate-400">
+                              設定した時刻になると、この運行支障が自動で解除され平常運転に戻ります（アプリ・LINE共通）。
+                            </p>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                              {getExpiryOptions().map((opt, idx) => (
+                                <button
+                                  key={idx}
+                                  type="button"
+                                  onClick={() => setDisruptionExpiryChoice(String(idx))}
+                                  className={`px-1.5 py-1.5 rounded-md border text-[10px] leading-tight text-center cursor-pointer transition-all ${
+                                    disruptionExpiryChoice === String(idx)
+                                      ? 'bg-amber-400/20 border-amber-400 text-amber-200 font-bold'
+                                      : 'bg-slate-900/70 border-slate-700 text-slate-300 hover:border-slate-500'
+                                  }`}
+                                >
+                                  {opt.label}
+                                </button>
+                              ))}
+                              <button
+                                type="button"
+                                onClick={() => setDisruptionExpiryChoice('custom')}
+                                className={`px-1.5 py-1.5 rounded-md border text-[10px] leading-tight text-center cursor-pointer transition-all ${
+                                  disruptionExpiryChoice === 'custom'
+                                    ? 'bg-amber-400/20 border-amber-400 text-amber-200 font-bold'
+                                    : 'bg-slate-900/70 border-slate-700 text-slate-300 hover:border-slate-500'
+                                }`}
+                              >
+                                日時を指定
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setDisruptionExpiryChoice('none')}
+                                className={`px-1.5 py-1.5 rounded-md border text-[10px] leading-tight text-center cursor-pointer transition-all ${
+                                  disruptionExpiryChoice === 'none'
+                                    ? 'bg-amber-400/20 border-amber-400 text-amber-200 font-bold'
+                                    : 'bg-slate-900/70 border-slate-700 text-slate-300 hover:border-slate-500'
+                                }`}
+                              >
+                                自動解除しない（手動のみ）
+                              </button>
+                            </div>
+                            {disruptionExpiryChoice === 'custom' && (
+                              <input
+                                type="datetime-local"
+                                value={disruptionCustomExpiry}
+                                onChange={(e) => setDisruptionCustomExpiry(e.target.value)}
+                                className="w-full bg-slate-900 border border-slate-600 rounded-md px-2 py-1.5 text-[11px] text-slate-100 focus:outline-none focus:border-amber-400"
+                              />
+                            )}
+                          </div>
                         </>
                       )}
 
@@ -1626,6 +1724,11 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                                   )}
                                   <span className="text-[10px] text-slate-400 font-mono">
                                     更新: {dis.updatedAt}
+                                  </span>
+                                  <span className="text-[10px] text-emerald-400 font-mono">
+                                    {dis.expiresAtTimestamp
+                                      ? `${new Date(dis.expiresAtTimestamp).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}に自動解除`
+                                      : '手動解除のみ'}
                                   </span>
                                 </div>
                                 <p className="text-[11px] text-slate-300 line-clamp-2 leading-relaxed">

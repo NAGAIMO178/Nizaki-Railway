@@ -269,7 +269,18 @@ function getStoredDisruptionsData() {
   if (raw) {
     try {
       const parsed = JSON.parse(raw);
-      return { disruptions: parsed.disruptions || {}, forecasts: parsed.forecasts || [] };
+      const now = Date.now();
+      // 自動解除の時刻を過ぎた運行支障・期限切れの予報は返さない(LINE返信・アプリ共通)
+      const disruptions = {};
+      const stored = parsed.disruptions || {};
+      Object.keys(stored).forEach(function (key) {
+        const d = stored[key];
+        if (!d.expiresAtTimestamp || now < d.expiresAtTimestamp) disruptions[key] = d;
+      });
+      const forecasts = (parsed.forecasts || []).filter(function (f) {
+        return f.isActive !== false && (!f.expiresAtTimestamp || now < f.expiresAtTimestamp);
+      });
+      return { disruptions: disruptions, forecasts: forecasts };
     } catch (err) {
       Logger.log('運行支障データの解析に失敗: ' + err.toString());
     }
