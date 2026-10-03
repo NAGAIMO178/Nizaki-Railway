@@ -35,7 +35,6 @@ export interface LiveTrainPos {
   isBetween: boolean; // 駅間走行中かどうか
   isStopStation?: boolean; // 現在位置の駅に停車するかどうか（falseなら通過駅）
   delayMinutes: number; // 0=定時
-  isAutoDelay?: boolean; // ダイヤ上の自動の遅れ(運行指令によるものではない。通知は出さない)
   timetable: { stationName: string; scheduledTime: string; estimatedTime: string }[];
 }
 
@@ -254,7 +253,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = () => {
     if (nowTime - lastNotificationTimeRef.current < 3600000) return;
 
     for (const train of liveTrains) {
-      if (train.delayMinutes > 0 && !train.isAutoDelay) {
+      if (train.delayMinutes > 0) {
         // 同一列車ID (train.id) では全走行を通して1回のみ通知
         if (!notifiedTrainIdsRef.current.has(train.id)) {
           notifiedTrainIdsRef.current.add(train.id);
@@ -355,7 +354,6 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = () => {
           isBetween: t.isBetween,
           isStopStation: t.isStopStation,
           delayMinutes: t.delayMinutes,
-          isAutoDelay: t.isAutoDelay,
           timetable: t.timetable,
         },
       ];

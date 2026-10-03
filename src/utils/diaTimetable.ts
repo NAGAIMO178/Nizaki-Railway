@@ -65,7 +65,6 @@ const autoDelayMinutes = (lineCode: string, trainNo: string, serviceDayStartMs: 
 export interface ResolvedDelay {
   delayMinutes: number;
   isSuspended: boolean;
-  isAuto: boolean; // ダイヤ上の自動の遅れ(運行指令によるものではない)
 }
 
 const resolveDelay = (
@@ -78,10 +77,9 @@ const resolveDelay = (
   position: { stationName: string; isBetween?: boolean }
 ): ResolvedDelay => {
   const eff = disruptionManager.getEffectiveDelayForTrain(disruptionLineId, seedTimestamp, direction, position);
-  if (eff.isSuspended) return { delayMinutes: 0, isSuspended: true, isAuto: false };
-  if (eff.delayMinutes > 0) return { delayMinutes: eff.delayMinutes, isSuspended: false, isAuto: false };
-  const auto = autoDelayMinutes(lineCode, trainNo, serviceDayStartMs);
-  return { delayMinutes: auto, isSuspended: false, isAuto: auto > 0 };
+  if (eff.isSuspended) return { delayMinutes: 0, isSuspended: true };
+  if (eff.delayMinutes > 0) return { delayMinutes: eff.delayMinutes, isSuspended: false };
+  return { delayMinutes: autoDelayMinutes(lineCode, trainNo, serviceDayStartMs), isSuspended: false };
 };
 
 const normalizeName = (name: string): string => name.replace(/（.*?）/g, '').trim();
@@ -292,7 +290,6 @@ export interface DiaLiveTrain {
   isBetween: boolean;
   isStopStation: boolean;
   delayMinutes: number;
-  isAutoDelay: boolean; // 運行指令ではなく、ダイヤ上の自動の遅れ
   timetable: { stationName: string; scheduledTime: string; estimatedTime: string }[];
 }
 
@@ -427,7 +424,6 @@ export const computeLiveTrains = (data: LineData, lineId: string, direction: 1 |
       isBetween,
       isStopStation,
       delayMinutes: delay,
-      isAutoDelay: eff.isAuto,
       timetable,
     });
   }
