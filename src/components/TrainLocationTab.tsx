@@ -864,7 +864,7 @@ const LIVE_LINE_STOP_STATIONS: Record<string, Record<string, string[]>> = {
         <p className="text-[11px] text-[#857D99] leading-relaxed">
           ※列車位置は時刻から計算した模擬表示です(実在の運行ではありません)。
         </p>
-        <div className="relative border-l-2 border-[#D1C9E3] ml-32 pl-6 space-y-7 my-2">
+        <div className="relative border-l-2 border-[#D1C9E3] ml-20 pl-6 space-y-7 my-2">
           {displayStations.map((st, idx) => {
             // Find all trains at this station (sorted by express rank so express stays on left, local stays on right)
             const rawTrainsAtStation = liveTrains.filter(
@@ -889,7 +889,7 @@ const LIVE_LINE_STOP_STATIONS: Record<string, Record<string, string[]>> = {
               <React.Fragment key={st.id}>
                 {/* Station Node Row */}
                 <div
-                  className={`relative flex items-center justify-between pr-24 ${
+                  className={`relative flex items-center justify-between pr-20 ${
                     hasMultipleStation ? 'min-h-[72px] py-2' : 'min-h-[48px]'
                   }`}
                 >
@@ -909,7 +909,7 @@ const LIVE_LINE_STOP_STATIONS: Record<string, Record<string, string[]>> = {
                         setSelectedStation({ name: st.name, code: st.code, transfers: st.transfers });
                         setSelectedTrain(null);
                       }}
-                      className="flex items-center gap-1.5 hover:opacity-80 transition-opacity cursor-pointer group text-left"
+                      className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 hover:opacity-80 transition-opacity cursor-pointer group text-left"
                       title={`${st.name}の乗り換え・駅情報を見る`}
                     >
                       {/* Station Code Badge */}
@@ -919,7 +919,7 @@ const LIVE_LINE_STOP_STATIONS: Record<string, Record<string, string[]>> = {
                         </span>
                       )}
 
-                      <span className="text-sm font-bold text-[#221C35] group-hover:text-[#5B21B6] truncate">
+                      <span className="text-sm font-bold text-[#221C35] group-hover:text-[#5B21B6] leading-tight">
                         {st.name}
                       </span>
                       <ChevronRight className="w-4 h-4 text-[#5B21B6] group-hover:translate-x-0.5 transition-transform shrink-0" />
@@ -927,11 +927,11 @@ const LIVE_LINE_STOP_STATIONS: Record<string, Record<string, string[]>> = {
 
                     {/* Transfers Badges in a sub-row to prevent horizontal overlap with right train badges */}
                     {st.transfers && (
-                      <div className="flex items-center gap-1 mt-0.5">
+                      <div className="flex flex-wrap items-center gap-1 mt-0.5">
                         {st.transfers.map((tr) => (
                           <span
                             key={tr}
-                            className="text-[9px] font-bold px-1 py-0.2 rounded bg-[#E6E2EE] text-[#6B6380] leading-none"
+                            className="text-[9px] font-bold px-1 py-0.5 rounded bg-[#E6E2EE] text-[#6B6380] leading-none whitespace-nowrap shrink-0"
                           >
                             {tr}
                           </span>
