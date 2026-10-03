@@ -322,7 +322,10 @@ export function getTsuchiuraLiveTrains(
             }
 
             const trainSeed = Math.abs(Math.sin(targetHour * 100 + index * 17 + direction * 31)) * 10000;
-            const effectiveDelay = disruptionManager.getEffectiveDelayForTrain('tsuchiura', trainSeed, direction);
+            const effectiveDelay = disruptionManager.getEffectiveDelayForTrain('tsuchiura', trainSeed, direction, {
+              stationName: stObj.name,
+              isBetween: false,
+            });
             let delayMinutes = 0;
             if (effectiveDelay.isSuspended) {
               delayMinutes = 99;
@@ -389,7 +392,10 @@ export function getTsuchiuraLiveTrains(
               const isBetween = !isStopStation || (stepRem >= 0.35 && stepRem <= 0.85);
 
               const trainSeed = Math.abs(Math.sin(targetHour * 100 + index * 17 + direction * 31)) * 10000;
-              const effectiveDelay = disruptionManager.getEffectiveDelayForTrain('tsuchiura', trainSeed, direction);
+              const effectiveDelay = disruptionManager.getEffectiveDelayForTrain('tsuchiura', trainSeed, direction, {
+                stationName: currentStation.name,
+                isBetween,
+              });
               let delayMinutes = 0;
               if (effectiveDelay.isSuspended) {
                 delayMinutes = 99;

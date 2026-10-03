@@ -533,7 +533,7 @@ const generateDeterministicDepartureForLine = (
     TC: 'tsuchiura',
   };
   const lineId = lineCodeToId[lineKey] || 'kanzaki';
-  const effectiveDelay = disruptionManager.getEffectiveDelayForTrain(lineId, baseTimestamp);
+  const effectiveDelay = disruptionManager.getEffectiveDelayForTrain(lineId, baseTimestamp, platform, { stationName });
 
   return {
     id: `train-${lineKey}-${stationName}-${platform}-${baseTimestamp}`,
@@ -565,7 +565,7 @@ const getDeterministicDeparturesForStation = (
     const tcList = getTsuchiuraDeparturesForStation(stationName, platform, baseTimestamp, limit);
     if (tcList.length > 0) {
       return tcList.map((dep) => {
-        const eff = disruptionManager.getEffectiveDelayForTrain('tsuchiura', dep.departureTimestamp || dep.id);
+        const eff = disruptionManager.getEffectiveDelayForTrain('tsuchiura', dep.departureTimestamp || dep.id, platform, { stationName });
         return {
           ...dep,
           delayMinutes: eff.delayMinutes,
@@ -943,7 +943,7 @@ export const MyStationCard: React.FC<MyStationCardProps> = ({
         ) : (
           departures.map((dep, idx) => {
             const remainingSec = Math.max(0, Math.floor((dep.departureTimestamp - now) / 1000));
-            const isImminent = idx === 0 && remainingSec <= 45; // 残り45秒以下で発車目前白点滅
+            const isImminent = idx === 0 && remainingSec <= 45 && !dep.isSuspended; // 残り45秒以下で発車目前白点滅
             const typeBadgeStyle = getTrainTypeBadgeStyle(dep.trainType);
             const lineBadgeStyle = getLineBadgeStyle(dep.lineName);
 
@@ -1024,15 +1024,23 @@ export const MyStationCard: React.FC<MyStationCardProps> = ({
                   <div className="text-right">
                     <div
                       className={`text-xl sm:text-2xl font-bold font-mono tracking-tight ${
-                        isImminent ? 'text-white drop-shadow-md' : 'text-[#221C35]'
+                        dep.isSuspended
+                          ? 'text-[#A59FB5] line-through'
+                          : isImminent
+                          ? 'text-white drop-shadow-md'
+                          : 'text-[#221C35]'
                       }`}
                     >
                       {dep.departureTime}
                     </div>
-                    {!isImminent && (
-                      <div className="text-[9px] text-[#857D99] font-bold">
-                        {Math.floor(remainingSec / 60)}分後
-                      </div>
+                    {dep.isSuspended ? (
+                      <div className="text-[9px] text-rose-600 font-bold">運転見合わせ</div>
+                    ) : (
+                      !isImminent && (
+                        <div className="text-[9px] text-[#857D99] font-bold">
+                          {Math.floor(remainingSec / 60)}分後
+                        </div>
+                      )
                     )}
                   </div>
                   <Users className={`w-3.5 h-3.5 ${isImminent ? 'text-white/80' : 'text-[#857D99]'}`} />

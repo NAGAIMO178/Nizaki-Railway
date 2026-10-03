@@ -303,18 +303,8 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = () => {
   // 発車時刻・経過時間に基づいた動的リアルタイム列車計算
   const computeLiveTrains = (): LiveTrainPos[] => {
     if (activeLineId === 'tsuchiura') {
-      const baseTrains = getTsuchiuraLiveTrains(now, direction, displayStations);
-      const eff = disruptionManager.getEffectiveDelayForTrain('tsuchiura');
-      if (eff.isSuspended) {
-        return baseTrains.map((t) => ({ ...t, delayMinutes: 99 }));
-      }
-      if (eff.delayMinutes > 0) {
-        return baseTrains.map((t) => {
-          const trainEff = disruptionManager.getEffectiveDelayForTrain('tsuchiura', t.id);
-          return { ...t, delayMinutes: trainEff.delayMinutes > 0 ? trainEff.delayMinutes : t.delayMinutes };
-        });
-      }
-      return baseTrains;
+      // 運行指令(遅延・見合わせ・影響区間)の反映は getTsuchiuraLiveTrains の中で列車の位置ごとに行う
+      return getTsuchiuraLiveTrains(now, direction, displayStations);
     }
 
     const trains: LiveTrainPos[] = [];
@@ -455,24 +445,28 @@ const LIVE_LINE_STOP_STATIONS: Record<string, Record<string, string[]>> = {
       const seed = Math.abs(Math.sin(trainStartTime / 100000)) * 10000;
       const trainType = config.trainTypes[Math.floor(seed) % config.trainTypes.length];
       
-      // 管理者運行指令による実効遅延（1〜最大遅延分の乱数）または通常時の微小遅延
-      const effectiveDelay = disruptionManager.getEffectiveDelayForTrain(activeLineId, trainStartTime, direction);
-      let delayMinutes = 0;
-      if (effectiveDelay.isSuspended) {
-        delayMinutes = 99; // 運転見合わせフラグ
-      } else if (effectiveDelay.delayMinutes > 0) {
-        delayMinutes = effectiveDelay.delayMinutes;
-      } else {
-        // 全路線・上下線あわせても総合的に約1〜2%以下の極めて稀な発生確率 (1/300 ≒ 0.3%)
-        delayMinutes = Math.floor(seed) % 300 === 0 ? Math.floor(seed % 3) + 1 : 0;
-      }
-
       const lineStops = LIVE_LINE_STOP_STATIONS[activeLineId] || LIVE_LINE_STOP_STATIONS.kanzaki;
       const allowedStops = lineStops[trainType] || lineStops['各停'] || [];
       const isStopStation = allowedStops.includes(currentStation.name);
 
       // 通過駅（停車駅に含まれていない駅）の場合は絶対に「停車中(isBetween=false)」にならず、常に「通過中(isBetween=true)」とする
       const isBetween = !isStopStation || (timeInCurrentSegment >= 30);
+
+      // 管理者運行指令による実効遅延（1〜最大遅延分の乱数）または通常時の微小遅延
+      // (影響区間が指定されていれば、その区間にいる列車だけに反映する)
+      const effectiveDelay = disruptionManager.getEffectiveDelayForTrain(activeLineId, trainStartTime, direction, {
+        stationName: currentStation.name,
+        isBetween,
+      });
+      let delayMinutes = 0;
+      if (effectiveDelay.isSuspended) {
+        delayMinutes = 99; // 運転見合わせフラグ(画面には走行中の列車として表示しない)
+      } else if (effectiveDelay.delayMinutes > 0) {
+        delayMinutes = effectiveDelay.delayMinutes;
+      } else {
+        // 全路線・上下線あわせても総合的に約1〜2%以下の極めて稀な発生確率 (1/300 ≒ 0.3%)
+        delayMinutes = Math.floor(seed) % 300 === 0 ? Math.floor(seed % 3) + 1 : 0;
+      }
 
       // 進行方向の前方にある折返し可能駅のみを行き先候補として抽出
       let forwardTerminatingStations = config.terminatingStations.filter((stName) => {
@@ -563,6 +557,9 @@ const LIVE_LINE_STOP_STATIONS: Record<string, Record<string, string[]>> = {
     return trains;
   };
 
+  // 運転見合わせ(99)の列車は走行中の列車として描かない
+  const computeVisibleTrains = (): LiveTrainPos[] => computeLiveTrains().filter((t) => t.delayMinutes < 99);
+
   // 走行位置を完全リセット → 再設置する工程
   const performResetAndSet = (manual = false) => {
     setIsResetting(true);
@@ -576,7 +573,7 @@ const LIVE_LINE_STOP_STATIONS: Record<string, Record<string, string[]>> = {
 
     // 2. 確定現在位置を正しく設置
     setTimeout(() => {
-      const calculated = computeLiveTrains();
+      const calculated = computeVisibleTrains();
       setLiveTrains(calculated);
       setIsResetting(false);
     }, 60);
@@ -590,11 +587,11 @@ const LIVE_LINE_STOP_STATIONS: Record<string, Record<string, string[]>> = {
   // 1秒おきの時計更新時：リセット中でなければ設置状態を更新
   useEffect(() => {
     if (!isResetting) {
-      setLiveTrains(computeLiveTrains());
+      setLiveTrains(computeVisibleTrains());
     }
   }, [now]);
 
-  const lineTrains = computeLiveTrains();
+  const lineTrains = computeVisibleTrains();
 
   // 優等度ランク計算（特急/めぐり/スカイ > 通勤特快/特別快速 > 快速/急行 > 準急/区間快速 > 各停/普通）
   const getTrainRank = (trainType: string): number => {
@@ -861,6 +858,27 @@ const LIVE_LINE_STOP_STATIONS: Record<string, Record<string, string[]>> = {
 
       {/* Main Realtime Railway Map Schematic */}
       <div className="p-4 relative">
+        {(() => {
+          const dis = disruptionManager.getLineDisruption(activeLineId);
+          if (!dis || dis.statusType === 'normal') return null;
+          const label =
+            dis.statusType === 'suspended'
+              ? '運転見合わせ中'
+              : dis.statusType === 'partially_suspended'
+              ? '一部区間で運休中'
+              : '遅延が発生しています';
+          const dirLabel = dis.targetDirection === 'up' ? '（上り線）' : dis.targetDirection === 'down' ? '（下り線）' : '';
+          const hidesTrains = dis.linkToSystem && dis.statusType !== 'delay';
+          return (
+            <div className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-900 space-y-0.5">
+              <div className="font-bold">
+                {label}
+                {dirLabel}（{dis.section || '全線'}）
+              </div>
+              {hidesTrains && <div className="text-[11px] text-rose-800">運休となった列車は表示していません。</div>}
+            </div>
+          );
+        })()}
         <p className="text-[11px] text-[#857D99] leading-relaxed">
           ※列車位置は時刻から計算した模擬表示です(実在の運行ではありません)。
         </p>
