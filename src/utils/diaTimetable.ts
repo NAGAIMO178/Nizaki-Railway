@@ -32,6 +32,58 @@ const WINDOW_SEC = 90 * 60;
 // 発車後もこの秒数までは表示に残す
 const GRACE_SEC = 30;
 
+// ---------------------------------------------------------------------------
+// 遅れ
+// 運行指令(管理者の設定)があればそれを優先し、無い列車には「日付+列車番号」で決まる遅れを、
+// ごく一部の列車に付ける。同じ列車は同じ日なら、どの画面でも同じ遅れになる(模擬)。
+// ---------------------------------------------------------------------------
+const AUTO_DELAY_RATE = 0.02; // 全列車のうち、遅れる割合
+const AUTO_DELAY_MAX_MIN = 5; // 遅れの最大(分)
+
+const hash32 = (text: string): number => {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  // 最後に混ぜ直して、似た文字列でも値が偏らないようにする
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x85ebca6b);
+  h ^= h >>> 13;
+  h = Math.imul(h, 0xc2b2ae35);
+  h ^= h >>> 16;
+  return h >>> 0;
+};
+
+const autoDelayMinutes = (lineCode: string, trainNo: string, serviceDayStartMs: number): number => {
+  const d = new Date(serviceDayStartMs);
+  const key = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}|${lineCode}|${trainNo}`;
+  if (hash32(`a|${key}`) / 4294967296 >= AUTO_DELAY_RATE) return 0;
+  return 1 + Math.floor((hash32(`b|${key}`) / 4294967296) * AUTO_DELAY_MAX_MIN);
+};
+
+export interface ResolvedDelay {
+  delayMinutes: number;
+  isSuspended: boolean;
+  isAuto: boolean; // ダイヤ上の自動の遅れ(運行指令によるものではない)
+}
+
+const resolveDelay = (
+  disruptionLineId: string,
+  lineCode: string,
+  trainNo: string,
+  serviceDayStartMs: number,
+  seedTimestamp: number,
+  direction: 1 | 2,
+  position: { stationName: string; isBetween?: boolean }
+): ResolvedDelay => {
+  const eff = disruptionManager.getEffectiveDelayForTrain(disruptionLineId, seedTimestamp, direction, position);
+  if (eff.isSuspended) return { delayMinutes: 0, isSuspended: true, isAuto: false };
+  if (eff.delayMinutes > 0) return { delayMinutes: eff.delayMinutes, isSuspended: false, isAuto: false };
+  const auto = autoDelayMinutes(lineCode, trainNo, serviceDayStartMs);
+  return { delayMinutes: auto, isSuspended: false, isAuto: auto > 0 };
+};
+
 const normalizeName = (name: string): string => name.replace(/（.*?）/g, '').trim();
 
 // 駅名の読み(カッコ書き)を除いた形。画面側の駅名との照合に使う
@@ -119,7 +171,7 @@ export const computeBoard = (data: BoardData, platform: 1 | 2, nowMs: number, li
   const base = dayStart.getTime();
   const s = (nowMs - base) / 1000;
 
-  type Cand = { eff: number; line: BoardLine; dep: number; ty: number; ti: number; first: boolean; last: boolean };
+  type Cand = { eff: number; dayMs: number; line: BoardLine; dep: number; ty: number; ti: number; first: boolean; last: boolean };
   const cands: Cand[] = [];
   let hasAnyDeparture = false;
   let firstSec: number | undefined;
@@ -135,10 +187,15 @@ export const computeBoard = (data: BoardData, platform: 1 | 2, nowMs: number, li
     list.forEach(([dep, ty, ti], i) => {
       // 24時以降の発車は、前日のダイヤの続き(0時台)としても扱う
       let eff: number | null = null;
-      if (dep >= DAY && dep - DAY >= s - GRACE_SEC) eff = dep - DAY;
-      else if (dep >= s - GRACE_SEC) eff = dep;
+      let dayMs = base;
+      if (dep >= DAY && dep - DAY >= s - GRACE_SEC) {
+        eff = dep - DAY;
+        dayMs = base - DAY * 1000; // 前日のダイヤの続き
+      } else if (dep >= s - GRACE_SEC) {
+        eff = dep;
+      }
       if (eff === null) return;
-      cands.push({ eff, line, dep, ty, ti, first: i === 0, last: i === list.length - 1 });
+      cands.push({ eff, dayMs, line, dep, ty, ti, first: i === 0, last: i === list.length - 1 });
     });
   }
 
@@ -166,7 +223,7 @@ export const computeBoard = (data: BoardData, platform: 1 | 2, nowMs: number, li
     const originIdx = stops[0];
     const destIdx = stops[stops.length - 3];
     const depTs = base + c.eff * 1000;
-    const eff = disruptionManager.getEffectiveDelayForTrain(LINE_IDS[c.line.code] || 'kanzaki', depTs, platform, {
+    const eff = resolveDelay(LINE_IDS[c.line.code] || 'kanzaki', c.line.code, train[0], c.dayMs, depTs, platform, {
       stationName: data.stationName,
     });
     const hh = String(Math.floor(c.eff / 3600) % 24).padStart(2, '0');
@@ -235,6 +292,7 @@ export interface DiaLiveTrain {
   isBetween: boolean;
   isStopStation: boolean;
   delayMinutes: number;
+  isAutoDelay: boolean; // 運行指令ではなく、ダイヤ上の自動の遅れ
   timetable: { stationName: string; scheduledTime: string; estimatedTime: string }[];
 }
 
@@ -344,7 +402,8 @@ export const computeLiveTrains = (data: LineData, lineId: string, direction: 1 |
       futureFrom = segment + 1;
     }
 
-    const eff = disruptionManager.getEffectiveDelayForTrain(lineId, base + t0 * 1000, direction, {
+    const serviceDayMs = nowSec === s ? base : base - DAY * 1000;
+    const eff = resolveDelay(lineId, data.code, t[0], serviceDayMs, base + t0 * 1000, direction, {
       stationName,
       isBetween,
     });
@@ -368,6 +427,7 @@ export const computeLiveTrains = (data: LineData, lineId: string, direction: 1 |
       isBetween,
       isStopStation,
       delayMinutes: delay,
+      isAutoDelay: eff.isAuto,
       timetable,
     });
   }

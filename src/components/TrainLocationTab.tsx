@@ -35,6 +35,7 @@ export interface LiveTrainPos {
   isBetween: boolean; // 駅間走行中かどうか
   isStopStation?: boolean; // 現在位置の駅に停車するかどうか（falseなら通過駅）
   delayMinutes: number; // 0=定時
+  isAutoDelay?: boolean; // ダイヤ上の自動の遅れ(運行指令によるものではない。通知は出さない)
   timetable: { stationName: string; scheduledTime: string; estimatedTime: string }[];
 }
 
@@ -253,7 +254,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = () => {
     if (nowTime - lastNotificationTimeRef.current < 3600000) return;
 
     for (const train of liveTrains) {
-      if (train.delayMinutes > 0) {
+      if (train.delayMinutes > 0 && !train.isAutoDelay) {
         // 同一列車ID (train.id) では全走行を通して1回のみ通知
         if (!notifiedTrainIdsRef.current.has(train.id)) {
           notifiedTrainIdsRef.current.add(train.id);
@@ -354,6 +355,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = () => {
           isBetween: t.isBetween,
           isStopStation: t.isStopStation,
           delayMinutes: t.delayMinutes,
+          isAutoDelay: t.isAutoDelay,
           timetable: t.timetable,
         },
       ];
@@ -686,7 +688,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = () => {
           );
         })()}
         <p className="text-[11px] text-[#857D99] leading-relaxed">
-          ※列車位置は模擬ダイヤに基づく表示です(実在の運行ではありません)。
+          ※列車位置と遅れは模擬ダイヤに基づく表示です(実在の運行ではありません)。
         </p>
         {diaState === 'loading' && (
           <p className="mt-1 text-[11px] text-[#716986]">時刻表を読み込み中…</p>
