@@ -158,7 +158,7 @@ export const SeatSelectionModal: React.FC<SeatSelectionModalProps> = ({
                   ? '1号車 (特別車)'
                   : expressType === 'nliner'
                   ? '2〜10号車 (普通車)'
-                  : '2〜6号車 (普通車)'}
+                  : '2〜5号車 (普通車)'}
               </span>
             </div>
 

@@ -624,7 +624,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
         {/* Modal Footer */}
         <div className="bg-white px-5 py-3 border-t border-[#E8E4F0] flex items-center justify-between text-xs text-[#8A829D] shrink-0">
           <div className="flex items-center gap-3">
-            <span className="font-mono text-[10px]">NIZAKI ID SERVICE ver 3.37</span>
+            <span className="font-mono text-[10px]">NIZAKI ID SERVICE ver {__APP_VERSION__.split('.').slice(0, 2).join('.')}</span>
             <button
               type="button"
               onClick={() => setIsPolicyOpen(true)}

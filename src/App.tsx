@@ -1,11 +1,10 @@
 import React, { useState } from 'react';
-import { ShoppingBag, Calendar } from 'lucide-react';
+import { ShoppingBag } from 'lucide-react';
 import { PhoneContainer } from './components/PhoneContainer';
 import { Header } from './components/Header';
 import { StatusCard } from './components/StatusCard';
 import { MyStationCard } from './components/MyStationCard';
 import { MyStationRegisterCard, RegisterableStation } from './components/MyStationRegisterCard';
-import { EDeliveryCard } from './components/EDeliveryCard';
 import { FooterNav } from './components/FooterNav';
 import { TrainLocationTab } from './components/TrainLocationTab';
 import { ReservationTab } from './components/ReservationTab';
@@ -18,10 +17,10 @@ import { RouteMapModal } from './components/RouteMapModal';
 import { QRCodeModal } from './components/QRCodeModal';
 import { LoginModal } from './components/LoginModal';
 import { MyPageModal } from './components/MyPageModal';
-import { MOCK_LINES, MOCK_STATIONS, MOCK_EQUIP_ITEMS, MOCK_LIVE_TRAINS } from './data/mockData';
+import { MOCK_LINES, MOCK_EQUIP_ITEMS } from './data/mockData';
 import { POINT_CODES, normalizePointCode } from './data/pointCodes';
 import { getLocalDateString, isOrderExpired } from './utils/orderExpiry';
-import { TabType, Station, ActiveOrder, DepartureInfo, EquipItem, PointHistoryItem, UserProfile } from './types';
+import { TabType, ActiveOrder, EquipItem, PointHistoryItem, UserProfile } from './types';
 
 // Helper to sanitize email for storage key
 const getPointStoragePrefix = (email?: string | null) => {
@@ -34,7 +33,6 @@ const MY_STATIONS_STORAGE_KEY = 'kanzaki_my_stations';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>('home');
-  const [currentStation, setCurrentStation] = useState<Station>(MOCK_STATIONS[0]); // 松戸駅
   const [headerStationName, setHeaderStationName] = useState<string>('松戸');
   const [headerPlatform, setHeaderPlatform] = useState<1 | 2>(1);
 
@@ -403,10 +401,6 @@ export default function App() {
         body: JSON.stringify({ cancelOrderId: cancelId }),
       }).catch((err) => console.error('Cancel sync failed:', err));
     }
-  };
-
-  const handleBookMeguriSeat = (departure: DepartureInfo) => {
-    setIsEDeliveryModalOpen(true);
   };
 
   return (

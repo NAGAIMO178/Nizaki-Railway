@@ -79,6 +79,13 @@ export const EventsTab: React.FC<EventsTabProps> = ({
     reloadProgress();
   }, [selectedEventId]);
 
+  // 未ログインでは、前回開いていたイベントの画面を復元せず一覧に戻す
+  useEffect(() => {
+    if (!isLoggedIn && selectedEventId !== 'portal') {
+      setSelectedEventId('portal');
+    }
+  }, [isLoggedIn, selectedEventId]);
+
   // 選択イベントの保存
   const handleSelectEvent = (id: 'portal' | 'mashin' | 'kaitan') => {
     if (id !== 'portal' && !isLoggedIn && onRequireLogin) {

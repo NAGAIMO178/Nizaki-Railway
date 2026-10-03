@@ -1,5 +1,4 @@
 // System Logger & Diagnostics Engine for 神埼鉄道 NIZAKI App
-// Version 3.10.0 (Emergency Incident Response & Weather-Aware Disruption Dispatch System)
 
 export type LogLevel = 'error' | 'warn' | 'info' | 'critical';
 
@@ -56,8 +55,7 @@ function isBenignOrTestNoise(msg: string): boolean {
     lower.includes('[vite] connect error') ||
     lower.includes('[管理者テスト]') ||
     lower.includes('診断用エラーが発生しました') ||
-    lower.includes('テストエラー') ||
-    lower.includes('illegal constructor')
+    lower.includes('テストエラー')
   );
 }
 
@@ -171,7 +169,7 @@ export const systemLogger = {
     systemLogger.addLog({
       level: 'info',
       source: 'SystemCore',
-      message: '神埼鉄道システム監視・緊急インシデント対策エンジン稼働 (v3.7.3)',
+      message: '神埼鉄道システム監視・緊急インシデント対策エンジン稼働 (v' + __APP_VERSION__ + ')',
     });
   },
 
@@ -327,7 +325,7 @@ export const systemLogger = {
   getMetrics: (): SystemMetrics => {
     if (typeof window === 'undefined') {
       return {
-        appVersion: 'v3.8.1',
+        appVersion: `v${__APP_VERSION__}`,
         environment: 'SSR',
         userAgent: '',
         deviceType: 'Other',
@@ -384,7 +382,7 @@ export const systemLogger = {
     }
 
     return {
-      appVersion: 'v3.37.2',
+      appVersion: `v${__APP_VERSION__}`,
       environment: process.env.NODE_ENV === 'production' ? 'Production' : 'Development',
       userAgent: ua,
       deviceType,

@@ -783,7 +783,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                   神埼鉄道 管理者指令コンソール
                 </span>
                 <span className="px-1.5 py-0.5 bg-slate-700 text-slate-300 text-[10px] font-mono font-bold rounded">
-                  v3.12.3
+                  v{__APP_VERSION__}
                 </span>
               </div>
               <p className="text-[10px] text-slate-400">

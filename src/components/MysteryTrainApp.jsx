@@ -466,7 +466,8 @@ export const MysteryTrainApp = ({ onAddNPoints, onExit, posterImageUrl }) => {
       setCopied(true);
       setTimeout(() => setCopied(false), 3000);
     } catch {
-      setCopied(true);
+      // コピーできなかったときに「コピーしました」と表示しない(コードは長押しで手動コピーできる)
+      setCopied(false);
     }
   };
 
