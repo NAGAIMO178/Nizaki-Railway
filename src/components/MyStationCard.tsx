@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Users, ChevronLeft, ChevronRight, MapPin, Moon, Clock, Sparkles, Navigation, Star } from 'lucide-react';
-import { RegisterableStation } from './MyStationRegisterCard';
+import { RegisterableStation, REGISTERABLE_LINES } from './MyStationRegisterCard';
 import { findNearestStation } from '../utils/nearestStation';
 import { getTsuchiuraDeparturesForStation } from '../utils/tsuchiuraTimetable';
 import { disruptionManager } from '../utils/disruptionManager';
@@ -414,6 +414,30 @@ function stringToSeed(str: string): number {
   return Math.abs(hash) + 1;
 }
 
+// 路線内での駅の並び順(0始まり)。見つからなければ -1
+const getStationOrder = (lineKey: string, name: string): number => {
+  const stations = REGISTERABLE_LINES.find((l) => l.code === lineKey)?.stations;
+  if (!stations) return -1;
+  const exact = stations.findIndex((s) => s.name === name);
+  if (exact >= 0) return exact;
+  return stations.findIndex((s) => s.name.startsWith(name) || name.startsWith(s.name));
+};
+
+// 行き先が、そのホームの進行方向(1番線=下り=駅番号が増える側 / 2番線=上り)にあるか
+// 環状線(SC)や並びが分からない行き先は常に有効とする
+const isDestinationInDirection = (
+  lineKey: string,
+  stationName: string,
+  platform: 1 | 2,
+  destination: string
+): boolean => {
+  if (lineKey === 'SC') return true;
+  const from = getStationOrder(lineKey, stationName);
+  const to = getStationOrder(lineKey, destination);
+  if (from < 0 || to < 0) return true;
+  return platform === 1 ? to > from : to < from;
+};
+
 // 単一路線に特化した決定論的列車生成ロジック
 const generateDeterministicDepartureForLine = (
   lineKey: string,
@@ -481,12 +505,22 @@ const generateDeterministicDepartureForLine = (
     }
   }
 
-  // 自駅を行き先から排除
-  const filteredDestinations = rawDestinations.filter((d) => !d.includes(stationName) && d !== stationName);
+  // 自駅と、進行方向と逆にある駅を行き先から排除
+  const filteredDestinations = rawDestinations.filter(
+    (d) => !d.includes(stationName) && d !== stationName && isDestinationInDirection(lineKey, stationName, platform, d)
+  );
   const destIdx = Math.floor(seededRandom(seed + 2) * (filteredDestinations.length || 1));
-  let destination = filteredDestinations.length > 0
-    ? filteredDestinations[destIdx]
-    : (platform === 1 ? (lineKey === 'SC' ? '大宮' : '横浜') : (lineKey === 'SC' ? '新宿' : '東京'));
+  let destination: string;
+  if (filteredDestinations.length > 0) {
+    destination = filteredDestinations[destIdx];
+  } else if (lineKey === 'SC') {
+    destination = platform === 1 ? '大宮' : '新宿';
+  } else {
+    // 終着駅で進行方向に行き先が無い場合は、反対方向の終点へ向かう折り返し列車にする
+    const stations = REGISTERABLE_LINES.find((l) => l.code === lineKey)?.stations || [];
+    const fromEnd = getStationOrder(lineKey, stationName) === 0;
+    destination = (fromEnd ? stations[stations.length - 1] : stations[0])?.name || stationName;
+  }
 
   const d = new Date(baseTimestamp);
   const minutesFromMidnight = d.getHours() * 60 + d.getMinutes();
@@ -502,10 +536,14 @@ const generateDeterministicDepartureForLine = (
     minutesFromMidnight < schedule.firstTrainMin + 20
   ) {
     isFirstTrain = true;
-    if (lineKey === 'TC') destination = platform === 1 ? '日立' : '松戸';
-    else if (lineKey === 'Y') destination = platform === 1 ? '大宮' : '東京';
-    else if (lineKey === 'NI') destination = platform === 1 ? '横浜' : '東京';
-    else if (lineKey === 'SC') destination = platform === 1 ? '大宮' : '東京';
+    let firstDest = destination;
+    if (lineKey === 'TC') firstDest = platform === 1 ? '日立' : '松戸';
+    else if (lineKey === 'Y') firstDest = platform === 1 ? '大宮' : '東京';
+    else if (lineKey === 'NI') firstDest = platform === 1 ? '横浜' : '東京';
+    else if (lineKey === 'SC') firstDest = platform === 1 ? '大宮' : '東京';
+    if (firstDest !== stationName && isDestinationInDirection(lineKey, stationName, platform, firstDest)) {
+      destination = firstDest;
+    }
   }
 
   const isAroundLastTrain =
@@ -516,10 +554,14 @@ const generateDeterministicDepartureForLine = (
 
   if (isAroundLastTrain) {
     isLastTrain = true;
-    if (lineKey === 'TC') destination = platform === 1 ? '鹿島旭' : '松戸';
-    else if (lineKey === 'Y') destination = platform === 1 ? '大宮' : '東京';
-    else if (lineKey === 'NI') destination = platform === 1 ? '横浜' : '東京';
-    else if (lineKey === 'SC') destination = platform === 1 ? '大宮' : '新宿';
+    let lastDest = destination;
+    if (lineKey === 'TC') lastDest = platform === 1 ? '鹿島旭' : '松戸';
+    else if (lineKey === 'Y') lastDest = platform === 1 ? '大宮' : '東京';
+    else if (lineKey === 'NI') lastDest = platform === 1 ? '横浜' : '東京';
+    else if (lineKey === 'SC') lastDest = platform === 1 ? '大宮' : '新宿';
+    if (lastDest !== stationName && isDestinationInDirection(lineKey, stationName, platform, lastDest)) {
+      destination = lastDest;
+    }
   }
 
   const originStations = ['松戸', '土浦', '東京', '大宮', '横浜', '池袋', '新宿'];
@@ -619,9 +661,6 @@ export const MyStationCard: React.FC<MyStationCardProps> = ({
   const [now, setNow] = useState<number>(Date.now());
   const touchStartX = useRef<number | null>(null);
 
-  // 動的発車列車リスト (常に3本維持)
-  const [departures, setDepartures] = useState<DynamicDeparture[]>([]);
-
   // 5秒ごとに現在時刻を更新するタイマー + 運行指令変更の購読
   useEffect(() => {
     const timer = setInterval(() => {
@@ -660,16 +699,12 @@ export const MyStationCard: React.FC<MyStationCardProps> = ({
   const safeIndex = Math.min(activeIndex, Math.max(0, displayStations.length - 1));
   const currentStation = displayStations[safeIndex];
 
-  // 現在時刻(now)・駅・ホーム(platform)に基づく確定的列車リストの自動更新
-  useEffect(() => {
-    if (!isLineInService(currentStation.lineName, now)) {
-      setDepartures([]);
-      return;
-    }
-
-    const list = getDeterministicDeparturesForStation(currentStation, platform, now, 3);
-    setDepartures(list);
-  }, [now, platform, activeIndex, currentStation.name, currentStation.lineName]);
+  // 現在時刻(now)・駅・ホーム(platform)に基づく確定的列車リスト(常に3本維持)
+  // 描画と同時に計算する(初回描画で空のまま夜間バナーが一瞬出るのを防ぐ)
+  const departures: DynamicDeparture[] = React.useMemo(() => {
+    if (!isLineInService(currentStation.lineName, now)) return [];
+    return getDeterministicDeparturesForStation(currentStation, platform, now, 3);
+  }, [now, platform, currentStation.name, currentStation.lineName]);
 
   // GPSによる最寄駅の完全独立判定（マイ駅リスト registeredStations には一切追加・干渉しない）
   useEffect(() => {
