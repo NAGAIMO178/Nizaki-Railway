@@ -21,7 +21,7 @@ import { MOCK_LINES, MOCK_EQUIP_ITEMS } from './data/mockData';
 import { POINT_CODES, normalizePointCode } from './data/pointCodes';
 import { getLocalDateString, isOrderExpired } from './utils/orderExpiry';
 import { callGas } from './utils/accountApi';
-import { TabType, ActiveOrder, EquipItem, PointHistoryItem, UserProfile } from './types';
+import { TabType, ActiveOrder, EquipItem, PointHistoryItem, UserProfile, OrderHistoryItem } from './types';
 
 // Helper to sanitize email for storage key
 const getPointStoragePrefix = (email?: string | null) => {
@@ -56,17 +56,27 @@ export default function App() {
   // N-POINT is strictly bound to currentUser's email address
   const [nPointBalance, setNPointBalance] = useState<number>(0);
   const [pointHistory, setPointHistory] = useState<PointHistoryItem[]>([]);
+  // 終了した予約(乗車済み・キャンセル)の記録。アカウントごとにこの端末内へ保存する
+  const [orderHistory, setOrderHistory] = useState<OrderHistoryItem[]>([]);
 
   // Load user-specific points and history whenever currentUser email changes
   React.useEffect(() => {
     if (!currentUser || !currentUser.email) {
       setNPointBalance(0);
       setPointHistory([]);
+      setOrderHistory([]);
       return;
     }
 
     const prefix = getPointStoragePrefix(currentUser.email);
     if (!prefix) return;
+
+    try {
+      const savedOrders = JSON.parse(localStorage.getItem(`${prefix}_order_history`) || '[]');
+      setOrderHistory(Array.isArray(savedOrders) ? savedOrders : []);
+    } catch {
+      setOrderHistory([]);
+    }
 
     try {
       const savedBalance = localStorage.getItem(`${prefix}_balance`);
@@ -106,6 +116,45 @@ export default function App() {
       console.warn('Failed to load points for user:', e);
     }
   }, [currentUser?.email]);
+
+  // 終わった予約(乗車済み・キャンセル)を履歴に残す。この端末内に、アカウントごとに最大30件
+  const archiveOrder = (order: ActiveOrder, result: 'completed' | 'cancelled') => {
+    const prefix = getPointStoragePrefix(currentUser?.email);
+    if (!prefix) return;
+    const items = order.items || [];
+    const itemsTotal = items.reduce((sum, ci) => sum + ci.item.price * ci.quantity, 0);
+    const entry: OrderHistoryItem = {
+      orderId: order.orderId,
+      trainName: order.trainName,
+      carNo: order.carNo,
+      seatNo: order.seatNo,
+      seatType: order.seatType,
+      boardingStation: order.boardingStation,
+      destinationStation: order.destinationStation,
+      departureTime: order.departureTime,
+      arrivalTime: order.arrivalTime,
+      reservedDate: order.reservedDate,
+      ticketPrice: Math.max(0, order.totalPrice - itemsTotal),
+      items: items.map((ci) => ({ name: ci.item.name, quantity: ci.quantity, price: ci.item.price })),
+      result,
+    };
+    const key = `${prefix}_order_history`;
+    let saved: OrderHistoryItem[] = [];
+    try {
+      const parsed = JSON.parse(localStorage.getItem(key) || '[]');
+      if (Array.isArray(parsed)) saved = parsed;
+    } catch {}
+    const next = [entry, ...saved.filter((h) => h.orderId !== entry.orderId)].slice(0, 30);
+    try {
+      localStorage.setItem(key, JSON.stringify(next));
+    } catch {}
+    setOrderHistory(next);
+  };
+  // タイマー内から常に最新のログイン状態で呼べるようにする
+  const archiveOrderRef = React.useRef(archiveOrder);
+  archiveOrderRef.current = archiveOrder;
+  // 起動時にすでに終了していた予約(アプリを閉じている間に到着時刻を過ぎたもの)
+  const expiredOnLoadRef = React.useRef<ActiveOrder | null>(null);
 
   const addPoints = (points: number, title?: string, type: 'reservation' | 'stamp' | 'coupon' | 'equip' = 'reservation') => {
     if (!currentUser || !currentUser.email) return;
@@ -277,6 +326,7 @@ export default function App() {
         // 日付なしの旧データは「今日の予約」とみなす
         const order: ActiveOrder = parsed.reservedDate ? parsed : { ...parsed, reservedDate: getLocalDateString() };
         if (isOrderExpired(order)) {
+          expiredOnLoadRef.current = order;
           localStorage.removeItem('kanzaki_active_order');
           return null;
         }
@@ -288,11 +338,21 @@ export default function App() {
     return null;
   });
 
+  // 起動時にすでに終了していた予約を、ログイン中のアカウントの履歴に残す
+  React.useEffect(() => {
+    const expired = expiredOnLoadRef.current;
+    if (expired && currentUser?.email) {
+      expiredOnLoadRef.current = null;
+      archiveOrderRef.current(expired, 'completed');
+    }
+  }, [currentUser?.email]);
+
   // 到着時刻を過ぎた予約は自動で終了し、新しい予約ができるようにする
   React.useEffect(() => {
     if (!activeOrder) return;
     const expireIfNeeded = () => {
       if (isOrderExpired(activeOrder)) {
+        archiveOrderRef.current(activeOrder, 'completed');
         setActiveOrder(null);
         try {
           localStorage.removeItem('kanzaki_active_order');
@@ -413,6 +473,7 @@ export default function App() {
 
   const handleCancelOrder = () => {
     const cancelId = activeOrder?.orderId;
+    if (activeOrder) archiveOrder(activeOrder, 'cancelled');
     setActiveOrder(null);
     try {
       localStorage.removeItem('kanzaki_active_order');
@@ -605,6 +666,7 @@ export default function App() {
         balance={nPointBalance}
         pointHistory={pointHistory}
         activeOrder={activeOrder}
+        orderHistory={orderHistory}
         onLogout={handleLogout}
         onOpenNPointModal={() => {
           setIsMyPageOpen(false);

@@ -65,7 +65,7 @@ export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, 
               ]}
             />
             <p>
-              ※ログイン状態、N-POINTの残高・履歴、使用済みクーポン、マイ駅設定などは、お使いの端末（ブラウザのLocalStorage等）内に保存されます。
+              ※ログイン状態、N-POINTの残高・履歴、終了した予約の履歴、使用済みクーポン、マイ駅設定などは、お使いの端末（ブラウザのLocalStorage等）内に保存されます。
             </p>
             <p>
               ※アプリの利用状況を把握するため、端末ごとに自動で作られる識別番号（氏名やメールアドレスとは結びつきません）と、アプリを開いた日・回数・アプリの版数を記録します。

@@ -20,7 +20,7 @@ import {
   Lock,
 } from 'lucide-react';
 import { UserAvatar } from './UserAvatar';
-import { UserProfile, ActiveOrder, PointHistoryItem, AccountActivityItem } from '../types';
+import { UserProfile, ActiveOrder, PointHistoryItem, AccountActivityItem, OrderHistoryItem } from '../types';
 import { deleteAccount } from '../utils/accountApi';
 import { PrivacyPolicyModal } from './PrivacyPolicyModal';
 
@@ -31,6 +31,7 @@ interface MyPageModalProps {
   balance: number;
   pointHistory: PointHistoryItem[];
   activeOrder: ActiveOrder | null;
+  orderHistory: OrderHistoryItem[];
   onLogout: () => void;
   onOpenNPointModal: () => void;
   onOpenQRCodeModal: () => void;
@@ -43,6 +44,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
   balance,
   pointHistory,
   activeOrder,
+  orderHistory,
   onLogout,
   onOpenNPointModal,
   onOpenQRCodeModal,
@@ -122,9 +124,41 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
           },
         ]
       : []),
-    // 3. N-POINT獲得・登録ボーナス(謎解きイベントの報酬・制覇コードは「イベント」にも表示)
+    // 3. 終了した予約(乗車済み・キャンセル)。特急券とデリバリーに分けて表示する
+    ...orderHistory.flatMap((h): AccountActivityItem[] => {
+      const done = h.result === 'completed';
+      const date = h.reservedDate ? h.reservedDate.replace(/-/g, '/') : '';
+      const deliveryTotal = h.items.reduce((sum, i) => sum + i.price * i.quantity, 0);
+      const list: AccountActivityItem[] = [
+        {
+          id: `act_hist_ticket_${h.orderId}`,
+          category: 'ticket',
+          title: `${h.trainName} ${h.carNo}号車 ${h.seatNo}席`,
+          subtitle: `${h.boardingStation || ''} (${h.departureTime || ''}) → ${h.destinationStation || ''} (${h.arrivalTime || ''})`,
+          date,
+          status: done ? '乗車済み' : 'キャンセル',
+          statusColor: done ? 'indigo' : 'slate',
+          amount: `¥${h.ticketPrice.toLocaleString()}`,
+          details: { 予約番号: h.orderId },
+        },
+      ];
+      if (h.items.length > 0) {
+        list.push({
+          id: `act_hist_del_${h.orderId}`,
+          category: 'delivery',
+          title: `車内デリバリー注文 (${h.items.length}商品)`,
+          subtitle: h.items.map((i) => i.name).join('、'),
+          date,
+          status: done ? '利用済み' : 'キャンセル',
+          statusColor: done ? 'indigo' : 'slate',
+          amount: `¥${deliveryTotal.toLocaleString()}`,
+        });
+      }
+      return list;
+    }),
+    // 4. N-POINT獲得・登録ボーナス(謎解きイベントの報酬・制覇コードは「イベント」にも表示。登録ボーナスは対象外)
     ...pointHistory.map((p) => {
-      const isEventReward = p.type === 'stamp' || p.type === 'coupon';
+      const isEventReward = (p.type === 'stamp' || p.type === 'coupon') && !String(p.id || '').startsWith('pt_init_');
       return {
         id: `act_pt_${p.id}`,
         category: (isEventReward ? 'event' : 'point') as 'event' | 'point',
