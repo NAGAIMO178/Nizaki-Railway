@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ChevronRight, ChevronDown, ChevronUp, Info, HelpCircle, AlertCircle, ArrowLeftRight, X, Clock, RotateCcw, CheckCircle2 } from 'lucide-react';
-import { getTsuchiuraLiveTrains } from '../utils/tsuchiuraTimetable';
+import { computeLiveTrains as computeDiaLiveTrains, getCachedLineData, loadLineData, normalizeStationName } from '../utils/diaTimetable';
 import { LocationStationDetailCard, LocationStationInfo } from './LocationStationDetailCard';
 import { sendLocalPushNotification } from '../utils/pushNotification';
 import { disruptionManager } from '../utils/disruptionManager';
@@ -214,6 +214,14 @@ const LINES_DATA: DisplayLine[] = [
   },
 ];
 
+// 表示する路線と、ダイヤ(master.json)の路線コードの対応
+const DIA_LINE_CODES: Record<string, string> = {
+  kanzaki: 'Y',
+  kanzaki_kosoku: 'NI',
+  saichi_loop: 'SC',
+  tsuchiura: 'TC',
+};
+
 export const TrainLocationTab: React.FC<TrainLocationTabProps> = () => {
   const [activeLineId, setActiveLineId] = useState<string>('kanzaki');
   const [direction, setDirection] = useState<1 | 2>(1); // 1=下り/方向1, 2=上り/方向2
@@ -300,261 +308,56 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = () => {
   // 常に起点を一番上に配置した固定の駅順で表示（方向切替で順序が反転しないよう統一）
   const displayStations = activeLine.stations;
 
-  // 発車時刻・経過時間に基づいた動的リアルタイム列車計算
+  // 全駅ダイヤ(小分けJSON)の読み込み。路線を開いたときに、その路線の列車データだけを読む
+  const [diaState, setDiaState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [diaRetry, setDiaRetry] = useState(0);
+  const diaLineCode = DIA_LINE_CODES[activeLineId];
+
+  useEffect(() => {
+    if (!diaLineCode) return;
+    if (getCachedLineData(diaLineCode)) {
+      setDiaState('ready');
+      return;
+    }
+    let alive = true;
+    setDiaState('loading');
+    loadLineData(diaLineCode)
+      .then(() => {
+        if (alive) setDiaState('ready');
+      })
+      .catch(() => {
+        if (alive) setDiaState('error');
+      });
+    return () => {
+      alive = false;
+    };
+  }, [diaLineCode, diaRetry]);
+
+  // ダイヤに基づいて、いまの時刻に走っている列車と位置を求める
+  // (運転見合わせの列車は含まれない。遅延は運行指令の設定だけを反映する)
   const computeLiveTrains = (): LiveTrainPos[] => {
-    if (activeLineId === 'tsuchiura') {
-      // 運行指令(遅延・見合わせ・影響区間)の反映は getTsuchiuraLiveTrains の中で列車の位置ごとに行う
-      return getTsuchiuraLiveTrains(now, direction, displayStations);
-    }
+    const data = diaLineCode ? getCachedLineData(diaLineCode) : undefined;
+    if (!data) return [];
 
-    const trains: LiveTrainPos[] = [];
-    const STATION_INTERVAL_SEC = 90; // 1駅進むのに90秒 (30秒停車 + 60秒駅間走行)
-
-    const totalStations = displayStations.length;
-    if (totalStations === 0) return trains;
-
-    // 深夜営業外の判定 (01:00〜04:30 は運休時間帯)
-    const currentHour = new Date(now).getHours();
-    const currentMin = new Date(now).getMinutes();
-    const minFromMidnight = currentHour * 60 + currentMin;
-
-    if (minFromMidnight >= 60 && minFromMidnight < 270) {
-      return [];
-    }
-
-// 路線別の厳格な種別および途中折り返し・終着可能駅の設定
-const LIVE_LINE_CONFIG: Record<string, {
-  trainTypes: string[];
-  terminatingStations: string[];
-}> = {
-  kanzaki: {
-    trainTypes: ['各停', '急行', '特急（Nライナー）'],
-    terminatingStations: ['北千住', '越谷レイクタウン', '大宮', '調布', '新横浜', '横浜', '東京'],
-  },
-  kanzaki_kosoku: {
-    trainTypes: ['各停', '急行'],
-    terminatingStations: ['東京', '横浜'],
-  },
-  saichi_loop: {
-    trainTypes: ['各停', '急行', '特急「あやみ」'],
-    terminatingStations: ['松戸', '柏', '春日部', '大宮', '池袋', '新宿', '東京'],
-  },
-  tsuchiura: {
-    trainTypes: ['普通', '区間快速', '快速', '特別快速', '通勤特快', '特急めぐり'],
-    terminatingStations: ['守谷', '土浦', '茨城空港', '鹿島旭', '日立', '松戸'],
-  },
-};
-
-// 路線別の種別ごと停車駅マップ
-const LIVE_LINE_STOP_STATIONS: Record<string, Record<string, string[]>> = {
-  kanzaki: {
-    '各停': [
-      '東京', '浅草', '北千住', '足立', '草加', '越谷レイクタウン', '七光台', '北春日部',
-      '地下鉄岩槻', '蓮田', '丸山', '大宮', '朝霞台', '新座', 'ひばりヶ丘', '田無',
-      '武蔵境', '中三鷹', '調布', '生田', '溝の口', '新横浜', '横浜'
-    ],
-    '急行': [
-      '東京', '北千住', '草加', '越谷レイクタウン', '大宮', '朝霞台',
-      'ひばりヶ丘', '調布', '生田', '溝の口', '新横浜', '横浜'
-    ],
-    '特急（Nライナー）': [
-      '東京', '北千住', '越谷レイクタウン', '大宮', 'ひばりヶ丘',
-      '調布', '溝の口', '新横浜', '横浜'
-    ],
-    '特急Nライナー': [
-      '東京', '北千住', '越谷レイクタウン', '大宮', 'ひばりヶ丘',
-      '調布', '溝の口', '新横浜', '横浜'
-    ],
-  },
-  kanzaki_kosoku: {
-    '各停': ['東京', '新橋', '品川', '大井町', '平和島', '地下鉄蒲田', '川崎', '鶴見', '横浜'],
-    '急行': ['東京', '新橋', '品川', '川崎', '横浜'],
-  },
-  saichi_loop: {
-    '各停': [
-      '東京', '南千住', '北千住', '綾瀬', '松戸', '柏', '七光台', '春日部', '地下鉄岩槻',
-      '大宮公園', '大宮', 'さいたま新都心', '南浦和', '川口', '赤羽', '志村坂上',
-      '上板橋', '小竹向原', '池袋', '新宿'
-    ],
-    '急行': ['東京', '北千住', '松戸', '柏', '春日部', '大宮', '川口', '池袋', '新宿'],
-    '特急「あやみ」': ['東京', '北千住', '松戸', '柏', '春日部', '大宮', '池袋', '新宿'],
-    '特急': ['東京', '北千住', '松戸', '柏', '春日部', '大宮', '池袋', '新宿'],
-  },
-  tsuchiura: {
-    '普通': [
-      '松戸', '新松戸', '松が丘', '柏', '守谷', '谷井田', '森の里', '荒川沖', '土浦',
-      '高浜', '茨城空港', '鹿島旭', '大洗', '那珂湊', '平磯', 'ひたちなか海浜公園',
-      '久慈川', '大甕（おおみか）', '東大沼', '多賀', '会瀬（おうせ）', '日立'
-    ],
-    '各停': [
-      '松戸', '新松戸', '松が丘', '柏', '守谷', '谷井田', '森の里', '荒川沖', '土浦',
-      '高浜', '茨城空港'
-    ],
-    '各停(近距離)': [
-      '松戸', '新松戸', '松が丘', '柏', '守谷', '谷井田', '森の里', '荒川沖', '土浦',
-      '高浜', '茨城空港'
-    ],
-    '各停(遠距離)': [
-      '茨城空港', '鹿島旭', '大洗', '那珂湊', '平磯', 'ひたちなか海浜公園',
-      '久慈川', '大甕（おおみか）', '東大沼', '多賀', '会瀬（おうせ）', '日立'
-    ],
-    '区間快速': [
-      '松戸', '新松戸', '松が丘', '柏', '守谷', '谷井田', '森の里', '荒川沖', '土浦',
-      '高浜', '茨城空港', '鹿島旭', '大洗', '那珂湊', '平磯', 'ひたちなか海浜公園',
-      '久慈川', '大甕（おおみか）', '東大沼', '多賀', '会瀬（おうせ）', '日立'
-    ],
-    '快速': [
-      '松戸', '新松戸', '柏', '守谷', '土浦', '高浜', '茨城空港', '鹿島旭',
-      '大洗', '那珂湊', '平磯', 'ひたちなか海浜公園', '大甕（おおみか）', '多賀', '日立'
-    ],
-    '特別快速': ['松戸', '柏', '土浦', '高浜', '茨城空港'],
-    '通勤特快': ['松戸', '柏', '土浦', '茨城空港'],
-    '特急めぐり': ['松戸', '柏', '土浦', 'ひたちなか海浜公園', '日立'],
-  },
-};
-
-    const config = LIVE_LINE_CONFIG[activeLineId] || LIVE_LINE_CONFIG.kanzaki;
-
-    // 3.5分(210秒)間隔で始発駅から定期的に出発する固定スロット
-    const TRAIN_FREQUENCY_SEC = 210;
-    const intervalMs = TRAIN_FREQUENCY_SEC * 1000;
-    const totalTripSec = (totalStations - 1) * STATION_INTERVAL_SEC;
-
-    // 現在時刻を基準にスナップした固定のタイムスロット
-    const currentSlot = Math.floor(now / intervalMs) * intervalMs;
-    const numSlotsToLookBack = Math.ceil((totalTripSec * 1000) / intervalMs) + 2;
-
-    for (let slotIndex = -numSlotsToLookBack; slotIndex <= 1; slotIndex++) {
-      const trainStartTime = currentSlot + slotIndex * intervalMs;
-      const elapsedSec = Math.floor((now - trainStartTime) / 1000);
-      if (elapsedSec < 0) continue;
-
-      const step = Math.floor(elapsedSec / STATION_INTERVAL_SEC);
-      if (step >= totalStations) continue;
-
-      // 下り (direction === 1): 上 (0) から下 (totalStations-1) へ進行
-      // 上り (direction === 2): 下 (totalStations-1) から上 (0) へ進行
-      const stationIndex = direction === 1 ? step : (totalStations - 1) - step;
-      if (stationIndex < 0 || stationIndex >= totalStations) continue;
-
-      const timeInCurrentSegment = elapsedSec % STATION_INTERVAL_SEC;
-
-      const currentStation = displayStations[stationIndex];
-      if (!currentStation) continue;
-
-      const seed = Math.abs(Math.sin(trainStartTime / 100000)) * 10000;
-      const trainType = config.trainTypes[Math.floor(seed) % config.trainTypes.length];
-      
-      const lineStops = LIVE_LINE_STOP_STATIONS[activeLineId] || LIVE_LINE_STOP_STATIONS.kanzaki;
-      const allowedStops = lineStops[trainType] || lineStops['各停'] || [];
-      const isStopStation = allowedStops.includes(currentStation.name);
-
-      // 通過駅（停車駅に含まれていない駅）の場合は絶対に「停車中(isBetween=false)」にならず、常に「通過中(isBetween=true)」とする
-      const isBetween = !isStopStation || (timeInCurrentSegment >= 30);
-
-      // 管理者運行指令による実効遅延（1〜最大遅延分の乱数）または通常時の微小遅延
-      // (影響区間が指定されていれば、その区間にいる列車だけに反映する)
-      const effectiveDelay = disruptionManager.getEffectiveDelayForTrain(activeLineId, trainStartTime, direction, {
-        stationName: currentStation.name,
-        isBetween,
-      });
-      let delayMinutes = 0;
-      if (effectiveDelay.isSuspended) {
-        delayMinutes = 99; // 運転見合わせフラグ(画面には走行中の列車として表示しない)
-      } else if (effectiveDelay.delayMinutes > 0) {
-        delayMinutes = effectiveDelay.delayMinutes;
-      } else {
-        // 全路線・上下線あわせても総合的に約1〜2%以下の極めて稀な発生確率 (1/300 ≒ 0.3%)
-        delayMinutes = Math.floor(seed) % 300 === 0 ? Math.floor(seed % 3) + 1 : 0;
-      }
-
-      // 進行方向の前方にある折返し可能駅のみを行き先候補として抽出
-      let forwardTerminatingStations = config.terminatingStations.filter((stName) => {
-        const idxInDisplay = displayStations.findIndex((s) => s.name === stName);
-        if (idxInDisplay === -1) return false;
-        return direction === 1 ? idxInDisplay > stationIndex : idxInDisplay < stationIndex;
-      });
-
-      if (activeLineId === 'kanzaki') {
-        if (trainType === '急行') {
-          forwardTerminatingStations = forwardTerminatingStations.filter((stName) =>
-            ['溝の口', '新横浜', '横浜', '生田', '調布', '朝霞台', '大宮', '草加', '北千住', '東京'].includes(stName)
-          );
-        } else if (trainType.includes('Nライナー')) {
-          forwardTerminatingStations = forwardTerminatingStations.filter((stName) =>
-            ['東京', '大宮', '横浜'].includes(stName)
-          );
-        }
-      }
-
-      let destination = '';
-      if (forwardTerminatingStations.length > 0) {
-        destination = forwardTerminatingStations[Math.floor(seed * 1.5) % forwardTerminatingStations.length];
-      } else {
-        if (direction === 1) {
-          if (trainType.includes('Nライナー')) {
-            destination = displayStations.some(s => s.name === '横浜') ? '横浜' : '大宮';
-          } else {
-            destination = displayStations[displayStations.length - 1].name;
-          }
-        } else {
-          destination = displayStations[0].name;
-        }
-      }
-
-      // 終点通り越し検証：万が一現在駅が行き先を越えている場合は除外・リセット対象
-      const destIdx = displayStations.findIndex((s) => s.name === destination);
-      if (destIdx !== -1) {
-        if (direction === 1 && stationIndex > destIdx) continue;
-        if (direction === 2 && stationIndex < destIdx) continue;
-      }
-
-      // 時刻表生成（進行方向に応じた今後の『停車駅のみ』を終点まで抽出）
-      const stepDirection = direction === 1 ? 1 : -1;
-      const timetable = [];
-      let checkOffset = 0;
-
-      while (checkOffset < totalStations) {
-        const nextIdx = stationIndex + checkOffset * stepDirection;
-        if (nextIdx >= 0 && nextIdx < totalStations) {
-          const st = displayStations[nextIdx];
-          if (allowedStops.includes(st.name)) {
-            const arrivalTimestamp = trainStartTime + (step + checkOffset) * STATION_INTERVAL_SEC * 1000;
-            const arrivalTime = new Date(arrivalTimestamp);
-            const estTime = new Date(arrivalTimestamp + delayMinutes * 60 * 1000);
-            const formatT = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-            timetable.push({
-              stationName: st.name,
-              scheduledTime: formatT(arrivalTime),
-              estimatedTime: formatT(estTime),
-            });
-          }
-          // 行先駅に到達したら生成終了
-          if (destIdx !== -1 && nextIdx === destIdx) {
-            break;
-          }
-        } else {
-          break;
-        }
-        checkOffset++;
-      }
-
-      trains.push({
-        id: `live_${activeLineId}_${direction}_${trainStartTime}`,
-        lineId: activeLineId,
-        direction,
-        trainType,
-        destination,
-        carCount: trainType.includes('特急') || trainType === '特別快速' ? 10 : 8,
-        stationId: currentStation.id,
-        isBetween,
-        isStopStation,
-        delayMinutes,
-        timetable,
-      });
-    }
-
-    return trains;
+    return computeDiaLiveTrains(data, activeLineId, direction, now).flatMap((t) => {
+      const st = displayStations.find((x) => normalizeStationName(x.name) === normalizeStationName(t.stationName));
+      if (!st) return [];
+      return [
+        {
+          id: t.id,
+          lineId: activeLineId,
+          direction: t.direction,
+          trainType: t.trainType,
+          destination: t.destination,
+          carCount: t.carCount,
+          stationId: st.id,
+          isBetween: t.isBetween,
+          isStopStation: t.isStopStation,
+          delayMinutes: t.delayMinutes,
+          timetable: t.timetable,
+        },
+      ];
+    });
   };
 
   // 運転見合わせ(99)の列車は走行中の列車として描かない
@@ -584,14 +387,17 @@ const LIVE_LINE_STOP_STATIONS: Record<string, Record<string, string[]>> = {
     performResetAndSet();
   }, [activeLineId, direction]);
 
+  // 路線のデータを読み込み終えたら、すぐに列車を表示する
+  useEffect(() => {
+    if (diaState === 'ready') setLiveTrains(computeVisibleTrains());
+  }, [diaState]);
+
   // 1秒おきの時計更新時：リセット中でなければ設置状態を更新
   useEffect(() => {
     if (!isResetting) {
       setLiveTrains(computeVisibleTrains());
     }
   }, [now]);
-
-  const lineTrains = computeVisibleTrains();
 
   // 優等度ランク計算（特急/めぐり/スカイ > 通勤特快/特別快速 > 快速/急行 > 準急/区間快速 > 各停/普通）
   const getTrainRank = (trainType: string): number => {
@@ -880,8 +686,23 @@ const LIVE_LINE_STOP_STATIONS: Record<string, Record<string, string[]>> = {
           );
         })()}
         <p className="text-[11px] text-[#857D99] leading-relaxed">
-          ※列車位置は時刻から計算した模擬表示です(実在の運行ではありません)。
+          ※列車位置は模擬ダイヤに基づく表示です(実在の運行ではありません)。
         </p>
+        {diaState === 'loading' && (
+          <p className="mt-1 text-[11px] text-[#716986]">時刻表を読み込み中…</p>
+        )}
+        {diaState === 'error' && (
+          <div className="mt-1 flex items-center gap-2 text-[11px] text-rose-700">
+            <span>時刻表を読み込めませんでした。</span>
+            <button
+              type="button"
+              onClick={() => setDiaRetry((n) => n + 1)}
+              className="px-2 py-0.5 rounded bg-[#5B21B6] text-white font-bold cursor-pointer"
+            >
+              再読み込み
+            </button>
+          </div>
+        )}
         <div className="relative border-l-2 border-[#D1C9E3] ml-20 pl-6 space-y-7 my-2">
           {displayStations.map((st, idx) => {
             // Find all trains at this station (sorted by express rank so express stays on left, local stays on right)

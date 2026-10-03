@@ -34,6 +34,9 @@ const GRACE_SEC = 30;
 
 const normalizeName = (name: string): string => name.replace(/（.*?）/g, '').trim();
 
+// 駅名の読み(カッコ書き)を除いた形。画面側の駅名との照合に使う
+export const normalizeStationName = normalizeName;
+
 const fetchJson = async <T>(file: string): Promise<T> => {
   const res = await fetch(`${BASE_URL}${file}`);
   if (!res.ok) throw new Error(`ダイヤの読み込みに失敗しました (${file}: ${res.status})`);
@@ -191,4 +194,183 @@ export const formatDiaTime = (sec: number): string => {
   const h = Math.floor(sec / 3600) % 24;
   const m = Math.floor((sec % 3600) / 60);
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+};
+
+
+// ---------------------------------------------------------------------------
+// 列車位置(いまどの駅・どの駅間にいるか)
+// ---------------------------------------------------------------------------
+
+export interface LineData {
+  code: string;
+  master: MasterLine;
+  trains: TrainRow[];
+}
+
+const lineCache = new Map<string, LineData>();
+
+export const getCachedLineData = (code: string): LineData | undefined => lineCache.get(code);
+
+// 1路線ぶんの全列車を読み込む(列車位置の表示用)
+export const loadLineData = async (code: string): Promise<LineData> => {
+  const cached = lineCache.get(code);
+  if (cached) return cached;
+  const master = await loadOnce<Master>('master.json');
+  const cfg = master[code];
+  if (!cfg) throw new Error(`路線が見つかりません (${code})`);
+  const trains = await loadOnce<TrainRow[]>(`${code}_trains.json`);
+  const data: LineData = { code, master: cfg, trains };
+  lineCache.set(code, data);
+  return data;
+};
+
+export interface DiaLiveTrain {
+  id: string;
+  direction: 1 | 2;
+  trainType: string;
+  destination: string;
+  carCount: number;
+  // 表示用の駅の並びで「この駅の行(isBetweenなら、この駅と次の駅の間)」に置く駅名
+  stationName: string;
+  isBetween: boolean;
+  isStopStation: boolean;
+  delayMinutes: number;
+  timetable: { stationName: string; scheduledTime: string; estimatedTime: string }[];
+}
+
+// direction: 1=各路線の1つ目の方向(下り/外回り) 2=もう一方
+// lineId: 運行指令(遅延・見合わせ)の路線ID。運転見合わせの列車は含めない
+export const computeLiveTrains = (data: LineData, lineId: string, direction: 1 | 2, nowMs: number): DiaLiveTrain[] => {
+  const { master } = data;
+  const n = master.stations.length;
+  const loop = master.loop;
+  const dirCode = master.dirs[direction - 1];
+  const km = master.stations.map((st) => st[1]);
+
+  const dayStart = new Date(nowMs);
+  dayStart.setHours(0, 0, 0, 0);
+  const base = dayStart.getTime();
+  const s = (nowMs - base) / 1000;
+
+  // 進行方向に沿った位置(pos)と、表示用の駅の番号(idx)の対応
+  // 環状線は、最後に起点の東京へ戻るぶんを pos = n として持つ
+  const lastPos = loop ? n : n - 1;
+  const idxOfPos = (pos: number): number => {
+    if (loop) return direction === 1 ? pos % n : (n - pos) % n;
+    return direction === 1 ? pos : n - 1 - pos;
+  };
+  const posOfStop = (idx: number, isFirst: boolean): number => {
+    if (loop) {
+      if (idx === 0) return isFirst ? 0 : lastPos;
+      return direction === 1 ? idx : n - idx;
+    }
+    return direction === 1 ? idx : n - 1 - idx;
+  };
+  // 起点側からの距離(km)。環状線の最後の東京までの距離は、最後の駅間の長さで見積もる
+  const kmEnd = km[n - 1] + (km[n - 1] - km[n - 2]);
+  const kmOfPos = (pos: number): number => {
+    if (loop) {
+      if (direction === 1) return pos < n ? km[pos] : kmEnd;
+      return pos === 0 ? 0 : kmEnd - km[idxOfPos(pos)];
+    }
+    return direction === 1 ? km[pos] : km[n - 1] - km[idxOfPos(pos)];
+  };
+
+  const result: DiaLiveTrain[] = [];
+
+  for (const t of data.trains) {
+    if (t[2] !== dirCode) continue;
+    const t0 = t[4];
+    const arr = t[5];
+    const lastArr = t0 + arr[arr.length - 2];
+
+    // 24時以降も走る列車があるので、「今日の秒数」と「翌日の秒数(24時間足す)」の両方で調べる
+    const nowSec = [s, s + DAY].find((x) => x >= t0 && x <= lastArr);
+    if (nowSec === undefined) continue;
+
+    const stops: { pos: number; A: number; D: number }[] = [];
+    for (let i = 0; i < arr.length; i += 3) {
+      const a = arr[i + 1];
+      const d = arr[i + 2];
+      stops.push({
+        pos: posOfStop(arr[i], i === 0),
+        A: t0 + (a === -1 ? d : a),
+        D: t0 + (d === -1 ? a : d),
+      });
+    }
+
+    let atStop = -1;
+    let segment = -1;
+    for (let k = 0; k < stops.length; k++) {
+      if (nowSec >= stops[k].A && nowSec <= stops[k].D) {
+        atStop = k;
+        break;
+      }
+      if (k < stops.length - 1 && nowSec > stops[k].D && nowSec < stops[k + 1].A) {
+        segment = k;
+        break;
+      }
+    }
+    if (atStop < 0 && segment < 0) continue;
+
+    let stationName: string;
+    let isBetween: boolean;
+    let isStopStation: boolean;
+    let futureFrom: number;
+
+    if (atStop >= 0) {
+      stationName = master.stations[idxOfPos(stops[atStop].pos)][0];
+      isBetween = false;
+      isStopStation = true;
+      futureFrom = atStop;
+    } else {
+      // 停車駅の間: 通過する駅の時刻は、距離に比例して見積もる(ダイヤ作成時と同じ考え方)
+      const from = stops[segment];
+      const to = stops[segment + 1];
+      const kmFrom = kmOfPos(from.pos);
+      const kmTo = kmOfPos(to.pos);
+      let passed = from.pos;
+      for (let r = from.pos + 1; r < to.pos; r++) {
+        const frac = kmTo === kmFrom ? 0 : (kmOfPos(r) - kmFrom) / (kmTo - kmFrom);
+        if (from.D + frac * (to.A - from.D) <= nowSec) passed = r;
+      }
+      const i1 = idxOfPos(passed);
+      const i2 = idxOfPos(passed + 1);
+      // 環状線の新宿〜東京(最後の東京へ戻る区間)は、画面の駅の並びに駅間が無いので表示しない
+      if (Math.abs(i1 - i2) !== 1) continue;
+      stationName = master.stations[Math.min(i1, i2)][0];
+      isBetween = true;
+      isStopStation = stops.some((st) => st.pos === passed);
+      futureFrom = segment + 1;
+    }
+
+    const eff = disruptionManager.getEffectiveDelayForTrain(lineId, base + t0 * 1000, direction, {
+      stationName,
+      isBetween,
+    });
+    if (eff.isSuspended) continue;
+    const delay = eff.delayMinutes;
+
+    const timetable = stops.slice(futureFrom).map((st) => ({
+      stationName: master.stations[idxOfPos(st.pos)][0],
+      scheduledTime: formatDiaTime(st.A),
+      estimatedTime: formatDiaTime(st.A + delay * 60),
+    }));
+
+    const typeName = master.types[t[1]]?.[0] ?? '各停';
+    result.push({
+      id: `dia-${data.code}-${t[0]}`,
+      direction,
+      trainType: displayType(typeName),
+      destination: master.stations[idxOfPos(stops[stops.length - 1].pos)][0],
+      carCount: typeName.includes('特急') || typeName === '特別快速' ? 10 : 8,
+      stationName,
+      isBetween,
+      isStopStation,
+      delayMinutes: delay,
+      timetable,
+    });
+  }
+
+  return result;
 };
