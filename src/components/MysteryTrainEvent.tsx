@@ -324,10 +324,10 @@ export const MysteryTrainEvent: React.FC<MysteryTrainEventProps> = ({
         showToast(`特典コード「${MYSTERY_CLEAR_COUPON_CODE}」をコピーしました`);
         setTimeout(() => setCopiedCode(false), 3000);
       }).catch(() => {
-        setCopiedCode(true);
+        showToast('コピーできませんでした。コードを長押しして手動でコピーしてください。');
       });
     } else {
-      setCopiedCode(true);
+      showToast('この端末ではコピーできません。コードを長押しして手動でコピーしてください。');
     }
   };
 
@@ -338,6 +338,8 @@ export const MysteryTrainEvent: React.FC<MysteryTrainEventProps> = ({
         setCopiedRiddle(true);
         showToast('暗号電文をコピーしました');
         setTimeout(() => setCopiedRiddle(false), 2500);
+      }).catch(() => {
+        showToast('コピーできませんでした。');
       });
     }
   };

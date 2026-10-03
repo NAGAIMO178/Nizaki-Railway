@@ -1,5 +1,4 @@
 // Disruption Dispatcher & Train Delay Manager for 神埼鉄道 NIZAKI App
-// Version 3.11.0 (Emergency Incident Response, Weather Forecast & Auto-Expiring Operation Alerts)
 
 import { callGas } from './accountApi';
 
@@ -323,13 +322,21 @@ export function getExpiryOptions(baseDate: Date = new Date()): { label: string; 
   tomorrowMidnight.setDate(tomorrowMidnight.getDate() + 1);
   tomorrowMidnight.setHours(24, 0, 0, 0);
 
+  const dayLabel = (d: Date) => {
+    const tomorrow = new Date(baseDate);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    if (d.toDateString() === baseDate.toDateString()) return '本日';
+    if (d.toDateString() === tomorrow.toDateString()) return '明日';
+    return `${d.getMonth() + 1}/${d.getDate()}`;
+  };
+
   const formatTimeOnly = (d: Date) => {
-    const isToday = d.getDate() === baseDate.getDate();
-    const isTomorrow = d.getDate() === baseDate.getDate() + 1;
+    // 0:00ちょうどは前日の24:00として表示(例: 本日 24:00)
+    if (d.getHours() === 0 && d.getMinutes() === 0) {
+      return `${dayLabel(new Date(d.getTime() - 60000))} 24:00`;
+    }
     const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-    if (isToday) return `本日 ${time}`;
-    if (isTomorrow) return `明日 ${time}`;
-    return `${d.getMonth() + 1}/${d.getDate()} ${time}`;
+    return `${dayLabel(d)} ${time}`;
   };
 
   return [
@@ -846,7 +853,7 @@ export const disruptionManager = {
 
     if (d.statusType === 'partially_suspended') {
       // 3本に1本程度を運休、他は小遅延
-      const seedNum = typeof trainSeed === 'number' ? trainSeed : stringToSeed(String(trainSeed));
+      const seedNum = typeof trainSeed === 'number' ? Math.floor(Math.abs(trainSeed)) : stringToSeed(String(trainSeed));
       const isSusp = seedNum % 3 === 0;
       return {
         delayMinutes: isSusp ? 0 : Math.min(d.maxDelayMinutes || 5, (seedNum % 5) + 1),
@@ -856,7 +863,7 @@ export const disruptionManager = {
 
     // statusType === 'delay'
     const max = Math.max(1, d.maxDelayMinutes || 1);
-    const seedNum = typeof trainSeed === 'number' ? trainSeed : stringToSeed(String(trainSeed));
+    const seedNum = typeof trainSeed === 'number' ? Math.floor(Math.abs(trainSeed)) : stringToSeed(String(trainSeed));
     // 1〜max の範囲で乱数遅延を決定論的に生成
     const generatedDelay = (seedNum % max) + 1;
 

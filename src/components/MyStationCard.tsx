@@ -3,7 +3,6 @@ import { Users, ChevronLeft, ChevronRight, MapPin, Moon, Clock, Sparkles, Naviga
 import { RegisterableStation } from './MyStationRegisterCard';
 import { findNearestStation } from '../utils/nearestStation';
 import { getTsuchiuraDeparturesForStation } from '../utils/tsuchiuraTimetable';
-import { getKanzakiDeparturesForStation } from '../utils/kanzakiTimetable';
 import { disruptionManager } from '../utils/disruptionManager';
 
 interface MyStationCardProps {
