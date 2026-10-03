@@ -97,7 +97,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
 
   // Coupon Code State
   const [couponInput, setCouponInput] = useState('');
-  const [appliedCoupon, setAppliedCoupon] = useState<{ code: string; label: string; type?: 'ayami300' | 'fare10' | 'freePass' } | null>(null);
+  const [appliedCoupon, setAppliedCoupon] = useState<{ code: string; label: string; type?: 'ayami300' } | null>(null);
   const [couponMessage, setCouponMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // 端末（localStorage）の使用済みクーポンリスト取得
@@ -133,13 +133,9 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
     const compactCode = normalized.replace(/\s+/g, '');
 
     // 別名コードも含め、まずクーポン本体(正規コード)を特定する
-    let coupon: { code: string; label: string; type: 'ayami300' | 'fare10' | 'freePass'; successText: string } | null = null;
+    let coupon: { code: string; label: string; type: 'ayami300'; successText: string } | null = null;
     if (compactCode === 'AYAMI300') {
       coupon = { code: 'AYAMI 300', label: '特急あやみ 普通指定席 300円引き', type: 'ayami300', successText: 'クーポンを適用しました。' };
-    } else if (compactCode === 'KZ-STEP-10' || compactCode === 'KZSTEP10' || compactCode === 'KZ-STEP-500' || compactCode === 'KZSTEP500') {
-      coupon = { code: 'KZ-STEP-10', label: '【中級制覇特典】乗車運賃 10%OFF', type: 'fare10', successText: '中級制覇クーポン（乗車運賃10%OFF）を適用しました！' };
-    } else if (compactCode === 'KZ-DEEP-FREE' || compactCode === 'KZDEEPFREE' || compactCode === 'KZ-DEEP-1000' || compactCode === 'KZDEEP1000') {
-      coupon = { code: 'KZ-DEEP-FREE', label: '【上級制覇特典】1日フリー乗車券（乗車運賃 ¥0 無料）', type: 'freePass', successText: '上級制覇クーポン（乗車運賃 ¥0 タダ）を適用しました！' };
     }
 
     if (!coupon) {
@@ -413,12 +409,6 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
         if (expressType === 'ayami' && seatType === 'reserved') {
           expressDiscount = 300;
         }
-      } else if (compactCode.includes('STEP') || appliedCoupon.type === 'fare10') {
-        // 中級: 乗車運賃 10% 割引
-        fareDiscount = Math.ceil(initialFare * 0.1);
-      } else if (compactCode.includes('FREE') || appliedCoupon.type === 'freePass') {
-        // 上級: 1日フリー乗車券（乗車運賃 ¥0 タダ）
-        fareDiscount = initialFare;
       }
     }
 
@@ -964,7 +954,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
                         setCouponInput(e.target.value);
                         if (couponMessage) setCouponMessage(null);
                       }}
-                      placeholder="クーポンコードを入力（例: KZ-STEP-10 / KZ-DEEP-FREE）"
+                      placeholder="クーポンコードを入力"
                       className="flex-1 bg-[#F4F3F8] border border-[#E6E2EE] rounded-xl px-3 py-1.5 text-xs font-mono font-medium text-[#221C35] focus:outline-none focus:border-[#5B21B6] placeholder:text-gray-400"
                     />
                     <button

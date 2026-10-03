@@ -73,7 +73,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   // 簡単デモログイン（実演用・パスワード不要）
   const handleQuickLogin = (rank: 'レギュラー' | 'ゴールド' | 'プレミアム' = 'ゴールド') => {
     const demoUser: UserProfile = {
-      memberId: 'KZ-88219',
+      memberId: 'NZ-88219',
       name: 'nizaki.demo',
       email: 'nizaki.demo@example.com',
       rank,
@@ -279,7 +279,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                   </span>
                 </div>
                 <p className="text-[11px] text-[#6B6380] leading-relaxed">
-                  神埼 太郎（ゴールド会員 / KZ-88219）として即座に認証し、予約・注文・イベントの全機能を開放します。
+                  神埼 太郎（ゴールド会員 / NZ-88219）として即座に認証し、予約・注文・イベントの全機能を開放します。
                 </p>
                 <button
                   type="button"
