@@ -111,6 +111,23 @@ export interface ActiveOrder {
   deliveryStation: string;
 }
 
+// 終了した予約(乗車済み・キャンセル)の記録。アカウント利用履歴の「特急券」「デリバリー」に表示する
+export interface OrderHistoryItem {
+  orderId: string;
+  trainName: string;
+  carNo: number;
+  seatNo: string;
+  seatType?: 'megu' | 'standard';
+  boardingStation?: string;
+  destinationStation?: string;
+  departureTime?: string;
+  arrivalTime?: string;
+  reservedDate?: string;
+  ticketPrice: number;
+  items: { name: string; quantity: number; price: number }[];
+  result: 'completed' | 'cancelled';
+}
+
 export interface PointHistoryItem {
   id: string;
   title: string;
