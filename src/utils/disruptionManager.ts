@@ -20,6 +20,7 @@ export interface LineDisruption {
   useCustomMessage: boolean;
   linkToSystem: boolean; // システム（走行位置・発車案内・運行カード）へ実際に遅延・運休を連動させるか
   updatedAt: string;
+  expiresAtTimestamp?: number; // 自動解除する時刻(ms)。未設定なら手動で解除するまで継続
 }
 
 export type ForecastCategory =
@@ -485,7 +486,16 @@ export const disruptionManager = {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
-        return JSON.parse(raw);
+        const parsed: Record<string, LineDisruption> = JSON.parse(raw);
+        const now = Date.now();
+        const active: Record<string, LineDisruption> = {};
+        for (const [key, value] of Object.entries(parsed)) {
+          // 自動解除の時刻を過ぎたものは無かったことにする
+          if (!value.expiresAtTimestamp || now < value.expiresAtTimestamp) {
+            active[key] = value;
+          }
+        }
+        return active;
       }
     } catch (e) {
       console.warn('Failed to parse disruption storage:', e);
@@ -827,6 +837,30 @@ export const disruptionManager = {
   },
 
   /**
+   * 自動解除の時刻を過ぎた運行支障を保存データから取り除く(取り除いたら true)
+   */
+  checkAndCleanupExpiredDisruptions: (): boolean => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return false;
+      const parsed: Record<string, LineDisruption> = JSON.parse(raw);
+      const now = Date.now();
+      const valid: Record<string, LineDisruption> = {};
+      for (const [key, value] of Object.entries(parsed)) {
+        if (!value.expiresAtTimestamp || now < value.expiresAtTimestamp) valid[key] = value;
+      }
+      if (Object.keys(valid).length !== Object.keys(parsed).length) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(valid));
+        notifyListeners();
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  },
+
+  /**
    * 変更通知リスナーの登録
    */
   subscribe: (listener: () => void): (() => void) => {
@@ -873,6 +907,7 @@ export const disruptionManager = {
 if (typeof window !== 'undefined') {
   setInterval(() => {
     disruptionManager.checkAndCleanupExpiredForecasts();
+    disruptionManager.checkAndCleanupExpiredDisruptions();
   }, 30000);
 
   // 起動時、および20秒ごとにGASから最新の運行情報を取り込む
