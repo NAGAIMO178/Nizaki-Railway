@@ -88,7 +88,8 @@ const normalizeName = (name: string): string => name.replace(/（.*?）/g, '').t
 export const normalizeStationName = normalizeName;
 
 const fetchJson = async <T>(file: string): Promise<T> => {
-  const res = await fetch(`${BASE_URL}${file}`);
+  // ダイヤを更新したときに、古いデータがブラウザに残らないよう、アプリの版数を付ける
+  const res = await fetch(`${BASE_URL}${file}?v=${__APP_VERSION__}`);
   if (!res.ok) throw new Error(`ダイヤの読み込みに失敗しました (${file}: ${res.status})`);
   return res.json();
 };
