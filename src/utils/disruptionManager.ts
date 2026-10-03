@@ -512,6 +512,52 @@ function pushDisruptionsToServer(disruptions: Record<string, LineDisruption>, fo
     .catch(() => reportPushResult(false, '通信に失敗しました。'));
 }
 
+// 駅名の読み仮名「（おおみか）」を除いた名前
+const stripStationReading = (name: string): string => name.replace(/（.*?）/g, '');
+
+/**
+ * 影響区間の文字列から、対象となる駅の範囲(駅の並びの添字)を求める。
+ *  - 「全線」「上り線のみ」「下り線のみ」や、駅名が読み取れない文言 → null(全線に反映)
+ *  - 「大宮 〜 池袋 間」のように駅名が2つ以上読み取れる → その2駅の間
+ *  - 駅名が1つだけ → その駅のみ
+ */
+export const getAffectedStationRange = (lineId: string, section: string): [number, number] | null => {
+  const text = (section || '').trim();
+  if (!text || text === '全線' || /上り線のみ|下り線のみ/.test(text)) return null;
+
+  const names = getStationsForLine(lineId).map(stripStationReading);
+  // 「大宮」と「大宮公園」のような包含を避けるため、長い駅名から順に文中を探して消していく
+  const order = names.map((name, idx) => ({ name, idx })).sort((a, b) => b.name.length - a.name.length);
+  let remaining = text;
+  const found: { idx: number; pos: number }[] = [];
+  for (const { name, idx } of order) {
+    const pos = remaining.indexOf(name);
+    if (pos !== -1) {
+      found.push({ idx, pos });
+      remaining = remaining.slice(0, pos) + '\u0000'.repeat(name.length) + remaining.slice(pos + name.length);
+    }
+  }
+  if (found.length === 0) return null;
+  found.sort((a, b) => a.pos - b.pos);
+  const first = found[0].idx;
+  const second = found.length > 1 ? found[1].idx : first;
+  return [Math.min(first, second), Math.max(first, second)];
+};
+
+/** 列車の位置(駅に停車中/次の駅との間)が、影響区間に含まれるか */
+export const isTrainInAffectedRange = (
+  lineId: string,
+  range: [number, number] | null,
+  stationName: string,
+  isBetween: boolean
+): boolean => {
+  if (!range) return true;
+  const stationIdx = getStationsForLine(lineId).map(stripStationReading).indexOf(stripStationReading(stationName));
+  if (stationIdx === -1) return false;
+  const [from, to] = range;
+  return isBetween ? stationIdx >= from && stationIdx + 1 <= to : stationIdx >= from && stationIdx <= to;
+};
+
 export const disruptionManager = {
   /**
    * 全路線の現在設定されている運行支障情報を取得
@@ -820,12 +866,14 @@ export const disruptionManager = {
    * @param lineId 路線ID ('kanzaki', 'kanzaki_kosoku', 'saichi'/'saichi_loop', 'tsuchiura')
    * @param trainSeed 列車IDまたはタイムスタンプ等のシード
    * @param direction 進行方向 (1 = 下り, 2 = 上り, 'down' | 'up' | 'both')
+   * @param position 列車の位置(停車中の駅名、または駅間にいるか)。指定すると影響区間の外の列車は平常運転になる
    * @returns delayMinutes (0なら平常、>0なら遅れ、-1なら運休)
    */
   getEffectiveDelayForTrain: (
     lineId: string,
     trainSeed: string | number = 'train_default',
-    direction?: 1 | 2 | 'up' | 'down' | 'both'
+    direction?: 1 | 2 | 'up' | 'down' | 'both',
+    position?: { stationName: string; isBetween?: boolean }
   ): { delayMinutes: number; isSuspended: boolean } => {
     const d = disruptionManager.getLineDisruption(lineId);
     if (!d || d.statusType === 'normal' || !d.linkToSystem) {
@@ -843,6 +891,14 @@ export const disruptionManager = {
       }
       if (d.targetDirection === 'down' && !isDownTrain) {
         // 下り線のみの遅延指定で、対象が下り列車でない場合（上り列車）は平常運転
+        return { delayMinutes: 0, isSuspended: false };
+      }
+    }
+
+    // 影響区間チェック: 区間が指定されている場合、その区間にいない列車は平常運転
+    if (position) {
+      const range = getAffectedStationRange(lineId, d.section);
+      if (!isTrainInAffectedRange(lineId, range, position.stationName, !!position.isBetween)) {
         return { delayMinutes: 0, isSuspended: false };
       }
     }

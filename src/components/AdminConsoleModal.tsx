@@ -39,6 +39,7 @@ import {
   disruptionManager,
   getAdminToken,
   setAdminToken,
+  getAffectedStationRange,
   DISRUPTION_PUSH_EVENT,
   LineDisruption,
   DisruptionStatusType,
@@ -1382,6 +1383,16 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                               placeholder="例: 全線、大宮 〜 横浜 間、上り線のみ"
                               className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded-md text-slate-100 text-xs font-medium focus:outline-none focus:border-amber-400"
                             />
+                            {(() => {
+                              const range = getAffectedStationRange(selectedLineId, section);
+                              const names = getStationsForLine(selectedLineId).map((n) => n.replace(/（.*?）/g, ''));
+                              const note = range
+                                ? `→ ${names[range[0]]}${range[0] !== range[1] ? ` 〜 ${names[range[1]]}` : ''} の区間にいる列車に反映します`
+                                : /上り線のみ|下り線のみ/.test(section)
+                                ? '→ 指定した方向の全区間の列車に反映します'
+                                : '→ 全線の列車に反映します(駅名が読み取れない文言は全線扱いです)';
+                              return <p className="text-[10px] text-amber-300/90 pt-0.5">{note}</p>;
+                            })()}
                           </div>
 
                           {/* Quick Common Section Presets for current line */}
