@@ -221,9 +221,15 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
               <div className="bg-[#F9F8FD] p-4 rounded-2xl border border-[#E6E2EE] space-y-3">
                 <div className="font-extrabold text-[#5B21B6] flex items-center justify-between text-xs gap-2">
                   <span className="whitespace-nowrap">① ご乗車・座席情報</span>
-                  <span className="text-[10px] text-[#5B21B6] bg-[#EFE8FA] px-2 py-0.5 rounded border border-[#5B21B6]/20 font-bold whitespace-nowrap">
-                    予約連携済み
-                  </span>
+                  {activeOrder ? (
+                    <span className="text-[10px] text-[#5B21B6] bg-[#EFE8FA] px-2 py-0.5 rounded border border-[#5B21B6]/20 font-bold whitespace-nowrap">
+                      予約連携済み
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-300 font-bold whitespace-nowrap">
+                      予約なし
+                    </span>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 gap-2.5">
@@ -232,7 +238,7 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
                     <input
                       type="text"
                       readOnly
-                      value={selectedTrain}
+                      value={activeOrder ? selectedTrain : '—'}
                       className="w-full bg-white border border-[#D1C9E3] rounded-xl px-3 py-2 text-xs text-[#221C35] font-bold shadow-2xs"
                     />
                   </div>
@@ -252,7 +258,7 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
                                   ? '普通指定席'
                                   : '自由席'
                               })`
-                            : '1号車 (めぐシート)'
+                            : '—'
                         }
                         className="w-full bg-white border border-[#D1C9E3] rounded-xl px-3 py-2 text-xs text-[#221C35] font-bold shadow-2xs"
                       />
@@ -262,9 +268,8 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
                       <label className="text-[10px] font-bold text-[#6B6380] block mb-1 whitespace-nowrap">座席番号</label>
                       <input
                         type="text"
-                        readOnly={!!activeOrder}
-                        value={seatNo}
-                        onChange={(e) => setSeatNo(e.target.value)}
+                        readOnly
+                        value={activeOrder ? seatNo : '—'}
                         className="w-full bg-white border border-[#D1C9E3] rounded-xl px-3 py-2 text-xs text-[#221C35] font-bold shadow-2xs"
                       />
                     </div>
