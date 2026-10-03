@@ -81,6 +81,38 @@ const buildDurationLabel = (ts: number): string => {
 // 空、または時刻(HH:MM)を含む文言だけを自動で書き換える対象とする(「点検完了次第」などは触らない)
 const isTimeBasedDuration = (text: string): boolean => !text.trim() || /\d{1,2}:\d{2}/.test(text);
 
+// 「約15〜30分」「約60〜90分後」のような相対時間の文言か
+const isRelativeDuration = (text: string): boolean => /約?\s*\d+(\s*[〜~～-]\s*\d+)?\s*分/.test(text);
+
+// 自動解除の時刻を変えたときに、自動で書き換えてよい文言(空・時刻・相対時間)か
+const isSyncableDuration = (text: string): boolean => isTimeBasedDuration(text) || isRelativeDuration(text);
+
+// 復旧見込みの文言から、自動解除の時刻を求める(読み取れなければ null)
+//  - 「18:30頃まで」「10/5 6:00頃まで」 → その時刻
+//  - 「約15〜30分」「約60〜90分後」 → いまから長いほうの分数後
+const parseExpiryFromDuration = (text: string, now: Date = new Date()): number | null => {
+  const clock = text.match(/(?:(\d{1,2})\/(\d{1,2})\s+)?(\d{1,2}):(\d{2})/);
+  if (clock) {
+    const [, month, day, hour, minute] = clock;
+    const target = new Date(now);
+    if (month && day) target.setMonth(Number(month) - 1, Number(day));
+    target.setHours(Number(hour), Number(minute), 0, 0);
+    let ts = target.getTime();
+    if (ts <= now.getTime()) {
+      if (month && day) return null; // 日付付きで過去の時刻は採用しない
+      ts += 24 * 60 * 60 * 1000; // 時刻のみで過去なら翌日の同時刻
+      if (ts - now.getTime() > 12 * 60 * 60 * 1000) return null; // 12時間より先になるなら誤入力とみなす
+    }
+    return ts;
+  }
+  const relative = text.match(/約?\s*(\d+)(?:\s*[〜~～-]\s*(\d+))?\s*分/);
+  if (relative) {
+    const minutes = Number(relative[2] || relative[1]);
+    if (minutes > 0) return now.getTime() + minutes * 60 * 1000;
+  }
+  return null;
+};
+
 // 元の文言に付いていた「（※架空設定）」の注記は残したまま、時刻だけを差し替える
 const rewriteDuration = (prev: string, ts: number): string =>
   buildDurationLabel(ts) + (/※架空/.test(prev) ? '（※架空設定）' : '');
@@ -110,7 +142,10 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
   const [disruptionStatusType, setDisruptionStatusType] = useState<DisruptionStatusType>('delay');
   const [targetDirection, setTargetDirection] = useState<DisruptionDirection>('both');
   const [maxDelayMinutes, setMaxDelayMinutes] = useState<number>(15);
-  const [durationUntil, setDurationUntil] = useState<string>('18:30頃まで');
+  const [durationUntil, setDurationUntil] = useState<string>(() => {
+    const defaultOption = getExpiryOptions()[1];
+    return defaultOption ? buildDurationLabel(defaultOption.date.getTime()) : '';
+  });
   const [section, setSection] = useState<string>('全線');
   const [sectionMode, setSectionMode] = useState<'all' | 'station_pair' | 'direction_up' | 'direction_down' | 'custom'>('all');
   const [fromStation, setFromStation] = useState<string>('東京');
@@ -280,7 +315,16 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
 
   // 自動解除の時刻を選んだら、復旧見込みの文言も同じ時刻に揃える
   const syncDurationWithExpiry = (ts: number) => {
-    setDurationUntil((prev) => (isTimeBasedDuration(prev) ? rewriteDuration(prev, ts) : prev));
+    setDurationUntil((prev) => (isSyncableDuration(prev) ? rewriteDuration(prev, ts) : prev));
+  };
+
+  // 復旧見込みの文言を選ぶ・入力したら、自動解除の時刻もその内容に合わせる
+  const syncExpiryFromDuration = (text: string) => {
+    const ts = parseExpiryFromDuration(text);
+    if (ts) {
+      setDisruptionExpiryChoice('custom');
+      setDisruptionCustomExpiry(toLocalInputValue(ts));
+    }
   };
 
   // Handle reason change with smart duration adaptation
@@ -498,6 +542,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
     setShowClearStorageConfirm(false);
     setSelectedStorageKey(null);
     setStorageDataView(null);
+    if (isOpen) loadLineConfig(selectedLineId);
 
     try {
       const savedPin = localStorage.getItem(PIN_STORAGE_KEY);
@@ -1500,7 +1545,10 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                           <input
                             type="text"
                             value={durationUntil}
-                            onChange={(e) => setDurationUntil(e.target.value)}
+                            onChange={(e) => {
+                              setDurationUntil(e.target.value);
+                              syncExpiryFromDuration(e.target.value);
+                            }}
                             placeholder={
                               isWeatherRelatedReason(reason)
                                 ? '例: 天候回復次第、現時点で復旧のめどは立っていません'
@@ -1533,7 +1581,10 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                                 <button
                                   key={dur}
                                   type="button"
-                                  onClick={() => setDurationUntil(dur)}
+                                  onClick={() => {
+                                    setDurationUntil(dur);
+                                    syncExpiryFromDuration(dur);
+                                  }}
                                   className={`px-2 py-0.5 rounded text-[10px] transition-colors cursor-pointer ${
                                     durationUntil === dur
                                       ? 'bg-indigo-600 text-white font-bold border border-indigo-400 shadow-xs'
