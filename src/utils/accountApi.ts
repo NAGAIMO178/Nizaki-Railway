@@ -38,6 +38,39 @@ export async function callGas(action: string, payload: Record<string, unknown>):
   return res.json();
 }
 
+// アクセス数の記録(端末ごとの乱数IDと起動の事実だけを送る。氏名・メールアドレス等は送らない)
+// 自分の端末を数えたくないときは、URLの末尾に ?nocount=1 を付けて一度開く(戻すときは ?nocount=0)
+const DEVICE_ID_KEY = 'nizaki_device_id';
+const NO_COUNT_KEY = 'nizaki_no_count';
+const PING_SENT_KEY = 'nizaki_ping_sent';
+
+export const sendAccessPing = () => {
+  try {
+    if (import.meta.env.DEV) return;
+
+    const param = new URLSearchParams(window.location.search).get('nocount');
+    if (param === '1') localStorage.setItem(NO_COUNT_KEY, '1');
+    if (param === '0') localStorage.removeItem(NO_COUNT_KEY);
+    if (localStorage.getItem(NO_COUNT_KEY) === '1') return;
+
+    // 同じタブでの再読み込みは1回として数える
+    if (sessionStorage.getItem(PING_SENT_KEY)) return;
+    sessionStorage.setItem(PING_SENT_KEY, '1');
+
+    let deviceId = localStorage.getItem(DEVICE_ID_KEY);
+    if (!deviceId) {
+      deviceId = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `d-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+      localStorage.setItem(DEVICE_ID_KEY, deviceId);
+    }
+
+    callGas('accessPing', { deviceId, version: __APP_VERSION__ }).catch(() => {});
+  } catch {
+    // 記録できなくてもアプリの動作には影響させない
+  }
+};
+
 export const loginWithPassword = (email: string, password: string) =>
   callGas('login', { email, password });
 
