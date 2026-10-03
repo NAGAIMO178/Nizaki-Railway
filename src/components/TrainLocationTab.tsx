@@ -861,6 +861,9 @@ const LIVE_LINE_STOP_STATIONS: Record<string, Record<string, string[]>> = {
 
       {/* Main Realtime Railway Map Schematic */}
       <div className="p-4 relative">
+        <p className="text-[11px] text-[#857D99] leading-relaxed">
+          ※列車位置は時刻から計算した模擬表示です(実在の運行ではありません)。
+        </p>
         <div className="relative border-l-2 border-[#D1C9E3] ml-32 pl-6 space-y-7 my-2">
           {displayStations.map((st, idx) => {
             // Find all trains at this station (sorted by express rank so express stays on left, local stays on right)

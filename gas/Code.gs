@@ -32,7 +32,7 @@ const CONFIG = {
     // ※LINE公式の応答メッセージには引換コード「dish20」を記載する(アプリのデリバリー画面で1品20%OFFとして受理される)
     'MYSTERY_2026_MASHIN_CLEAR': { courseId: 'mashin_mystery', courseName: '【ミステリー制覇】斬丸と三つの雅石', reward: 'デリバリー1品20%OFF' },
     // 神埼鉄路奇譚『消えた試運転列車の謎』完全制覇コード(src/data/mysteryTrainData.tsのMYSTERY_CLEAR_COUPON_CODEと一致させること)
-    // ※LINE公式の応答メッセージには引換コード「GIVE300」を記載する(アプリのN-POINT画面で+300ptとして受理される。アカウントごとに1回のみ)
+    // ※LINE公式の応答メッセージには引換コード「GIVE300」を記載する(アプリのN-POINT画面で+300ptとして受理される。この端末でアカウントごとに1回のみ)
     'NIZAKI_MYSTERY_CLEAR_2026': { courseId: 'kaitan_mystery', courseName: '【ミステリー制覇】消えた試運転列車の謎', reward: 'N-POINT +300pt' }
   }
 };

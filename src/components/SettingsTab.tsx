@@ -3,12 +3,8 @@ import {
   User,
   CreditCard,
   Award,
-  Utensils,
   Bell,
-  Check,
-  CheckCircle2,
   QrCode,
-  Heart,
   Smartphone,
   Sliders,
   Send,
@@ -64,18 +60,6 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   onLogout,
   onOpenMyPage,
 }) => {
-  // 1. Payment
-  const [smartPayMethod, setSmartPayMethod] = useState<'card' | 'ic' | 'qr'>('card');
-  const [isSmartPayEnabled, setIsSmartPayEnabled] = useState(true);
-
-  // 2. Meal Preference for E-DELIVERY
-  const [allergies, setAllergies] = useState<{ [key: string]: boolean }>({
-    wasabi: true,
-    glass: true,
-    soba: false,
-    egg: false,
-  });
-
   // 3. Push Notification Permission State
   const [notifyService, setNotifyService] = useState(true);
   const [permissionState, setPermissionState] = useState<string>('default');
@@ -165,28 +149,8 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     setLastSentTime(new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
   };
 
-  // Save Toast feedback
-  const [showSavedToast, setShowSavedToast] = useState(false);
-
-  const handleSaveAll = () => {
-    setShowSavedToast(true);
-    setTimeout(() => setShowSavedToast(false), 2500);
-  };
-
-  const toggleAllergy = (key: string) => {
-    setAllergies((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
-
   return (
     <div className="space-y-4 text-[#221C35] max-w-xl mx-auto p-4 pb-28 animate-fadeIn">
-      {/* Save Notification Toast */}
-      {showSavedToast && (
-        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-[#10B981] text-white px-5 py-2.5 rounded-full shadow-lg flex items-center gap-2 text-xs font-bold animate-fadeIn">
-          <CheckCircle2 className="w-4 h-4 text-white" />
-          <span>設定を保存しました</span>
-        </div>
-      )}
-
       {/* Compact Header Banner */}
       <div className="bg-gradient-to-r from-[#221C35] via-[#3B1966] to-[#5B21B6] text-white rounded-2xl p-4 shadow-md border border-white/10 relative overflow-hidden">
         <div className="absolute top-0 right-0 -mt-6 -mr-6 w-28 h-28 bg-[#FBBF24]/10 rounded-full blur-2xl pointer-events-none" />
@@ -196,7 +160,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               アプリ設定
             </h2>
             <p className="text-xs text-[#E9D5FF] mt-0.5">
-              マイ駅・決済・デリバリー好みを一括管理
+              マイ駅・会員情報・通知を管理
             </p>
           </div>
           <div className="w-8 h-8 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center shrink-0">
@@ -226,14 +190,14 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
         </div>
       </section>
 
-      {/* SECTION 2: 会員情報 & 決済 */}
+      {/* SECTION 2: 会員情報 */}
       <section className="space-y-2">
         <div className="flex items-center gap-2 px-1">
           <div className="w-5 h-5 rounded-md bg-[#EFE8FA] flex items-center justify-center shrink-0">
             <CreditCard className="w-3.5 h-3.5 text-[#5B21B6]" />
           </div>
           <h3 className="text-xs font-black text-[#221C35]">
-            2. 会員ステータス & 決済
+            2. 会員ステータス
           </h3>
         </div>
 
@@ -327,135 +291,10 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               </button>
             </div>
           )}
-
-          {/* Smart Pay 設定 */}
-          <div>
-            <div className="flex items-center justify-between gap-2 mb-2">
-              <span className="text-xs font-bold text-[#221C35]">ワンタップ決済 (Smart Pay)</span>
-              <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                <input
-                  type="checkbox"
-                  checked={isSmartPayEnabled}
-                  onChange={(e) => setIsSmartPayEnabled(e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-8 h-4.5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-[#5B21B6]"></div>
-              </label>
-            </div>
-
-            {isSmartPayEnabled && (
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  onClick={() => setSmartPayMethod('card')}
-                  className={`p-2 rounded-xl border text-xs font-bold text-center transition-all flex flex-col items-center justify-center gap-1 cursor-pointer ${
-                    smartPayMethod === 'card'
-                      ? 'bg-[#EFE8FA] border-[#5B21B6] text-[#5B21B6]'
-                      : 'bg-[#F4F3F8] border-[#E6E2EE] text-[#6B6380]'
-                  }`}
-                >
-                  <CreditCard className="w-4 h-4 shrink-0" />
-                  <span>カード</span>
-                </button>
-
-                <button
-                  onClick={() => setSmartPayMethod('ic')}
-                  className={`p-2 rounded-xl border text-xs font-bold text-center transition-all flex flex-col items-center justify-center gap-1 cursor-pointer ${
-                    smartPayMethod === 'ic'
-                      ? 'bg-[#EFE8FA] border-[#5B21B6] text-[#5B21B6]'
-                      : 'bg-[#F4F3F8] border-[#E6E2EE] text-[#6B6380]'
-                  }`}
-                >
-                  <Smartphone className="w-4 h-4 shrink-0" />
-                  <span>交通系IC</span>
-                </button>
-
-                <button
-                  onClick={() => setSmartPayMethod('qr')}
-                  className={`p-2 rounded-xl border text-xs font-bold text-center transition-all flex flex-col items-center justify-center gap-1 cursor-pointer ${
-                    smartPayMethod === 'qr'
-                      ? 'bg-[#EFE8FA] border-[#5B21B6] text-[#5B21B6]'
-                      : 'bg-[#F4F3F8] border-[#E6E2EE] text-[#6B6380]'
-                  }`}
-                >
-                  <QrCode className="w-4 h-4 shrink-0" />
-                  <span>PayPay</span>
-                </button>
-              </div>
-            )}
-          </div>
         </div>
       </section>
 
-      {/* SECTION 3: E-DELIVERY 事前好み登録 */}
-      <section className="space-y-2">
-        <div className="flex items-center gap-2 px-1">
-          <div className="w-5 h-5 rounded-md bg-[#EFE8FA] flex items-center justify-center shrink-0">
-            <Utensils className="w-3.5 h-3.5 text-[#5B21B6]" />
-          </div>
-          <h3 className="text-xs font-black text-[#221C35]">
-            3. E-DELIVERY 注文時の自動こだわり設定
-          </h3>
-        </div>
-
-        <div className="bg-white rounded-2xl p-4 border border-[#E6E2EE] shadow-xs space-y-3">
-          <div className="text-xs font-bold text-[#221C35] flex items-center gap-2">
-            <Heart className="w-4 h-4 text-[#EC4899] shrink-0" />
-            <span>車内デリバリー自動リクエスト</span>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={() => toggleAllergy('wasabi')}
-              className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-between cursor-pointer transition-all ${
-                allergies.wasabi
-                  ? 'bg-[#EFE8FA] border-[#5B21B6] text-[#5B21B6]'
-                  : 'bg-[#F4F3F8] border-[#E6E2EE] text-[#6B6380]'
-              }`}
-            >
-              <span>わさび抜き希望</span>
-              {allergies.wasabi && <Check className="w-3.5 h-3.5 shrink-0" />}
-            </button>
-
-            <button
-              onClick={() => toggleAllergy('glass')}
-              className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-between cursor-pointer transition-all ${
-                allergies.glass
-                  ? 'bg-[#EFE8FA] border-[#5B21B6] text-[#5B21B6]'
-                  : 'bg-[#F4F3F8] border-[#E6E2EE] text-[#6B6380]'
-              }`}
-            >
-              <span>冷え冷えグラス同梱</span>
-              {allergies.glass && <Check className="w-3.5 h-3.5 shrink-0" />}
-            </button>
-
-            <button
-              onClick={() => toggleAllergy('soba')}
-              className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-between cursor-pointer transition-all ${
-                allergies.soba
-                  ? 'bg-[#EFE8FA] border-[#5B21B6] text-[#5B21B6]'
-                  : 'bg-[#F4F3F8] border-[#E6E2EE] text-[#6B6380]'
-              }`}
-            >
-              <span>そばアレルギーあり</span>
-              {allergies.soba && <Check className="w-3.5 h-3.5 shrink-0" />}
-            </button>
-
-            <button
-              onClick={() => toggleAllergy('egg')}
-              className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-between cursor-pointer transition-all ${
-                allergies.egg
-                  ? 'bg-[#EFE8FA] border-[#5B21B6] text-[#5B21B6]'
-                  : 'bg-[#F4F3F8] border-[#E6E2EE] text-[#6B6380]'
-              }`}
-            >
-              <span>卵アレルギーあり</span>
-              {allergies.egg && <Check className="w-3.5 h-3.5 shrink-0" />}
-            </button>
-          </div>
-        </div>
-      </section>
-
-      {/* SECTION 4: Web Push API / Service Worker 運行情報・お知らせ通知 */}
+      {/* SECTION 3: Web Push API / Service Worker 運行情報・お知らせ通知 */}
       <section className="space-y-2">
         <div className="flex items-center justify-between px-1">
           <div className="flex items-center gap-2">
@@ -463,7 +302,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               <Bell className="w-3.5 h-3.5 text-[#5B21B6]" />
             </div>
             <h3 className="text-xs font-black text-[#221C35]">
-              4. Web Push API / 実端末通知設定
+              3. Web Push API / 実端末通知設定
             </h3>
           </div>
 
@@ -576,17 +415,6 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           </div>
         </div>
       </section>
-
-      {/* 設定完了ボタン */}
-      <div className="pt-2">
-        <button
-          onClick={handleSaveAll}
-          className="w-full py-3 px-4 bg-gradient-to-r from-[#5B21B6] to-[#4C1D95] hover:from-[#4C1D95] hover:to-[#3B1966] text-[#FBBF24] font-bold text-xs shadow-md hover:shadow-lg active:scale-[0.99] transition-all flex items-center justify-center gap-2 cursor-pointer"
-        >
-          <CheckCircle2 className="w-4 h-4 text-[#FBBF24]" />
-          <span>設定を完了する（保存）</span>
-        </button>
-      </div>
 
       {/* 管理者用設定・システム診断を開くボタン (落ち着いたデザイン) */}
       <div className="pt-2">

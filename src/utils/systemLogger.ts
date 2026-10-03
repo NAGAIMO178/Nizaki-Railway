@@ -30,14 +30,6 @@ export interface SystemMetrics {
   lastUpdated: string;
 }
 
-export interface AuditResult {
-  status: 'passed' | 'warning' | 'failed';
-  totalStationsChecked: number;
-  linesChecked: number;
-  issues: string[];
-  timestamp: string;
-}
-
 const STORAGE_KEY = 'nizaki_system_logs';
 const MAX_LOGS = 100;
 let isInitialized = false;
@@ -259,64 +251,6 @@ export const systemLogger = {
     return () => {
       logListeners = logListeners.filter((l) => l !== listener);
     };
-  },
-
-  /**
-   * Emergency: Run real system & timetable integrity audit across all lines
-   */
-  runIntegrityAudit: (): AuditResult => {
-    const issues: string[] = [];
-    let totalStationsChecked = 60; // 20 + 6 + 12 + 22
-
-    // Check localStorage availability
-    try {
-      localStorage.setItem('__healthcheck_test__', '1');
-      localStorage.removeItem('__healthcheck_test__');
-    } catch (e: any) {
-      issues.push(`LocalStorage書き込み不可: ${e.message}`);
-    }
-
-    // Check online status
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      issues.push('端末オフライン状態を検知');
-    }
-
-    const status: AuditResult['status'] = issues.length === 0 ? 'passed' : 'warning';
-    
-    systemLogger.info(
-      `運行データ整合性監査完了: 判定 [${status.toUpperCase()}] チェック駅数: ${totalStationsChecked}駅`,
-      'SystemAudit',
-      issues.length > 0 ? issues.join(' | ') : '全4路線・土浦線大甕駅停車設定・全停車パターン正常'
-    );
-
-    return {
-      status,
-      totalStationsChecked,
-      linesChecked: 4,
-      issues,
-      timestamp: new Date().toLocaleTimeString('ja-JP'),
-    };
-  },
-
-  /**
-   * Emergency: Safe Cache & State Re-sync
-   */
-  emergencyCacheResync: () => {
-    try {
-      // Remove temporary transient cache without touching user auth/points
-      const keysToPurge = [
-        'nizaki_timetable_cache',
-        'nizaki_route_search_cache',
-        'nizaki_gps_cache',
-        'nizaki_temp_state',
-      ];
-      keysToPurge.forEach((k) => localStorage.removeItem(k));
-      systemLogger.info('緊急キャッシュ再同期・一時データの再構成が完了しました', 'EmergencyRecovery');
-      return true;
-    } catch (e: any) {
-      systemLogger.error(`キャッシュ再同期失敗: ${e.message}`, 'EmergencyRecovery');
-      return false;
-    }
   },
 
   /**

@@ -34,7 +34,7 @@ import {
   Sparkles,
   Info,
 } from 'lucide-react';
-import { systemLogger, SystemLogEntry, SystemMetrics, AuditResult } from '../utils/systemLogger';
+import { systemLogger, SystemLogEntry, SystemMetrics } from '../utils/systemLogger';
 import {
   disruptionManager,
   getAdminToken,
@@ -119,7 +119,6 @@ const rewriteDuration = (prev: string, ts: number): string =>
 
 const DEFAULT_PIN = '1925'; // 神埼鉄道 創業年 (初期値)
 const PIN_STORAGE_KEY = 'nizaki_admin_pin';
-const EMERGENCY_ALERT_KEY = 'nizaki_emergency_alert_manual';
 
 export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
   isOpen,
@@ -184,12 +183,6 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [copiedText, setCopiedText] = useState(false);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
-
-  // Emergency Tools State
-  const [emergencyAlertText, setEmergencyAlertText] = useState('');
-  const [emergencyAlertActive, setEmergencyAlertActive] = useState(false);
-  const [auditResult, setAuditResult] = useState<AuditResult | null>(null);
-  const [isAuditing, setIsAuditing] = useState(false);
 
   // Storage Inspector State
   const [selectedStorageKey, setSelectedStorageKey] = useState<string | null>(null);
@@ -534,7 +527,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
     onClose();
   };
 
-  // Reset auth and load custom PIN & emergency alert state whenever modal opens/closes
+  // Reset auth and load custom PIN whenever modal opens/closes
   useEffect(() => {
     setIsAuthenticated(false);
     setPinInput('');
@@ -552,11 +545,6 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
         setCurrentPin(DEFAULT_PIN);
       }
 
-      const savedAlert = localStorage.getItem(EMERGENCY_ALERT_KEY);
-      if (savedAlert) {
-        setEmergencyAlertText(savedAlert);
-        setEmergencyAlertActive(true);
-      }
     } catch {
       // Ignore
     }
@@ -669,60 +657,6 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
     setPinChangeSuccess(true);
     setTimeout(() => setPinChangeSuccess(false), 2500);
     systemLogger.info('管理者パスコードが初期値にリセットされました', 'AdminAuth');
-  };
-
-  // Emergency Actions
-  const handleRunAudit = () => {
-    setIsAuditing(true);
-    setTimeout(() => {
-      const result = systemLogger.runIntegrityAudit();
-      setAuditResult(result);
-      setIsAuditing(false);
-      setActionNotice('全4路線およびシステム整合性監査が正常に完了しました');
-      setTimeout(() => setActionNotice(null), 3000);
-    }, 400);
-  };
-
-  const handleEmergencyResync = () => {
-    if (
-      confirm(
-        '緊急データ再同期を実行しますか？\n（ユーザー情報・ポイントを保持したまま、運行データおよび一時キャッシュを再構築します）'
-      )
-    ) {
-      const ok = systemLogger.emergencyCacheResync();
-      if (ok) {
-        setMetrics(systemLogger.getMetrics());
-        setActionNotice('一時キャッシュのパージと運行データの再同期が完了しました');
-        if (onRefreshAppState) onRefreshAppState();
-        setTimeout(() => setActionNotice(null), 3500);
-      }
-    }
-  };
-
-  const handleSetEmergencyAlert = () => {
-    if (!emergencyAlertText.trim()) return;
-    try {
-      localStorage.setItem(EMERGENCY_ALERT_KEY, emergencyAlertText.trim());
-      setEmergencyAlertActive(true);
-      systemLogger.warn(`緊急運行速報が発令されました: [${emergencyAlertText.trim()}]`, 'EmergencyAlert');
-      setActionNotice('緊急運行速報を発令しました');
-      setTimeout(() => setActionNotice(null), 3000);
-    } catch (e: any) {
-      systemLogger.error(`速報発令エラー: ${e.message}`, 'EmergencyAlert');
-    }
-  };
-
-  const handleClearEmergencyAlert = () => {
-    try {
-      localStorage.removeItem(EMERGENCY_ALERT_KEY);
-      setEmergencyAlertActive(false);
-      setEmergencyAlertText('');
-      systemLogger.info('緊急運行速報が解除されました', 'EmergencyAlert');
-      setActionNotice('緊急運行速報を解除しました');
-      setTimeout(() => setActionNotice(null), 3000);
-    } catch {
-      // Ignore
-    }
   };
 
   const handleClearLogs = () => {
@@ -2301,23 +2235,22 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
               })()}
 
               {/* ========================================================
-                  TAB 1: システム診断 (Diagnostics & Integrity & Emergency Tools)
+                  TAB 1: システム診断 (Diagnostics)
                   ======================================================== */}
               {activeTab === 'diagnostics' && (
                 <div className="space-y-3">
                   {/* Status Banner */}
                   <div className="p-2.5 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
-                      <div className="w-7 h-7 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
-                        <CheckCircle2 className="w-4 h-4" />
+                      <div className="w-7 h-7 rounded-lg bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-300">
+                        <Activity className="w-4 h-4" />
                       </div>
                       <div>
-                        <div className="font-bold text-slate-100 text-xs flex items-center gap-1.5">
-                          <span>運行管理システム正常稼働</span>
-                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                        <div className="font-bold text-slate-100 text-xs">
+                          <span>この端末の環境情報</span>
                         </div>
                         <p className="text-[10px] text-slate-400">
-                          全4路線・発車標・停車駅・時刻表 同期完了
+                          バージョン・通信状態・通知権限など(この端末の実際の値)
                         </p>
                       </div>
                     </div>
@@ -2391,110 +2324,6 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                     </div>
                   )}
 
-                  {/* Integrity Audit Card */}
-                  <div className="p-3 bg-slate-800/90 rounded-xl border border-slate-700 space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <div className="font-bold text-slate-100 text-xs flex items-center gap-1.5">
-                        <FileCheck className="w-3.5 h-3.5 text-indigo-400" />
-                        <span>全系統 整合性監査 (Integrity Audit)</span>
-                      </div>
-                      <button
-                        onClick={handleRunAudit}
-                        disabled={isAuditing}
-                        className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer shadow-xs"
-                      >
-                        <RefreshCw className={`w-3 h-3 ${isAuditing ? 'animate-spin' : ''}`} />
-                        <span>{isAuditing ? '監査中...' : '監査を実行'}</span>
-                      </button>
-                    </div>
-                    <p className="text-[11px] text-slate-400 leading-relaxed">
-                      全4路線の駅マスタ、停車駅パターン、大甕駅の停車フラグ、ストレージ整合性を一括自動監査します。
-                    </p>
-
-                    {auditResult && (
-                      <div className="p-2.5 bg-slate-900 border border-slate-700 rounded-lg space-y-1 text-[11px]">
-                        <div className="flex items-center justify-between">
-                          <span className="text-slate-400">監査判定:</span>
-                          <span
-                            className={`font-bold font-mono ${
-                              auditResult.status === 'passed' ? 'text-emerald-400' : 'text-amber-400'
-                            }`}
-                          >
-                            {auditResult.status === 'passed' ? '正常 (PASSED)' : '警告あり'}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-slate-400">チェック駅数 / 路線:</span>
-                          <span className="text-slate-200 font-mono">
-                            {auditResult.totalStationsChecked}駅 / {auditResult.linesChecked}路線
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Cache & Emergency Resync */}
-                  <div className="p-3 bg-slate-800/90 rounded-xl border border-slate-700 space-y-2">
-                    <div className="font-bold text-slate-100 text-xs flex items-center gap-1.5">
-                      <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
-                      <span>一時キャッシュパージ & 運行データ再同期</span>
-                    </div>
-                    <p className="text-[11px] text-slate-400 leading-relaxed">
-                      会員情報やポイント残高を保持したまま、運行データおよび時刻表キャッシュを安全に再構築します。
-                    </p>
-                    <button
-                      onClick={handleEmergencyResync}
-                      className="w-full py-2 bg-slate-700 hover:bg-slate-600 border border-slate-600 text-slate-100 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
-                      <span>運行データ再同期を実行</span>
-                    </button>
-                  </div>
-
-                  {/* Emergency Broadcast Override */}
-                  <div className="p-3 bg-slate-800/90 rounded-xl border border-slate-700 space-y-2">
-                    <div className="font-bold text-slate-100 text-xs flex items-center justify-between">
-                      <span className="flex items-center gap-1.5">
-                        <Radio className="w-3.5 h-3.5 text-rose-400" />
-                        <span>緊急運行速報 手動発令 / 解除</span>
-                      </span>
-                      {emergencyAlertActive && (
-                        <span className="px-1.5 py-0.5 bg-rose-500/20 text-rose-300 border border-rose-500/40 rounded text-[10px] font-bold">
-                          発令中
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <input
-                        type="text"
-                        placeholder="例: 強風のため全線で運転を見合わせております"
-                        value={emergencyAlertText}
-                        onChange={(e) => setEmergencyAlertText(e.target.value)}
-                        className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 text-xs focus:outline-none focus:border-rose-400"
-                      />
-
-                      <div className="flex gap-2">
-                        <button
-                          onClick={handleSetEmergencyAlert}
-                          disabled={!emergencyAlertText.trim()}
-                          className="flex-1 py-1.5 bg-rose-600 hover:bg-rose-500 disabled:opacity-40 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1 shadow-xs"
-                        >
-                          <Radio className="w-3.5 h-3.5" />
-                          <span>速報を発令</span>
-                        </button>
-
-                        {emergencyAlertActive && (
-                          <button
-                            onClick={handleClearEmergencyAlert}
-                            className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-xs font-medium transition-colors cursor-pointer"
-                          >
-                            解除
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
                 </div>
               )}
 
