@@ -37,6 +37,9 @@ import {
 import { systemLogger, SystemLogEntry, SystemMetrics, AuditResult } from '../utils/systemLogger';
 import {
   disruptionManager,
+  getAdminToken,
+  setAdminToken,
+  DISRUPTION_PUSH_EVENT,
   LineDisruption,
   DisruptionStatusType,
   DisruptionDirection,
@@ -104,6 +107,8 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
   // 自動解除: 'none'(手動のみ) / 'custom'(日時指定) / プリセット番号(getExpiryOptions の添字)
   const [disruptionExpiryChoice, setDisruptionExpiryChoice] = useState<string>('1');
   const [disruptionCustomExpiry, setDisruptionCustomExpiry] = useState<string>('');
+  const [adminTokenInput, setAdminTokenInput] = useState('');
+  const [adminTokenSaved, setAdminTokenSaved] = useState<boolean>(() => !!getAdminToken());
   const [activeDisruptionsMap, setActiveDisruptionsMap] = useState<Record<string, LineDisruption>>(() =>
     disruptionManager.getAllDisruptions()
   );
@@ -482,6 +487,19 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
       // Ignore
     }
   }, [isOpen]);
+
+  // サーバー(GAS)への反映に失敗したら管理者に知らせる(トークン未設定・不一致など)
+  useEffect(() => {
+    const onPush = (event: Event) => {
+      const detail = (event as CustomEvent<{ ok: boolean; message?: string }>).detail;
+      if (detail && !detail.ok) {
+        setActionNotice(`【サーバー未反映】${detail.message || '運行情報をサーバーへ保存できませんでした。'}（管理トークンをご確認ください）`);
+        setTimeout(() => setActionNotice(null), 7000);
+      }
+    };
+    window.addEventListener(DISRUPTION_PUSH_EVENT, onPush);
+    return () => window.removeEventListener(DISRUPTION_PUSH_EVENT, onPush);
+  }, []);
 
   // 自動解除などで運行支障・予報が変わったら、一覧の表示も更新する
   useEffect(() => {
@@ -2598,6 +2616,57 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                       >
                         初期値にリセット
                       </button>
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 bg-slate-800 rounded-xl border border-slate-700 space-y-3">
+                    <div className="font-bold text-slate-100 text-xs flex items-center gap-1.5">
+                      <ShieldAlert className="w-4 h-4 text-amber-400" />
+                      <span>管理トークン（運行情報をサーバーへ保存するための鍵）</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 leading-relaxed">
+                      GAS のスクリプトプロパティ ADMIN_TOKEN と同じ文字列を入力します。この端末にだけ保存され、一致しないとサーバーへ運行情報を保存できません。
+                    </p>
+                    <div className="flex gap-2">
+                      <input
+                        type="password"
+                        autoComplete="off"
+                        placeholder={adminTokenSaved ? '設定済み（変更する場合のみ入力）' : '管理トークンを入力'}
+                        value={adminTokenInput}
+                        onChange={(e) => setAdminTokenInput(e.target.value)}
+                        className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-amber-400"
+                      />
+                      <button
+                        type="button"
+                        disabled={!adminTokenInput.trim()}
+                        onClick={() => {
+                          setAdminToken(adminTokenInput.trim());
+                          setAdminTokenInput('');
+                          setAdminTokenSaved(true);
+                          setActionNotice('管理トークンをこの端末に保存しました');
+                          setTimeout(() => setActionNotice(null), 3000);
+                        }}
+                        className="px-3 py-2 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                      >
+                        保存
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className={adminTokenSaved ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'}>
+                        {adminTokenSaved ? '● この端末に保存済み' : '● 未設定（サーバーへの保存はできません）'}
+                      </span>
+                      {adminTokenSaved && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAdminToken('');
+                            setAdminTokenSaved(false);
+                          }}
+                          className="text-slate-400 hover:text-slate-200 underline cursor-pointer"
+                        >
+                          この端末から削除
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
