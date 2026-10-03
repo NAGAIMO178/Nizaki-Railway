@@ -93,8 +93,6 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
     let coupon: { code: string; label: string; discount: number } | null = null;
     if (code === 'DISH20') {
       coupon = { code: 'DISH20', label: '【クリア記念特典】デリバリー1品 20%OFF', discount: 20 };
-    } else if (code === 'KZ-EASY-20' || code === 'KZEASY20' || code === 'KZ-EASY-20%' || code === 'KZ-EASY-DELIV' || code === 'KZ-EASY-200' || code === 'KZEASY200') {
-      coupon = { code: 'KZ-EASY-20', label: '【初級制覇特典】デリバリー1品 20%OFF', discount: 20 };
     }
 
     if (!coupon) {
@@ -441,7 +439,7 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
                           setCouponCodeInput(e.target.value);
                           if (couponError) setCouponError(null);
                         }}
-                        placeholder="クーポンコード（例: KZ-EASY-20）"
+                        placeholder="クーポンコードを入力"
                         className="flex-1 bg-white border border-[#D1C9E3] rounded-xl px-3 py-1.5 text-xs font-mono font-bold text-[#221C35] focus:outline-none focus:border-[#5B21B6] placeholder:text-gray-400"
                       />
                       <button

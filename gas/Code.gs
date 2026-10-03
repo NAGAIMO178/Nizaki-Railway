@@ -25,9 +25,6 @@ const CONFIG = {
   
   // スタンプラリー コース定義（スプレッドシート記録用）
   STAMP_KEYWORDS: {
-    '初級クリア済み': { courseId: 'beginner', courseName: '【初級制覇】都市圏イージー', reward: 'デリバリー1品20%OFF' },
-    '中級クリア済み': { courseId: 'intermediate', courseName: '【中級制覇】中都市ステップ', reward: '特急乗車料金10%OFF' },
-    '上級クリア済み': { courseId: 'advanced', courseName: '【上級制覇】ディープ神埼線', reward: '1日フリー乗車券' },
     // ミステリートレイン『斬丸と三つの雅石』完全制覇コード(src/components/MysteryTrainApp.jsxのCLEAR_CODEと一致させること)
     // ※LINE公式の応答メッセージには引換コード「dish20」を記載する(アプリのデリバリー画面で1品20%OFFとして受理される)
     'MYSTERY_2026_MASHIN_CLEAR': { courseId: 'mashin_mystery', courseName: '【ミステリー制覇】斬丸と三つの雅石', reward: 'デリバリー1品20%OFF' },
@@ -142,7 +139,7 @@ function handleLineMessage(event) {
     return;
   }
 
-  // 1. スタンプラリー合言葉の判定 (「初級クリア済み」など)
+  // 1. スタンプラリー合言葉の判定 (ミステリートレイン制覇コードなど)
   // ★ GAS側からは返信せず、スプレッドシートに記録するだけ（返信・クーポン表示はLINE公式の応答メッセージ機能に委ねる）
   const stampCourse = CONFIG.STAMP_KEYWORDS[text];
   if (stampCourse) {
@@ -806,9 +803,9 @@ function handleVerifyLineAndRegister(email, password, token, code, name) {
     const idCol = memberData[0].indexOf('会員ID');
     for (let i = 1; i < memberData.length; i++) existingIds[String(memberData[i][idCol])] = true;
 
-    let memberId = 'KZ-' + Math.floor(10000 + Math.random() * 90000);
+    let memberId = 'NZ-' + Math.floor(10000 + Math.random() * 90000);
     for (let tries = 0; existingIds[memberId] && tries < 50; tries++) {
-      memberId = 'KZ-' + Math.floor(10000 + Math.random() * 90000);
+      memberId = 'NZ-' + Math.floor(10000 + Math.random() * 90000);
     }
 
     const salt = Utilities.getUuid();
