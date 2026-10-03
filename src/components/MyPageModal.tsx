@@ -122,21 +122,26 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
           },
         ]
       : []),
-    // 3. N-POINT獲得・登録ボーナス
-    ...pointHistory.map((p) => ({
-      id: `act_pt_${p.id}`,
-      category: 'point' as const,
-      title: p.title,
-      subtitle: `N-POINT 獲得・付与`,
-      date: p.date,
-      status: '付与済',
-      statusColor: 'amber',
-      amount: `+${p.points} pt`,
-    })),
+    // 3. N-POINT獲得・登録ボーナス(謎解きイベントの報酬・制覇コードは「イベント」にも表示)
+    ...pointHistory.map((p) => {
+      const isEventReward = p.type === 'stamp' || p.type === 'coupon';
+      return {
+        id: `act_pt_${p.id}`,
+        category: (isEventReward ? 'event' : 'point') as 'event' | 'point',
+        title: p.title,
+        subtitle: isEventReward ? 'イベント報酬 (N-POINT付与)' : `N-POINT 獲得・付与`,
+        date: p.date,
+        status: '付与済',
+        statusColor: isEventReward ? 'indigo' : 'amber',
+        amount: `+${p.points} pt`,
+      };
+    }),
   ];
 
+  // 「ポイント」タブにはイベント報酬のポイントも含める
   const filteredActivities = activities.filter((act) => {
     if (activeHistoryTab === 'all') return true;
+    if (activeHistoryTab === 'point') return act.category === 'point' || act.category === 'event';
     return act.category === activeHistoryTab;
   });
 

@@ -52,7 +52,7 @@ const OTHER_LINES_DATABASE: Record<string, OtherLineInfo[]> = {
     { name: 'JR東日本（常磐線 快速・各駅停車）', badge: 'JR', bgClass: 'bg-emerald-100 border-emerald-300', textClass: 'text-emerald-900', gateNotice: '2階 仲町改札口' },
     { name: '東京メトロ（千代田線・日比谷線）', badge: '地下鉄', bgClass: 'bg-sky-100 border-sky-300', textClass: 'text-sky-900', gateNotice: '地下連絡通路' },
     { name: '東武スカイツリーライン（伊勢崎線）', badge: '東武', bgClass: 'bg-amber-100 border-amber-300', textClass: 'text-amber-900', gateNotice: '2階 東武正面改札' },
-    { name: 'つくばエクスプレス（TX）', badge: 'TX', bgClass: 'bg-indigo-100 border-indigo-300', textClass: 'text-indigo-900', gateNotice: '3階 TX連絡改札口' },
+    { name: 'つくばエクスプレス（TX）', badge: 'TX', bgClass: 'bg-indigo-100 border-indigo-300', textClass: 'text-indigo-900', gateNotice: 'TX連絡改札口' },
   ],
   '足立': [
     { name: '都営バス / 京成バス（足立区内主要路線・西新井・千住方面）', badge: 'バス', bgClass: 'bg-stone-100 border-stone-300', textClass: 'text-stone-900', gateNotice: '駅前バスターミナル 1〜3番のりば' },
@@ -118,15 +118,15 @@ const OTHER_LINES_DATABASE: Record<string, OtherLineInfo[]> = {
   '新横浜': [
     { name: '東海道新幹線（JR東海）', badge: '新幹線', bgClass: 'bg-blue-100 border-blue-300', textClass: 'text-blue-900', gateNotice: '2階 新幹線改札口' },
     { name: 'JR東日本（横浜線）', badge: 'JR', bgClass: 'bg-emerald-100 border-emerald-300', textClass: 'text-emerald-900', gateNotice: 'JR北口改札' },
-    { name: '相鉄・東急直通線（新横浜線）', badge: '東急/相鉄', bgClass: 'bg-purple-100 border-purple-300', textClass: 'text-purple-900', gateNotice: '地下2階 南北改札' },
+    { name: '相鉄・東急直通線（新横浜線）', badge: '東急/相鉄', bgClass: 'bg-purple-100 border-purple-300', textClass: 'text-purple-900', gateNotice: '地下1階 改札' },
     { name: '横浜市営地下鉄ブルーライン', badge: '地下鉄', bgClass: 'bg-blue-100 border-blue-300', textClass: 'text-blue-900', gateNotice: '地下1階 地下鉄連絡改札' },
   ],
   '横浜': [
     { name: 'JR東日本（東海道線・横須賀線・京浜東北線・根岸線・横浜線直通）', badge: 'JR', bgClass: 'bg-emerald-100 border-emerald-300', textClass: 'text-emerald-900', gateNotice: '中央北・中央南改札' },
-    { name: '東急東横線・横浜高速鉄道みなとみらい線', badge: '東急', bgClass: 'bg-rose-100 border-rose-300', textClass: 'text-rose-900', gateNotice: '地下3階 東急連絡口' },
+    { name: '東急東横線・横浜高速鉄道みなとみらい線', badge: '東急', bgClass: 'bg-rose-100 border-rose-300', textClass: 'text-rose-900', gateNotice: '東急連絡口' },
     { name: '京浜急行電鉄（京急本線）', badge: '京急', bgClass: 'bg-red-100 border-red-300', textClass: 'text-red-900', gateNotice: '中央改札口横 京急連絡口' },
     { name: '相模鉄道（相鉄本線）', badge: '相鉄', bgClass: 'bg-indigo-100 border-indigo-300', textClass: 'text-indigo-900', gateNotice: '相鉄1階・2階改札口' },
-    { name: '横浜市営地下鉄ブルーライン', badge: '地下鉄', bgClass: 'bg-blue-100 border-blue-300', textClass: 'text-blue-900', gateNotice: '地下2階 地下鉄中央改札' },
+    { name: '横浜市営地下鉄ブルーライン', badge: '地下鉄', bgClass: 'bg-blue-100 border-blue-300', textClass: 'text-blue-900', gateNotice: '地下鉄中央改札' },
   ],
   '新橋': [
     { name: 'JR東日本（山手線・京浜東北線・東海道線・横須賀線）', badge: 'JR', bgClass: 'bg-emerald-100 border-emerald-300', textClass: 'text-emerald-900', gateNotice: '烏森口 / 汐留口改札' },
@@ -141,7 +141,7 @@ const OTHER_LINES_DATABASE: Record<string, OtherLineInfo[]> = {
   '大井町': [
     { name: 'JR東日本（京浜東北線）', badge: 'JR', bgClass: 'bg-emerald-100 border-emerald-300', textClass: 'text-emerald-900', gateNotice: 'JR中央改札口' },
     { name: '東急電鉄（東急大井町線）', badge: '東急', bgClass: 'bg-rose-100 border-rose-300', textClass: 'text-rose-900', gateNotice: '東急正面改札口' },
-    { name: '東京臨海高速鉄道（りんかい線 - お台場方面）', badge: '私鉄', bgClass: 'bg-sky-100 border-sky-300', textClass: 'text-sky-900', gateNotice: '地下2階 りんかい線連絡口' },
+    { name: '東京臨海高速鉄道（りんかい線 - お台場方面）', badge: '私鉄', bgClass: 'bg-sky-100 border-sky-300', textClass: 'text-sky-900', gateNotice: 'りんかい線連絡口' },
   ],
   '平和島': [
     { name: '京浜急行電鉄（京急本線 - 特急・急行・普通）', badge: '京急', bgClass: 'bg-red-100 border-red-300', textClass: 'text-red-900', gateNotice: '平和島駅 改札口' },
@@ -190,7 +190,7 @@ const OTHER_LINES_DATABASE: Record<string, OtherLineInfo[]> = {
     { name: 'JR東日本（宇都宮線・高崎線・京浜東北線）', badge: 'JR', bgClass: 'bg-emerald-100 border-emerald-300', textClass: 'text-emerald-900', gateNotice: '東西自由通路改札（さいたまスーパーアリーナ直結）' },
   ],
   '南浦和': [
-    { name: 'JR東日本（京浜東北線・武蔵野線）', badge: 'JR', bgClass: 'bg-emerald-100 border-emerald-300', textClass: 'text-emerald-900', gateNotice: '改札内立体乗り換え階' },
+    { name: 'JR東日本（京浜東北線・武蔵野線）', badge: 'JR', bgClass: 'bg-emerald-100 border-emerald-300', textClass: 'text-emerald-900', gateNotice: 'コンコース経由（階段・エレベーター）' },
   ],
   '西青木': [
     { name: '埼玉高速鉄道（鳩ヶ谷・川口元郷駅アクセスバス）', badge: 'バス', bgClass: 'bg-stone-100 border-stone-300', textClass: 'text-stone-900', gateNotice: '駅前バスのりば' },
@@ -206,7 +206,7 @@ const OTHER_LINES_DATABASE: Record<string, OtherLineInfo[]> = {
   ],
   '小竹向原': [
     { name: '東京メトロ（有楽町線・副都心線）', badge: '地下鉄', bgClass: 'bg-amber-100 border-amber-300', textClass: 'text-amber-900', gateNotice: '地下乗り換えホーム' },
-    { name: '西武有楽町線（西武池袋線直通）', badge: '西武', bgClass: 'bg-amber-100 border-amber-300', textClass: 'text-amber-900', gateNotice: '同ホーム対面乗り換え' },
+    { name: '西武有楽町線（西武池袋線直通）', badge: '西武', bgClass: 'bg-amber-100 border-amber-300', textClass: 'text-amber-900', gateNotice: '同一駅構内' },
   ],
   '池袋': [
     { name: 'JR東日本（山手線・埼京線・湘南新宿ライン等）', badge: 'JR', bgClass: 'bg-emerald-100 border-emerald-300', textClass: 'text-emerald-900', gateNotice: '北改札・中央改札・南改札' },
@@ -227,8 +227,8 @@ const OTHER_LINES_DATABASE: Record<string, OtherLineInfo[]> = {
     { name: '京成電鉄（京成松戸線・八柱駅バス連絡）', badge: '京成/バス', bgClass: 'bg-pink-100 border-pink-300', textClass: 'text-pink-900', gateNotice: '駅前バスのりば' },
   ],
   '守谷': [
-    { name: 'つくばエクスプレス（TX）', badge: 'TX', bgClass: 'bg-indigo-100 border-indigo-300', textClass: 'text-indigo-900', gateNotice: '2階 中央連絡自由通路' },
-    { name: '関東鉄道常総線（取手〜水海道〜下館）', badge: '私鉄', bgClass: 'bg-amber-100 border-amber-300', textClass: 'text-amber-900', gateNotice: '1階 関鉄改札口' },
+    { name: 'つくばエクスプレス（TX）', badge: 'TX', bgClass: 'bg-indigo-100 border-indigo-300', textClass: 'text-indigo-900', gateNotice: '橋上駅舎 連絡通路' },
+    { name: '関東鉄道常総線（取手〜水海道〜下館）', badge: '私鉄', bgClass: 'bg-amber-100 border-amber-300', textClass: 'text-amber-900', gateNotice: '常総線 橋上改札口' },
   ],
   '谷井田': [
     { name: '関東鉄道バス（取手・守谷・つくばみらい方面）', badge: 'バス', bgClass: 'bg-stone-100 border-stone-300', textClass: 'text-stone-900', gateNotice: '谷井田交差点バスターミナル' },
@@ -255,7 +255,7 @@ const OTHER_LINES_DATABASE: Record<string, OtherLineInfo[]> = {
   ],
   '大洗': [
     { name: '鹿島臨海鉄道大洗鹿島線', badge: '私鉄', bgClass: 'bg-amber-100 border-amber-300', textClass: 'text-amber-900', gateNotice: '大洗駅構内' },
-    { name: '商船三井フェリー（苫小牧行フェリーターミナル連絡バス）', badge: 'フェリー', bgClass: 'bg-blue-100 border-blue-300', textClass: 'text-blue-900', gateNotice: '駅前バスのりば 徒歩1分' },
+    { name: '商船三井さんふらわあ（苫小牧行フェリーターミナル連絡バス）', badge: 'フェリー', bgClass: 'bg-blue-100 border-blue-300', textClass: 'text-blue-900', gateNotice: '駅前バスのりば 徒歩1分' },
   ],
   '那珂湊': [
     { name: 'ひたちなか海浜鉄道湊線（勝田〜阿字ヶ浦）', badge: '私鉄', bgClass: 'bg-orange-100 border-orange-300', textClass: 'text-orange-900', gateNotice: '那珂湊駅 本屋改札' },

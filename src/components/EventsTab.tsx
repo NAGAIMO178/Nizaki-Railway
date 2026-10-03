@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { MysteryTrainApp } from './MysteryTrainApp';
 import { MysteryTrainEvent } from './MysteryTrainEvent';
+import { KANZAKI_ALL_STATIONS_72 } from '../data/mysteryTrainData';
 import { DigitalStampRallyBanner } from './DigitalStampRallyBanner';
 
 interface EventsTabProps {
@@ -143,7 +144,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
                 イベント＆特務企画
               </h2>
               <p className="text-xs text-[#6B6380]">
-                神埼鉄道 全線72駅を巡る公式体験型謎解き・参加型イベント
+                神埼鉄道 全線{KANZAKI_ALL_STATIONS_72.length}駅を巡る公式体験型謎解き・参加型イベント
               </p>
             </div>
           </div>
@@ -279,7 +280,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
                     神埼鉄路奇譚 〜消えた試運転列車の謎〜
                   </h4>
                   <p className="text-xs text-[#6B6380] mt-1 leading-relaxed">
-                    深夜のダイヤに突如現れた幽霊試運転列車。全線72駅に隠された停車標識の手がかりを追い、怪異の正体へ迫る本格捜査録。
+                    深夜のダイヤに突如現れた幽霊試運転列車。全線{KANZAKI_ALL_STATIONS_72.length}駅に隠された停車標識の手がかりを追い、怪異の正体へ迫る本格捜査録。
                   </p>
                 </div>
 
