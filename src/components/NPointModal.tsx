@@ -100,6 +100,7 @@ export const NPointModal: React.FC<NPointModalProps> = ({
               <div className="text-xs font-mono font-bold text-slate-800 mt-2 tracking-widest">
                 {currentUser?.memberId || '未ログイン'}
               </div>
+              <div className="text-[9px] text-slate-400 mt-1">※バーコードは表示イメージです（読み取りはできません）</div>
             </div>
 
             {/* Card Footer Info */}
@@ -158,7 +159,7 @@ export const NPointModal: React.FC<NPointModalProps> = ({
           {/* Point History & Benefits */}
           <div className="bg-[#F9F8FD] p-4 rounded-2xl border border-[#E6E2EE] space-y-3">
             <div className="font-extrabold text-[#221C35] flex justify-between items-center text-xs">
-              <span>直近のポイント獲得・利用履歴</span>
+              <span>直近のポイント獲得履歴</span>
               <span className="text-[10px] text-[#5B21B6] font-bold bg-[#EFE8FA] px-2 py-0.5 rounded">
                 {pointHistory.length > 0 ? `${pointHistory.length}件` : '履歴なし'}
               </span>

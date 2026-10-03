@@ -177,7 +177,7 @@ export default function App() {
     return { ok: true, message: `${entry.points.toLocaleString()} pt を付与しました。` };
   };
 
-  // デリバリークーポンの使用済み管理(アカウントごとに1回限り)
+  // デリバリークーポンの使用済み管理(この端末でアカウントごとに1回限り。端末のデータを消すと戻る)
   const getUsedDeliveryCouponsKey = (): string | null => {
     const prefix = getPointStoragePrefix(currentUser?.email);
     return prefix ? `${prefix}_used_delivery_coupons` : null;

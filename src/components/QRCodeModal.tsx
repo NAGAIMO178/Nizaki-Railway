@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { X, QrCode, ShieldCheck, RefreshCw, Smartphone, CheckCircle, Sparkles } from 'lucide-react';
+import React from 'react';
+import { X, QrCode } from 'lucide-react';
 import { ActiveOrder } from '../types';
 
 interface QRCodeModalProps {
@@ -13,28 +13,6 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({
   onClose,
   activeOrder,
 }) => {
-  const [token, setToken] = useState('8392-1049');
-  const [timeLeft, setTimeLeft] = useState(30);
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          // Regenerate security token every 30s
-          const rand1 = Math.floor(1000 + Math.random() * 9000);
-          const rand2 = Math.floor(1000 + Math.random() * 9000);
-          setToken(`${rand1}-${rand2}`);
-          return 30;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [isOpen]);
-
   if (!isOpen) return null;
 
   return (
@@ -55,10 +33,10 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({
           </div>
           <div>
             <h3 className="text-base font-black text-[#221C35] leading-tight">
-              QRデジタル乗車券
+              QR乗車券（デモ表示）
             </h3>
             <p className="text-[11px] text-[#6B6380] font-medium">
-              神埼線 全線ICタッチレス対応
+              架空鉄道アプリの表示イメージです
             </p>
           </div>
         </div>
@@ -68,7 +46,7 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({
           <div className="flex items-center justify-between border-b border-[#E6E2EE] pb-2">
             <span className="text-[#6B6380] font-medium">乗車券種別</span>
             <span className="font-extrabold text-[#5B21B6] bg-[#EFE8FA] px-2.5 py-0.5 rounded-md border border-[#DDD6FE] text-[10px]">
-              {activeOrder ? '特急券・乗車券 一体型' : '普通定期券・IC乗車券'}
+              {activeOrder ? '特急券・乗車券 一体型' : '有効な特急券はありません'}
             </span>
           </div>
 
@@ -92,29 +70,14 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({
               </div>
             </div>
           ) : (
-            <div className="space-y-1 pt-0.5 text-xs">
-              <div className="flex justify-between items-center">
-                <span className="text-[#6B6380]">区間:</span>
-                <span className="font-bold text-[#221C35]">神埼線 全線（東京〜日立）</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-[#6B6380]">ステータス:</span>
-                <span className="font-bold text-emerald-700 flex items-center gap-1 text-[11px]">
-                  <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>改札入場可能</span>
-                </span>
-              </div>
-            </div>
+            <p className="text-[11px] text-[#6B6380] leading-relaxed pt-0.5">
+              「予約」タブで特急券を予約すると、ここに予約内容が表示されます。
+            </p>
           )}
         </div>
 
-        {/* Big Animated QR Display Area */}
+        {/* QR風の表示イメージ(本物のQRコードではない) */}
         <div className="bg-[#221C35] rounded-2xl p-5 text-white text-center space-y-3 relative overflow-hidden shadow-inner">
-          <div className="absolute top-2 right-3 text-[10px] text-[#A78BFA] font-mono flex items-center gap-1">
-            <RefreshCw className="w-3 h-3 animate-spin text-[#A78BFA]" />
-            <span>更新まで {timeLeft}s</span>
-          </div>
-
           {/* Simulated High-Res Stylized QR Code SVG */}
           <div className="bg-white p-3 rounded-2xl inline-block shadow-lg border-2 border-[#8B5CF6]">
             <svg
@@ -182,22 +145,11 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({
             </svg>
           </div>
 
-          <div className="font-mono text-sm tracking-widest font-black text-[#DDD6FE]">
-            {token}
-          </div>
+          <div className="text-[11px] font-bold text-[#DDD6FE]">表示イメージ（読み取りはできません）</div>
         </div>
 
-        {/* Security & Instructions */}
-        <div className="flex items-center justify-between text-[11px] text-[#6B6380] bg-[#F4F3F8] p-2.5 rounded-xl">
-          <span className="flex items-center gap-1 text-[#5B21B6] font-bold">
-            <ShieldCheck className="w-4 h-4 text-[#5B21B6]" />
-            <span>ワンタイム不正防止認証</span>
-          </span>
-          <span className="text-[10px] text-gray-500 font-mono">30秒毎自動更新</span>
-        </div>
-
-        <p className="text-[11px] text-center text-[#857D99] leading-tight">
-          改札機または特急車内検札にてリーダーにQRコードをかざしてください。
+        <p className="text-[11px] text-center text-[#857D99] leading-relaxed">
+          ※本アプリは架空の鉄道を題材にしたフィクションです。この画面は表示イメージで、実際の改札や検札では使えません。
         </p>
 
         <button

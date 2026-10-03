@@ -220,23 +220,14 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
 
                 <div className="flex flex-wrap items-center justify-center sm:justify-start gap-x-4 gap-y-1 text-[11px] text-purple-300/80 font-mono mt-2">
                   <div>会員番号: <span className="text-white font-bold">{currentUser.memberId}</span></div>
-                  <div>入会日: <span className="text-white">{currentUser.joinDate || '2026.04.01'}</span></div>
+                  <div>入会日: <span className="text-white">{currentUser.joinDate || '—'}</span></div>
                 </div>
               </div>
             </div>
-
-            {/* Rank Benefits Callout */}
-            <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between text-xs">
-              <div className="flex items-center gap-1.5 text-amber-300 font-semibold">
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>ゴールド会員特典: N-POINT付与率 3.0倍 / 先行予約権</span>
-              </div>
-              <span className="text-[10px] text-purple-300 font-mono hidden sm:inline">有効期限: 2027.12</span>
-            </div>
           </div>
 
-          {/* 2. Quick Metrics Row (4 Cards) */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          {/* 2. N-POINT */}
+          <div className="grid grid-cols-1 gap-2.5">
             {/* N-POINT */}
             <button
               type="button"
@@ -256,48 +247,6 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                 <ChevronRight className="w-2.5 h-2.5" />
               </div>
             </button>
-
-            {/* Express Rides */}
-            <div className="bg-white p-3 rounded-xl border border-[#E6E2EE] text-left shadow-2xs">
-              <div className="flex items-center justify-between text-[#857B98] text-[10px] font-bold">
-                <span>特急利用</span>
-                <Train className="w-3.5 h-3.5 text-[#5B21B6]" />
-              </div>
-              <div className="text-lg font-extrabold text-[#221C35] font-mono mt-1">
-                3<span className="text-xs font-normal text-slate-500 ml-0.5">回</span>
-              </div>
-              <div className="text-[10px] text-emerald-600 font-bold mt-1">
-                {activeOrder ? '乗車予定あり' : '直近利用: 09/18'}
-              </div>
-            </div>
-
-            {/* Deliveries */}
-            <div className="bg-white p-3 rounded-xl border border-[#E6E2EE] text-left shadow-2xs">
-              <div className="flex items-center justify-between text-[#857B98] text-[10px] font-bold">
-                <span>デリバリー</span>
-                <ShoppingBag className="w-3.5 h-3.5 text-purple-600" />
-              </div>
-              <div className="text-lg font-extrabold text-[#221C35] font-mono mt-1">
-                2<span className="text-xs font-normal text-slate-500 ml-0.5">件</span>
-              </div>
-              <div className="text-[10px] text-purple-600 font-bold mt-1">
-                累計 ¥3,600
-              </div>
-            </div>
-
-            {/* Events / Stamps */}
-            <div className="bg-white p-3 rounded-xl border border-[#E6E2EE] text-left shadow-2xs">
-              <div className="flex items-center justify-between text-[#857B98] text-[10px] font-bold">
-                <span>スタンプ達成</span>
-                <Award className="w-3.5 h-3.5 text-indigo-600" />
-              </div>
-              <div className="text-lg font-extrabold text-[#221C35] font-mono mt-1">
-                2<span className="text-xs font-normal text-slate-500 ml-0.5">駅</span>
-              </div>
-              <div className="text-[10px] text-indigo-600 font-bold mt-1">
-                イベント参加中
-              </div>
-            </div>
           </div>
 
           {/* Active Order Quick Banner if available */}
@@ -516,7 +465,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                       ログアウトの確認
                     </h4>
                     <p className="text-[11px] text-rose-800 mt-1 leading-relaxed">
-                      ログアウトしても、保有しているN-POINT（{balance.toLocaleString()}pt）や予約履歴はメールアドレス（{currentUser.email}）に安全に保持されます。次回ログイン時にいつでも再開可能です。
+                      ログアウトしても、この端末に保存されているN-POINT（{balance.toLocaleString()}pt）や予約の記録は残ります。同じ端末で同じメールアドレス（{currentUser.email}）でログインすると続きから使えます。なお、これらの記録は端末ごとに保存されるため、別の端末には引き継がれません。
                     </p>
                   </div>
                 </div>
@@ -570,7 +519,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                       アカウント削除の確認
                     </h4>
                     <p className="text-[11px] text-rose-800 mt-1 leading-relaxed">
-                      この操作は取り消せません。会員情報、保有N-POINT（{balance.toLocaleString()}pt）、予約履歴がすべて削除されます。続行するには、確認のためパスワードを入力してください。
+                      この操作は取り消せません。メールアドレスやパスワードなどの会員情報がサーバーから削除されます。この端末に保存されているN-POINT（{balance.toLocaleString()}pt）や予約の記録は端末内に残ります（ブラウザのデータ削除で消えます）。続行するには、確認のためパスワードを入力してください。
                     </p>
                   </div>
                 </div>
