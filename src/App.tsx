@@ -372,9 +372,11 @@ export default function App() {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) {
           // 駅の名前・並びが変わっても壊れないよう、現在の駅一覧と照合して作り直す(無くなった駅は外す)
+          // 同じ駅を路線違いで重ねて登録していた場合は、最初の1つにまとめる
           const normalized: RegisterableStation[] = [];
           parsed.forEach((st) => {
             if (!st || typeof st.name !== 'string' || typeof st.lineName !== 'string') return;
+            if (normalized.some((n) => n.name === st.name)) return;
             const line = REGISTERABLE_LINES.find((l) => l.name === st.lineName);
             const found = line?.stations.find((s) => s.name === st.name);
             if (line && found) {
