@@ -146,14 +146,11 @@ export const MyStationRegisterCard: React.FC<MyStationRegisterCardProps> = ({
   const activeLine = REGISTERABLE_LINES.find((l) => l.id === activeLineId) || REGISTERABLE_LINES[0];
 
   const handleToggleStation = (st: { id: string; name: string; code?: string }) => {
-    const isAlreadyRegistered = registeredStations.some(
-      (item) => item.name === st.name && item.lineName === activeLine.name
-    );
+    // 発車案内は、その駅に乗り入れる全路線をまとめて出すので、同じ駅は路線が違っても1つとして扱う
+    const isAlreadyRegistered = registeredStations.some((item) => item.name === st.name);
 
     if (isAlreadyRegistered) {
-      const updated = registeredStations.filter(
-        (item) => !(item.name === st.name && item.lineName === activeLine.name)
-      );
+      const updated = registeredStations.filter((item) => item.name !== st.name);
       onUpdateRegisteredStations(updated);
       setWarningMessage(null);
     } else {
@@ -280,7 +277,7 @@ export const MyStationRegisterCard: React.FC<MyStationRegisterCardProps> = ({
             <div className="max-h-52 overflow-y-auto pr-1 grid grid-cols-2 sm:grid-cols-3 gap-1.5 pt-1">
               {activeLine.stations.map((st) => {
                 const isReg = registeredStations.some(
-                  (item) => item.name === st.name && item.lineName === activeLine.name
+                  (item) => item.name === st.name
                 );
                 return (
                   <button
