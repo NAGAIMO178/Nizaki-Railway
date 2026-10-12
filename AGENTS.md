@@ -4,9 +4,22 @@
 Whenever code changes are made to the project, update the `version` in `package.json` (the single source of truth) according to SemVer 2.0.0 rules. The version shown in the app (settings tab, My Page footer, admin console, system logs) is injected from it at build time (`__APP_VERSION__`), so no other file needs editing. Also update `release-notes.json` (the text shown in the in-app update dialog).
 
 - **X (Major)**: Breaking architectural changes or incompatible API/data migrations (Resets Y and Z to 0, e.g., `3.5.0` -> `4.0.0`).
-- **Y (Minor)**: New features added in a backwards-compatible manner (Resets Z to 0, e.g., `3.5.0` -> `3.6.0`).
-- **Z (Patch)**: Backwards-compatible bug fixes, minor tweaks, text/design corrections (e.g., `3.5.0` -> `3.5.1`).
+- **Y (Minor)**: Something users have to learn to use (Resets Z to 0, e.g., `3.5.0` -> `3.6.0`). See "Minor vs Patch" below.
+- **Z (Patch)**: Everything else that keeps working as before: bug fixes, text/design corrections, small additions inside an existing screen, data/image updates, internal cleanup (e.g., `3.5.0` -> `3.5.1`).
 - Never skip numbers. Always increment by 1.
+
+### Minor vs Patch (owner decision: keep the Minor number meaningful)
+Bump **Minor** only when at least one of these is true:
+- A new screen, tab, button flow, or feature appears.
+- The rule of an existing feature changes in a way users will notice (e.g., who may use delivery, how fares are calculated).
+- A data source is swapped so that what users see changes broadly (e.g., every screen now follows the full timetable).
+
+Everything else is **Patch**, even if users can see it:
+- Bug fixes, wording/label/design tweaks, image or timetable data updates.
+- One more line, badge, or notification text inside an existing screen.
+- Internal cleanup, logging, security hardening that does not change how the app is used.
+
+When unsure, choose Patch and mention the doubt to the owner. A **Major** bump is for breaking changes to saved data or the member/reservation ledger, replacing the app's foundation, or a milestone the owner chooses (e.g., official launch).
 
 ## Release Notes Wording (`release-notes.json`)
 The `notes` array is shown as-is in the in-app update dialog, so keep it short and readable for end users.
