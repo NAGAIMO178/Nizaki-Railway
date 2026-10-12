@@ -11,6 +11,9 @@ interface NPointModalProps {
   onRedeemCode?: (code: string) => { ok: boolean; message: string };
 }
 
+// 会員ランクの英字表記(カードに表示)
+const RANK_LABEL_EN: Record<string, string> = { レギュラー: 'REGULAR', ゴールド: 'GOLD', プレミアム: 'PREMIUM' };
+
 export const NPointModal: React.FC<NPointModalProps> = ({
   isOpen,
   onClose,
@@ -70,7 +73,7 @@ export const NPointModal: React.FC<NPointModalProps> = ({
                 </span>
               </div>
               <span className="text-[10px] tracking-widest font-mono font-semibold text-[#E2D5B7] bg-[#E2D5B7]/10 px-2.5 py-0.5 rounded-full border border-[#E2D5B7]/25">
-                {(currentUser?.rank || 'GOLD').toUpperCase()} MEMBER
+                {currentUser ? `${RANK_LABEL_EN[currentUser.rank] ?? ''} MEMBER` : 'GUEST'}
               </span>
             </div>
 

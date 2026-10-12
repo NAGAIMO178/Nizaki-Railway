@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { UtensilsCrossed, ShoppingBag, Plus, Minus, Check, ShoppingCart, Info } from 'lucide-react';
 import { EquipItem, ActiveOrder } from '../types';
 import { canOrderItem, getItemRestrictionLabel } from '../utils/seatUtils';
+import { handleImageError } from '../utils/imageFallback';
 
 interface EquipTabProps {
   items: EquipItem[];
@@ -157,19 +158,7 @@ export const EquipTab: React.FC<EquipTabProps> = ({
                   alt=""
                   referrerPolicy="no-referrer"
                   className="w-full h-full object-cover block text-[0px]"
-                  onError={(e) => {
-                    const target = e.currentTarget;
-                    target.onerror = null;
-                    const fallbackMap: Record<string, string> = {
-                      'eq-01': 'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=600&q=80',
-                      'eq-02': 'https://images.unsplash.com/photo-1569718212165-3a8278d5f624?auto=format&fit=crop&w=600&q=80',
-                      'eq-03': 'https://images.unsplash.com/photo-1608270586620-248524c67de9?auto=format&fit=crop&w=600&q=80',
-                      'eq-04': 'https://images.unsplash.com/photo-1563805042-7684c019e1cb?auto=format&fit=crop&w=600&q=80',
-                      'eq-05': 'https://images.unsplash.com/photo-1563861826100-9cb868fdbe1c?auto=format&fit=crop&w=600&q=80',
-                      'eq-06': 'https://images.unsplash.com/photo-1627435601361-ec25f5b1d0e5?auto=format&fit=crop&w=600&q=80',
-                    };
-                    target.src = fallbackMap[item.id] || 'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=600&q=80';
-                  }}
+                  onError={handleImageError}
                 />
                 {purchasedQty > 0 ? (
                   <span className="absolute top-1 left-1 bg-emerald-600 text-white text-[8px] font-black px-1.5 py-0.5 rounded shadow-2xs flex items-center gap-0.5">

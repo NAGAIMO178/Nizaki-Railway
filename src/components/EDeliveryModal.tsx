@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, UtensilsCrossed, Check, ShoppingBag, AlertCircle, Tag } from 'lucide-react';
 import { EquipItem, ActiveOrder } from '../types';
 import { getSeatClassLabel, canOrderItem, getItemRestrictionLabel } from '../utils/seatUtils';
+import { handleImageError } from '../utils/imageFallback';
 
 interface EDeliveryModalProps {
   isOpen: boolean;
@@ -17,12 +18,6 @@ interface EDeliveryModalProps {
   onCouponUsed?: (code: string) => void;
 }
 
-const getRandomSeat = () => {
-  const row = Math.floor(Math.random() * 15) + 1;
-  const letter = ['A', 'B', 'C', 'D'][Math.floor(Math.random() * 4)];
-  return `${row}${letter}`;
-};
-
 export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
   isOpen,
   onClose,
@@ -36,9 +31,6 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
   isCouponUsed,
   onCouponUsed,
 }) => {
-  const [selectedTrain, setSelectedTrain] = useState('特急めぐり 8号 (14:43発 松戸駅)');
-  const [carNo, setCarNo] = useState(1);
-  const [seatNo, setSeatNo] = useState(() => getRandomSeat());
   const [cart, setCart] = useState<{ [key: string]: number }>(() => initialCart || {});
 
   // Coupon state for delivery
@@ -49,15 +41,6 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
   React.useEffect(() => {
     if (isOpen) {
       setCart(initialCart || {});
-      if (activeOrder) {
-        setSelectedTrain(activeOrder.trainName);
-        setCarNo(activeOrder.carNo);
-        setSeatNo(activeOrder.seatNo);
-      } else {
-        setSelectedTrain('特急めぐり 8号 (14:43発 松戸駅)');
-        setCarNo(1);
-        setSeatNo(getRandomSeat());
-      }
     }
   }, [isOpen, initialCart, activeOrder]);
 
@@ -124,7 +107,7 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (selectedItems.length === 0 || isStandardSeat || hasNoOrder || hasBlockedItems) return;
+    if (!activeOrder || selectedItems.length === 0 || isStandardSeat || hasNoOrder || hasBlockedItems) return;
 
     if (!isLoggedIn && onRequireLogin) {
       onRequireLogin('車内デリバリーのご注文確定には、神埼IDログインが必要です。');
@@ -141,17 +124,12 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
       onCouponUsed?.(appliedDeliveryCoupon.code);
     }
 
+    // 予約済みの内容に、今回追加する商品だけを載せる(アプリ側で既存の注文に合算する)
     const newOrder: ActiveOrder = {
-      orderId: `NZ-DELIV-${Math.floor(1000 + Math.random() * 9000)}`,
-      trainName: selectedTrain,
-      carNo,
-      seatNo,
-      seatType: 'megu',
+      ...activeOrder,
       items: selectedItems,
       totalPrice: finalTotalPrice,
       status: 'confirmed',
-      estimatedDeliveryTime: '乗車駅発車後 5分頃',
-      deliveryStation: activeOrder?.deliveryStation || '松戸駅',
     };
 
     setIsSuccess(true);
@@ -200,7 +178,7 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
               </div>
               <h4 className="text-lg font-black text-[#221C35]">デリバリーの購入が確定いたしました！</h4>
               <p className="text-sm text-[#5B21B6] font-bold">
-                指定の {carNo}号車 {seatNo} へアテンダントが温かい状態でお届けいたします。
+                指定の {activeOrder?.carNo}号車 {activeOrder?.seatNo} へアテンダントが温かい状態でお届けいたします。
               </p>
             </div>
           ) : (
@@ -271,7 +249,7 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
                     <input
                       type="text"
                       readOnly
-                      value={activeOrder ? selectedTrain : '—'}
+                      value={activeOrder ? activeOrder.trainName : '—'}
                       className="w-full bg-white border border-[#D1C9E3] rounded-xl px-3 py-2 text-xs text-[#221C35] font-bold shadow-2xs"
                     />
                   </div>
@@ -296,7 +274,7 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
                       <input
                         type="text"
                         readOnly
-                        value={activeOrder ? seatNo : '—'}
+                        value={activeOrder ? activeOrder.seatNo : '—'}
                         className="w-full bg-white border border-[#D1C9E3] rounded-xl px-3 py-2 text-xs text-[#221C35] font-bold shadow-2xs"
                       />
                     </div>
@@ -331,19 +309,7 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
                               alt=""
                               referrerPolicy="no-referrer"
                               className="w-10 h-10 object-cover rounded-lg shrink-0 border border-emerald-100 text-[0px]"
-                              onError={(e) => {
-                                const target = e.currentTarget;
-                                target.onerror = null;
-                                const fallbackMap: Record<string, string> = {
-                                  'eq-01': 'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=400&q=80',
-                                  'eq-02': 'https://images.unsplash.com/photo-1569718212165-3a8278d5f624?auto=format&fit=crop&w=400&q=80',
-                                  'eq-03': 'https://images.unsplash.com/photo-1608270586620-248524c67de9?auto=format&fit=crop&w=400&q=80',
-                                  'eq-04': 'https://images.unsplash.com/photo-1563805042-7684c019e1cb?auto=format&fit=crop&w=400&q=80',
-                                  'eq-05': 'https://images.unsplash.com/photo-1563861826100-9cb868fdbe1c?auto=format&fit=crop&w=400&q=80',
-                                  'eq-06': 'https://images.unsplash.com/photo-1627435601361-ec25f5b1d0e5?auto=format&fit=crop&w=400&q=80',
-                                };
-                                target.src = fallbackMap[item.id] || 'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=400&q=80';
-                              }}
+                              onError={handleImageError}
                             />
                             <div className="min-w-0 flex-1">
                               <div className="font-bold text-[#221C35] text-xs leading-snug truncate">{item.name}</div>
@@ -389,19 +355,7 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
                               alt=""
                               referrerPolicy="no-referrer"
                               className="w-10 h-10 object-cover rounded-lg shrink-0 border border-[#E6E2EE] text-[0px]"
-                              onError={(e) => {
-                                const target = e.currentTarget;
-                                target.onerror = null;
-                                const fallbackMap: Record<string, string> = {
-                                  'eq-01': 'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=400&q=80',
-                                  'eq-02': 'https://images.unsplash.com/photo-1569718212165-3a8278d5f624?auto=format&fit=crop&w=400&q=80',
-                                  'eq-03': 'https://images.unsplash.com/photo-1608270586620-248524c67de9?auto=format&fit=crop&w=400&q=80',
-                                  'eq-04': 'https://images.unsplash.com/photo-1563805042-7684c019e1cb?auto=format&fit=crop&w=400&q=80',
-                                  'eq-05': 'https://images.unsplash.com/photo-1563861826100-9cb868fdbe1c?auto=format&fit=crop&w=400&q=80',
-                                  'eq-06': 'https://images.unsplash.com/photo-1627435601361-ec25f5b1d0e5?auto=format&fit=crop&w=400&q=80',
-                                };
-                                target.src = fallbackMap[item.id] || 'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=400&q=80';
-                              }}
+                              onError={handleImageError}
                             />
                             <div className="min-w-0 flex-1">
                               <div className="font-bold text-[#221C35] text-xs leading-snug truncate">{item.name}</div>

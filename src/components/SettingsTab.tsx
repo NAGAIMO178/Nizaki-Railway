@@ -108,38 +108,29 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     }
   };
 
+  // 通知のテスト。見本の内容は、すべて「テスト」と分かる文面にする(実際の運行情報・注文ではない)
   const handleSendTestNotification = (type: 'delay' | 'delivery' | 'express') => {
     let title = '';
     let body = '';
     let tag = '';
 
-    const targetStationName = registeredStations[0]?.name || '松戸';
-    const targetLineName = registeredStations[0]?.lineName?.replace(/^[0-9]\.\s*/, '') || '土浦線';
+    const stationLabel = registeredStations[0]?.name ? `${registeredStations[0].name}駅` : 'マイ駅';
 
     if (type === 'delay') {
-      title = `【${targetLineName}・${targetStationName}駅】遅延情報 (約10分)`;
-      body = `${targetStationName}駅構内での急病人救護のため、現在${targetLineName}（下り方面）に約10分の遅延が生じています。`;
+      title = '【テスト通知】遅延情報のお知らせ';
+      body = `通知のテストです（${stationLabel}）。実際の運行情報ではありません。`;
       tag = 'kanzaki-delay-alert';
     } else if (type === 'delivery') {
-      if (activeOrder) {
-        const itemNames = activeOrder.items && activeOrder.items.length > 0
-          ? activeOrder.items.map(i => i.item.name).join('・')
-          : 'お弁当・ドリンク';
-        title = `【車内デリバリー】ご予約席（${activeOrder.carNo}号車 ${activeOrder.seatNo}）へお届け`;
-        body = `『${activeOrder.trainName}』のお届け準備が完了しました。${activeOrder.boardingStation || '乗車駅'}発車後にアテンダントが「${itemNames}」をお届けします。`;
-      } else {
-        title = `【車内デリバリー】${targetStationName}駅 到着前お届け完了`;
-        body = `ご指定の座席（特急めぐり8号 5号車7C）へ『特製神埼すき焼き弁当』のお届けが完了いたしました。`;
-      }
+      title = '【テスト通知】車内デリバリーのお知らせ';
+      body = activeOrder
+        ? `通知のテストです。ご予約席（${activeOrder.carNo}号車 ${activeOrder.seatNo}）へのお届けの通知は、このように表示されます。`
+        : '通知のテストです。お届けの通知は、ご予約のお客様に表示されます。';
       tag = 'kanzaki-delivery-alert';
     } else {
-      if (activeOrder) {
-        title = `【発車予告】${activeOrder.trainName}`;
-        body = `発車10分前です。ご予約の${activeOrder.trainName} (${activeOrder.departureTime || '14:43'} ${activeOrder.boardingStation || '松戸駅'}発) の発車時刻が近づいています。${activeOrder.carNo}号車 ${activeOrder.seatNo}へお越しください。`;
-      } else {
-        title = `【特急めぐり8号】まもなく${targetStationName}駅を発車`;
-        body = `発車10分前です。${targetStationName}駅 1番線ホームへお越しください。`;
-      }
+      title = '【テスト通知】発車のお知らせ';
+      body = activeOrder
+        ? `通知のテストです。ご予約の${activeOrder.trainName}の発車の通知は、このように表示されます。`
+        : '通知のテストです。発車の通知は、ご予約のお客様に表示されます。';
       tag = 'kanzaki-express-alert';
     }
 
@@ -277,7 +268,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                     ({nPointBalance.toLocaleString()} pt)
                   </span>
                   <span className="ml-2 text-[10px] bg-[#EFE8FA] text-[#5B21B6] font-bold px-2 py-0.5 rounded-full border border-[#DDD6FE]">
-                    {currentUser?.rank || 'ゴールド'}
+                    {currentUser?.rank ?? ''}
                   </span>
                 </div>
               </div>

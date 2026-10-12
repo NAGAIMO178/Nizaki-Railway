@@ -486,10 +486,10 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
                 {/* Boarding Station & Departure Time */}
                 <div className="text-left">
                   <div className="text-xs text-[#6B6380]">乗車駅</div>
-                  <div className="text-base font-black text-[#221C35]">{activeOrder.boardingStation || activeOrder.deliveryStation || '松戸駅'}</div>
+                  <div className="text-base font-black text-[#221C35]">{activeOrder.boardingStation || activeOrder.deliveryStation || '—'}</div>
                   <div className="text-xs font-black text-[#5B21B6] flex items-center gap-1 mt-0.5">
                     <Clock className="w-3.5 h-3.5 text-[#5B21B6]" />
-                    <span>出発時刻 {activeOrder.departureTime || '09:00'}</span>
+                    <span>出発時刻 {activeOrder.departureTime || '—'}</span>
                   </div>
                 </div>
 
@@ -503,9 +503,9 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
                 {/* Destination Station */}
                 <div className="text-right">
                   <div className="text-xs text-[#6B6380]">降車駅</div>
-                  <div className="text-base font-black text-[#221C35]">{activeOrder.destinationStation || '日立駅'}</div>
+                  <div className="text-base font-black text-[#221C35]">{activeOrder.destinationStation || '—'}</div>
                   <div className="text-xs font-bold text-[#6B6380] mt-0.5">
-                    到着 {activeOrder.arrivalTime || '09:48'}
+                    到着 {activeOrder.arrivalTime || '—'}
                   </div>
                 </div>
               </div>
@@ -1143,11 +1143,11 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
             <div className="bg-[#F9F8FD] border border-[#E0D7F3] rounded-2xl p-3.5 space-y-2 text-left text-xs">
               <div className="flex justify-between items-center border-b border-[#E6E2EE] pb-2">
                 <span className="text-[#6B6380]">ご乗車列車:</span>
-                <span className="font-bold text-[#5B21B6]">{activeOrder.trainName} ({activeOrder.departureTime || '09:00'}発)</span>
+                <span className="font-bold text-[#5B21B6]">{activeOrder.trainName} ({activeOrder.departureTime || '—'}発)</span>
               </div>
               <div className="flex justify-between items-center border-b border-[#E6E2EE] pb-2">
                 <span className="text-[#6B6380]">ご乗車区間:</span>
-                <span className="font-bold text-[#221C35]">{activeOrder.boardingStation || '松戸駅'} → {activeOrder.destinationStation || '日立駅'}</span>
+                <span className="font-bold text-[#221C35]">{activeOrder.boardingStation || '—'} → {activeOrder.destinationStation || '—'}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-[#6B6380]">ご着席位置:</span>
