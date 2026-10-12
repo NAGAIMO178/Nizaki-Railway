@@ -23,6 +23,7 @@ import {
   Lock,
 } from 'lucide-react';
 import { ActiveOrder, EquipItem } from '../types';
+import { getSeatClassLabel, getSeatClassRibbon } from '../utils/seatUtils';
 import { MOCK_EQUIP_ITEMS } from '../data/mockData';
 import { SeatSelectionModal } from './SeatSelectionModal';
 import { getLocalDateString } from '../utils/orderExpiry';
@@ -496,7 +497,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
       trainName,
       carNo,
       seatNo,
-      seatType: isSpecialCar ? 'megu' : seatType === 'megu' ? 'megu' : 'standard',
+      seatType,
       boardingStation,
       destinationStation,
       departureTime: currentTrainInfo.time,
@@ -546,7 +547,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
           <div className="bg-white rounded-2xl p-5 shadow-xs border border-[#5B21B6]/30 space-y-4 relative overflow-hidden">
             {/* Background Accent Decorative Ribbon */}
             <div className="absolute top-0 right-0 bg-gradient-to-l from-[#5B21B6] to-[#7C3AED] text-white text-[10px] font-extrabold px-3 py-1 rounded-bl-xl shadow-xs">
-              {activeOrder.carNo === 5 || activeOrder.seatType === 'megu' ? 'めぐシート（プレミアム）予約確定' : '普通席 予約確定'}
+              {getSeatClassRibbon(activeOrder.seatType)}
             </div>
 
             <div className="pt-1">
@@ -616,7 +617,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
               <div className="pt-2 border-t border-[#E6E2EE] flex items-center justify-between text-xs">
                 <span className="text-[#6B6380] font-medium">ご着席位置</span>
                 <span className="font-extrabold text-[#221C35] bg-white px-2.5 py-1 rounded-lg border border-[#D1C9E3]">
-                  {activeOrder.carNo}号車 ({activeOrder.carNo === 5 || activeOrder.seatType === 'megu' ? 'めぐしーと' : '普通席'}) {activeOrder.seatNo}（窓側）
+                  {activeOrder.carNo}号車 ({getSeatClassLabel(activeOrder.seatType)}) {activeOrder.seatNo}（窓側）
                 </span>
               </div>
             </div>
@@ -1231,7 +1232,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-[#6B6380]">ご着席位置:</span>
-                <span className="font-extrabold text-[#221C35]">{activeOrder.carNo}号車 ({activeOrder.carNo === 5 || activeOrder.seatType === 'megu' ? 'めぐしーと' : '普通席'}) {activeOrder.seatNo}（窓側）</span>
+                <span className="font-extrabold text-[#221C35]">{activeOrder.carNo}号車 ({getSeatClassLabel(activeOrder.seatType)}) {activeOrder.seatNo}（窓側）</span>
               </div>
               {activeOrder.items && activeOrder.items.length > 0 && (
                 <div className="flex justify-between items-center border-t border-[#E6E2EE] pt-2">

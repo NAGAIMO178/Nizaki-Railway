@@ -22,6 +22,7 @@ import {
 import { UserAvatar } from './UserAvatar';
 import { UserProfile, ActiveOrder, PointHistoryItem, AccountActivityItem, OrderHistoryItem } from '../types';
 import { deleteAccount } from '../utils/accountApi';
+import { getSeatClassLabel } from '../utils/seatUtils';
 import { PrivacyPolicyModal } from './PrivacyPolicyModal';
 
 interface MyPageModalProps {
@@ -102,7 +103,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
             amount: `¥${activeOrder.totalPrice.toLocaleString()}`,
             pointsEarned: Math.floor(activeOrder.totalPrice * 0.03),
             details: {
-              座席種別: activeOrder.seatType === 'megu' ? 'めぐりシート' : '普通席',
+              座席種別: getSeatClassLabel(activeOrder.seatType),
               予約番号: activeOrder.orderId,
             },
           },
