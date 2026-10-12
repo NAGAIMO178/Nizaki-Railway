@@ -18,6 +18,11 @@ export function getSeatClassLabel(seatType?: SeatClass): string {
   }
 }
 
+// 車内デリバリーを使える座席: めぐシートのお客様だけ
+export function canUseDelivery(seatType?: SeatClass): boolean {
+  return seatType === 'megu';
+}
+
 // 座席の種類による注文制限(「めぐシート限定」など)。制限がなければ誰でも注文できる
 export function canOrderItem(item: EquipItem, seatType?: SeatClass): boolean {
   if (!item.onlySeatTypes || item.onlySeatTypes.length === 0) return true;
