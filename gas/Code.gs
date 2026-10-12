@@ -396,21 +396,31 @@ function buildDisruptionSummary() {
 function replyToLine(replyToken, messages) {
   const token = CONFIG.ACCESS_TOKEN;
   if (!token || token.includes('★')) {
+    // お客様のLINEには何も出さず、GASの実行ログ(エラー)にだけ残す
+    console.error('[LINE返信失敗] アクセストークンが未設定です(スクリプト プロパティ LINE_CHANNEL_ACCESS_TOKEN を確認してください)');
     return;
   }
 
-  UrlFetchApp.fetch(CONFIG.LINE_REPLY_URL, {
-    method: 'post',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer ' + token
-    },
-    payload: JSON.stringify({
-      replyToken: replyToken,
-      messages: messages
-    }),
-    muteHttpExceptions: true
-  });
+  try {
+    const res = UrlFetchApp.fetch(CONFIG.LINE_REPLY_URL, {
+      method: 'post',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token
+      },
+      payload: JSON.stringify({
+        replyToken: replyToken,
+        messages: messages
+      }),
+      muteHttpExceptions: true
+    });
+    const code = res.getResponseCode();
+    if (code !== 200) {
+      console.error('[LINE返信失敗] status=' + code + ' ' + String(res.getContentText()).slice(0, 300));
+    }
+  } catch (err) {
+    console.error('[LINE返信失敗] ' + err);
+  }
 }
 
 /**

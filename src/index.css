@@ -2,6 +2,9 @@
 
 /* ソース内で使われているのに定義が無かったアニメーション */
 @theme {
+  /* 小さい画面用の区切り(480px以上)。ソース内の xs: がこれまで効いていなかった */
+  --breakpoint-xs: 30rem;
+
   --animate-fadeIn: fadeIn 0.25s ease-out;
   --animate-fade-in: fadeIn 0.25s ease-out;
   --animate-scaleUp: scaleUp 0.25s ease-out;
