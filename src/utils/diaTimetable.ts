@@ -405,9 +405,10 @@ export const computeLiveTrains = (data: LineData, lineId: string, direction: 1 |
       }
       const i1 = idxOfPos(passed);
       const i2 = idxOfPos(passed + 1);
-      // 環状線の新宿〜東京(最後の東京へ戻る区間)は、画面の駅の並びに駅間が無いので表示しない
-      if (Math.abs(i1 - i2) !== 1) continue;
-      stationName = master.stations[Math.min(i1, i2)][0];
+      // 環状線の新宿〜東京(最後の東京へ戻る区間)は、駅の並びの一番下(新宿の下)に、つなぎの区間として表示する
+      const isLoopClosure = master.loop && Math.min(i1, i2) === 0 && Math.max(i1, i2) === n - 1;
+      if (Math.abs(i1 - i2) !== 1 && !isLoopClosure) continue;
+      stationName = master.stations[isLoopClosure ? n - 1 : Math.min(i1, i2)][0];
       isBetween = true;
       isStopStation = stops.some((st) => st.pos === passed);
       futureFrom = segment + 1;

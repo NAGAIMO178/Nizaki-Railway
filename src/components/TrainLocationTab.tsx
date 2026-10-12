@@ -784,12 +784,16 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = () => {
                 </div>
 
                 {/* Between Stations Segment (If train is moving between stations) */}
-                {idx < displayStations.length - 1 && (
+                {(idx < displayStations.length - 1 || activeLineId === 'saichi_loop') && (
                   <div
                     className={`relative flex items-center ${
-                      hasMultipleBetween ? 'h-16' : 'h-6'
+                      hasMultipleBetween ? 'h-16' : activeLineId === 'saichi_loop' && idx === displayStations.length - 1 ? 'h-9' : 'h-6'
                     }`}
                   >
+                    {/* 環状線の一番下: 新宿から東京へ戻る区間(東京は一番上に戻る) */}
+                    {activeLineId === 'saichi_loop' && idx === displayStations.length - 1 && (
+                      <span className="text-[10px] font-bold text-[#857D99]">↩ 東京へ（環状線）</span>
+                    )}
                     {/* LEFT SIDE: Train Icons between stations */}
                     {trainsBetween.map((train, tIdx) =>
                       renderLeftTrainIcon(train, tIdx, trainsBetween.length)
