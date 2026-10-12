@@ -1,4 +1,4 @@
-import type { SeatClass } from '../types';
+import type { SeatClass, EquipItem } from '../types';
 
 // 座席の種類の表示名。予約済みの席が何の席かを、画面ごとにばらばらに判定しないようここに集める
 export function getSeatClassLabel(seatType?: SeatClass): string {
@@ -16,6 +16,16 @@ export function getSeatClassLabel(seatType?: SeatClass): string {
     default:
       return '普通席';
   }
+}
+
+// 座席の種類による注文制限(「めぐシート限定」など)。制限がなければ誰でも注文できる
+export function canOrderItem(item: EquipItem, seatType?: SeatClass): boolean {
+  if (!item.onlySeatTypes || item.onlySeatTypes.length === 0) return true;
+  return seatType !== undefined && item.onlySeatTypes.includes(seatType);
+}
+
+export function getItemRestrictionLabel(item: EquipItem): string {
+  return `${(item.onlySeatTypes || []).map((t) => getSeatClassLabel(t)).join('・')}限定`;
 }
 
 // 予約カードの帯に出す文言(めぐシートだけ「（プレミアム）」を付ける従来の表記)

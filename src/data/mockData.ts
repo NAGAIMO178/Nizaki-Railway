@@ -56,6 +56,7 @@ export const MOCK_EQUIP_ITEMS: EquipItem[] = [
     isPopular: true,
     isLimited: true,
     badge: 'めぐシート限定',
+    onlySeatTypes: ['megu'],
   },
   {
     id: 'eq-02',
