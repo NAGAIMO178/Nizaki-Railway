@@ -1212,7 +1212,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
                 予約しました！
               </h3>
               <p className="text-xs text-[#6B6380] font-medium">
-                特急券・めぐシートの予約が正常に完了いたしました。
+                特急券の予約が正常に完了いたしました。
               </p>
             </div>
 
