@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, UtensilsCrossed, Check, ShoppingBag, AlertCircle, Tag } from 'lucide-react';
 import { EquipItem, ActiveOrder } from '../types';
+import { getSeatClassLabel } from '../utils/seatUtils';
 
 interface EDeliveryModalProps {
   isOpen: boolean;
@@ -251,13 +252,7 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
                         readOnly
                         value={
                           activeOrder
-                            ? `${activeOrder.carNo}号車 (${
-                                activeOrder.seatType === 'megu' || activeOrder.carNo === 1
-                                  ? 'めぐシート'
-                                  : activeOrder.seatType === 'reserved'
-                                  ? '普通指定席'
-                                  : '自由席'
-                              })`
+                            ? `${activeOrder.carNo}号車 (${getSeatClassLabel(activeOrder.seatType)})`
                             : '—'
                         }
                         className="w-full bg-white border border-[#D1C9E3] rounded-xl px-3 py-2 text-xs text-[#221C35] font-bold shadow-2xs"

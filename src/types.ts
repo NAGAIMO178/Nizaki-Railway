@@ -93,12 +93,15 @@ export interface LiveTrain {
   hasSeatDelivery?: boolean;
 }
 
+// 座席の種類(予約画面で選んだもの): 自由席 / 普通指定席 / あやみ+ / プレミアム / めぐシート
+export type SeatClass = 'standard' | 'reserved' | 'green' | 'premium' | 'megu';
+
 export interface ActiveOrder {
   orderId: string;
   trainName: string; // e.g. "特急めぐり 3号"
   carNo: number;
   seatNo: string;
-  seatType?: 'megu' | 'standard';
+  seatType?: SeatClass;
   boardingStation?: string;
   destinationStation?: string;
   departureTime?: string;
@@ -117,7 +120,7 @@ export interface OrderHistoryItem {
   trainName: string;
   carNo: number;
   seatNo: string;
-  seatType?: 'megu' | 'standard';
+  seatType?: SeatClass;
   boardingStation?: string;
   destinationStation?: string;
   departureTime?: string;

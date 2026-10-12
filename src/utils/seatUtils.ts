@@ -1,3 +1,28 @@
+import type { SeatClass } from '../types';
+
+// 座席の種類の表示名。予約済みの席が何の席かを、画面ごとにばらばらに判定しないようここに集める
+export function getSeatClassLabel(seatType?: SeatClass): string {
+  switch (seatType) {
+    case 'megu':
+      return 'めぐシート';
+    case 'green':
+      return 'あやみ+';
+    case 'premium':
+      return 'プレミアム席';
+    case 'reserved':
+      return '普通指定席';
+    case 'standard':
+      return '自由席';
+    default:
+      return '普通席';
+  }
+}
+
+// 予約カードの帯に出す文言(めぐシートだけ「（プレミアム）」を付ける従来の表記)
+export function getSeatClassRibbon(seatType?: SeatClass): string {
+  return `${seatType === 'megu' ? 'めぐシート（プレミアム）' : getSeatClassLabel(seatType)} 予約確定`;
+}
+
 // Deterministic seed-based random seat generator
 export function getTodayDateString(): string {
   const now = new Date();
