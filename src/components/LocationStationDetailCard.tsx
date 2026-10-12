@@ -302,32 +302,9 @@ export const LocationStationDetailCard: React.FC<LocationStationDetailCardProps>
     });
   }
 
-  // もし当社線リストに含まれていない場合は、駅名で当社所属線を追加
-  if (companyLines.length === 0) {
-    if (name.includes('松戸') || name.includes('柏') || name.includes('土浦') || name.includes('日立')) {
-      companyLines.push(COMPANY_LINES.TC);
-    }
-    if (name.includes('東京') || name.includes('北千住') || name.includes('大宮')) {
-      companyLines.push(COMPANY_LINES.Y);
-    }
-  }
-
   // 他社線接続リストの抽出
-  let otherLines: OtherLineInfo[] = OTHER_LINES_DATABASE[name] || [];
-  if (otherLines.length === 0 && stationInfo.transfers) {
-    if (stationInfo.transfers.includes('JR')) {
-      otherLines.push({ name: 'JR東日本 各線', badge: 'JR', bgClass: 'bg-emerald-100 border-emerald-300', textClass: 'text-emerald-900', gateNotice: '改札通路経由' });
-    }
-    if (stationInfo.transfers.includes('地下鉄')) {
-      otherLines.push({ name: '地下鉄各線', badge: '地下鉄', bgClass: 'bg-sky-100 border-sky-300', textClass: 'text-sky-900', gateNotice: '地下乗り換え連絡口' });
-    }
-    if (stationInfo.transfers.includes('新幹線')) {
-      otherLines.push({ name: '新幹線各線', badge: '新幹線', bgClass: 'bg-blue-100 border-blue-300', textClass: 'text-blue-900', gateNotice: '新幹線専用改札' });
-    }
-    if (stationInfo.transfers.includes('東急')) {
-      otherLines.push({ name: '東急電鉄', badge: '東急', bgClass: 'bg-rose-100 border-rose-300', textClass: 'text-rose-900', gateNotice: '乗り換え通路' });
-    }
-  }
+  // 他社線は、駅ごとに確認したデータだけを出す(データの無い駅に、一般的な案内は自動で作らない)
+  const otherLines: OtherLineInfo[] = OTHER_LINES_DATABASE[name] || [];
 
   const hasCompany = companyLines.length > 0;
   const hasOther = otherLines.length > 0;

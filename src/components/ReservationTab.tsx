@@ -480,9 +480,6 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
             <div className="bg-[#F6F4FA] p-3.5 rounded-xl border border-[#E0D7F3] space-y-2">
               <div className="text-[11px] text-[#6B6380] font-bold flex items-center justify-between">
                 <span>ご乗車区間・時刻</span>
-                <span className="text-[#5B21B6] bg-white px-2 py-0.5 rounded border border-[#DDD6FE] text-[10px]">
-                  全席指定・車内Wi-Fi完備
-                </span>
               </div>
 
               <div className="flex items-center justify-between gap-2 pt-1">
@@ -1117,7 +1114,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          4. 特急券・めぐしーと予約完了モーダル
+          4. 特急券の予約完了モーダル
          ───────────────────────────────────────────────────────────── */}
       {showBookingSuccessModal && activeOrder && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-fadeIn">
