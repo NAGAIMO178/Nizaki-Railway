@@ -94,7 +94,7 @@ export const MOCK_EQUIP_ITEMS: EquipItem[] = [
     category: 'souvenir',
     price: 2800,
     image: clockImg,
-    description: 'ラベンダーパープルの車体を象っためぐシートご乗車記念アクリル時計（限定ゴールドアクリル台座付き）。',
+    description: 'ラベンダーパープルの車体を象ったご乗車記念アクリル時計（限定ゴールドアクリル台座付き）。',
     isLimited: true,
     badge: '乗車記念',
   },

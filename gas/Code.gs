@@ -226,7 +226,7 @@ function handleReservationInquiry(replyToken, userId, text) {
     if (matched.length === 0) {
       replyToLine(replyToken, [{
         type: 'text',
-        text: 'お客様のLINEアカウントに紐づく有効なご予約が見つかりませんでした。\n予約番号（例: NZ-1234）を直接入力してお試しください。'
+        text: 'お客様のLINEアカウントに紐づく有効なご予約が見つかりませんでした。\n予約番号（例: EQ-12345）を直接入力してお試しください。'
       }]);
       return;
     }
