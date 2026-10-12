@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { UtensilsCrossed, ShoppingBag, Plus, Minus, Check, ShoppingCart, Info } from 'lucide-react';
 import { EquipItem, ActiveOrder } from '../types';
-import { canOrderItem, getItemRestrictionLabel } from '../utils/seatUtils';
+import { canOrderItem, canUseDelivery, getItemRestrictionLabel, getSeatClassLabel } from '../utils/seatUtils';
 import { handleImageError } from '../utils/imageFallback';
 
 interface EquipTabProps {
@@ -43,6 +43,8 @@ export const EquipTab: React.FC<EquipTabProps> = ({
     // 座席の種類で制限された商品(めぐシート限定など)は、対象外の座席では追加できない
     const target = items.find((i) => i.id === itemId);
     if (delta > 0 && target && !canOrderItem(target, activeOrder?.seatType)) return;
+    // めぐシート以外で予約している場合は、デリバリーの商品を追加できない
+    if (delta > 0 && activeOrder && !canUseDelivery(activeOrder.seatType)) return;
     const current = cart[itemId] || 0;
     const updated = Math.max(0, current + delta);
     const newCart = { ...cart };
@@ -79,10 +81,16 @@ export const EquipTab: React.FC<EquipTabProps> = ({
             E-DELIVERY 座席配送カタログ
           </h2>
           <p className="text-xs text-[#6B6380]">
-            指定席・あやみ+・めぐシートのお客様向けの座席直配送サービス
+            めぐシートのお客様向けの座席直配送サービス
           </p>
         </div>
       </div>
+
+      {activeOrder && !canUseDelivery(activeOrder.seatType) && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 text-[11px] leading-snug text-amber-900">
+          ご予約の座席（{getSeatClassLabel(activeOrder.seatType)}）では、車内デリバリーをご利用いただけません。デリバリーはめぐシート専用です。
+        </div>
+      )}
 
       {/* Purchased Summary Banner */}
       {purchasedTotalCount > 0 && activeOrder && (
@@ -203,7 +211,11 @@ export const EquipTab: React.FC<EquipTabProps> = ({
                   </span>
 
                   {/* Quantity Control Button */}
-                  {qty === 0 && !canOrderItem(item, activeOrder?.seatType) ? (
+                  {qty === 0 && activeOrder && !canUseDelivery(activeOrder.seatType) ? (
+                    <span className="text-[10px] font-bold text-[#6B6380] bg-[#F4F3F8] px-2.5 py-1 rounded-lg border border-[#E6E2EE] whitespace-nowrap">
+                      めぐシート専用
+                    </span>
+                  ) : qty === 0 && !canOrderItem(item, activeOrder?.seatType) ? (
                     <span className="text-[10px] font-bold text-[#6B6380] bg-[#F4F3F8] px-2.5 py-1 rounded-lg border border-[#E6E2EE] whitespace-nowrap">
                       {activeOrder ? `${getItemRestrictionLabel(item)}の商品です` : `${getItemRestrictionLabel(item)}(ご予約が必要)`}
                     </span>

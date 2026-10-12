@@ -23,7 +23,7 @@ import {
   Lock,
 } from 'lucide-react';
 import { ActiveOrder, EquipItem } from '../types';
-import { getSeatClassLabel, getSeatClassRibbon } from '../utils/seatUtils';
+import { getSeatClassLabel, getSeatClassRibbon, canUseDelivery } from '../utils/seatUtils';
 import { MOCK_EQUIP_ITEMS } from '../data/mockData';
 import { SeatSelectionModal } from './SeatSelectionModal';
 import { getLocalDateString } from '../utils/orderExpiry';
@@ -522,6 +522,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
             {/* ─────────────────────────────────────────────────────────────
                 2. デリバリー予定のお弁当・商品表示欄
                ───────────────────────────────────────────────────────────── */}
+            {canUseDelivery(activeOrder.seatType) ? (
             <div className="space-y-2.5 pt-1">
               <div className="flex items-center justify-between">
                 <h4 className="text-xs font-extrabold text-[#221C35] flex items-center gap-1.5">
@@ -576,9 +577,15 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
                 </div>
               )}
             </div>
+            ) : (
+              <div className="p-3 rounded-xl bg-[#F9F8FD] border border-dashed border-[#D1C9E3] text-center text-[11px] text-[#6B6380]">
+                車内デリバリーは、めぐシートのお客様専用です
+              </div>
+            )}
 
             {/* Action buttons inside Reserved Card */}
             <div className="pt-2 border-t border-[#E6E2EE] flex items-center gap-2">
+              {canUseDelivery(activeOrder.seatType) && (
               <button
                 onClick={onOpenEDeliveryModal}
                 className="flex-1 py-2.5 px-3 rounded-xl bg-[#5B21B6] hover:bg-[#4C1D95] text-white text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
@@ -586,6 +593,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
                 <UtensilsCrossed className="w-3.5 h-3.5" />
                 <span>お弁当・商品を追加変更</span>
               </button>
+              )}
 
               <button
                 onClick={() => setIsCancelModalOpen(true)}

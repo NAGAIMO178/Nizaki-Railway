@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { X, UtensilsCrossed, Check, ShoppingBag, AlertCircle, Tag } from 'lucide-react';
 import { EquipItem, ActiveOrder } from '../types';
-import { getSeatClassLabel, canOrderItem, getItemRestrictionLabel } from '../utils/seatUtils';
+import { getSeatClassLabel, canOrderItem, canUseDelivery, getItemRestrictionLabel } from '../utils/seatUtils';
 import { handleImageError } from '../utils/imageFallback';
 
 interface EDeliveryModalProps {
@@ -49,7 +49,8 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
   if (!isOpen) return null;
 
   // 判定: 自由席での予約有無 & 未予約有無 (指定席・めぐシート1号車などはデリバリー可能)
-  const isStandardSeat = Boolean(activeOrder && activeOrder.seatType === 'standard');
+  // めぐシート以外の座席では、車内デリバリーは使えない
+  const isNotMegu = Boolean(activeOrder && !canUseDelivery(activeOrder.seatType));
   const hasNoOrder = !activeOrder;
 
   const selectedItems = Object.entries(cart)
@@ -107,7 +108,7 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeOrder || selectedItems.length === 0 || isStandardSeat || hasNoOrder || hasBlockedItems) return;
+    if (!activeOrder || selectedItems.length === 0 || isNotMegu || hasNoOrder || hasBlockedItems) return;
 
     if (!isLoggedIn && onRequireLogin) {
       onRequireLogin('車内デリバリーのご注文確定には、神埼IDログインが必要です。');
@@ -184,13 +185,13 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
               {/* Warning Notice when Standard Seat or No Order */}
-              {isStandardSeat && (
+              {isNotMegu && (
                 <div className="bg-rose-50 border border-rose-200 rounded-2xl p-3.5 flex items-start gap-2.5 text-rose-900 animate-fadeIn">
                   <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
                   <div className="space-y-0.5">
-                    <div className="font-extrabold text-xs text-rose-950">自由席にはデリバリーできません</div>
+                    <div className="font-extrabold text-xs text-rose-950">めぐシート以外にはデリバリーできません</div>
                     <div className="text-[11px] leading-snug text-rose-800">
-                      現在ご予約中の座席は<strong className="underline decoration-rose-400">【自由席 ({activeOrder?.carNo}号車 {activeOrder?.seatNo})】</strong>です。車内デリバリーは指定席・特別車（あやみ+・めぐシート）専用サービスのため、自由席への配達・購入確定はできません。
+                      現在ご予約中の座席は<strong className="underline decoration-rose-400">【{getSeatClassLabel(activeOrder?.seatType)} ({activeOrder?.carNo}号車 {activeOrder?.seatNo})】</strong>です。車内デリバリーはめぐシート専用サービスのため、購入確定はできません。
                     </div>
                   </div>
                 </div>
@@ -220,9 +221,9 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
                 <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 flex items-start gap-2.5 text-amber-900 animate-fadeIn">
                   <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
                   <div className="space-y-0.5">
-                    <div className="font-extrabold text-xs text-amber-950">指定席の特急券の予約が必要です</div>
+                    <div className="font-extrabold text-xs text-amber-950">めぐシートの予約が必要です</div>
                     <div className="text-[11px] leading-snug text-amber-800">
-                      特急券・座席予約が見つかりません。車内デリバリーをご利用いただくには、先に「予約」タブより、指定席・あやみ+・めぐシートのいずれかをご予約ください。
+                      特急券・座席予約が見つかりません。車内デリバリーをご利用いただくには、先に「予約」タブより、特急めぐりのめぐシートをご予約ください。
                     </div>
                   </div>
                 </div>
@@ -335,7 +336,7 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
                     <span className="whitespace-nowrap">
                       {activeOrder && activeOrder.items && activeOrder.items.length > 0
                         ? '② 今回追加するお弁当・商品（デリバリータブ選択分）'
-                        : '② ご注文商品（ご予約の座席へお届け）'}
+                        : '② ご注文商品（めぐシートの座席へお届け）'}
                     </span>
                     <span className="text-[10px] text-[#5B21B6] bg-[#EFE8FA] px-2 py-0.5 rounded font-bold whitespace-nowrap">
                       保温パックでお届け
@@ -467,15 +468,15 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
 
                 <button
                   type="submit"
-                  disabled={selectedItems.length === 0 || isStandardSeat || hasNoOrder || hasBlockedItems}
+                  disabled={selectedItems.length === 0 || isNotMegu || hasNoOrder || hasBlockedItems}
                   className="bg-[#5B21B6] hover:bg-[#4C1D95] disabled:opacity-40 text-white font-extrabold text-xs sm:text-sm py-3 px-5 rounded-xl shadow-md flex items-center justify-center gap-2 cursor-pointer transition-all whitespace-nowrap shrink-0"
                 >
                   <ShoppingBag className="w-4 h-4 text-white shrink-0" />
                   <span className="whitespace-nowrap">
-                    {isStandardSeat
-                      ? '自由席へのデリバリー不可'
+                    {isNotMegu
+                      ? 'めぐシート以外は注文できません'
                       : hasNoOrder
-                      ? '指定席の予約が必要'
+                      ? 'めぐシートの予約が必要'
                       : hasBlockedItems
                       ? '注文できない商品があります'
                       : selectedItems.length === 0
