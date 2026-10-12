@@ -1,10 +1,10 @@
 import { TrainLine, EquipItem } from '../types';
-import gyokuroImg from '../assets/images/item_gyokuro_1785713816751.jpg';
-import clockImg from '../assets/images/item_clock_1785713828591.jpg';
-import parfaitImg from '../assets/images/item_parfait_1785713839429.jpg';
-import craftbeerImg from '../assets/images/item_craftbeer_1785713851365.jpg';
+import gyokuroImg from '../assets/images/item_gyokuro.webp';
+import clockImg from '../assets/images/item_clock.webp';
+import parfaitImg from '../assets/images/item_parfait.webp';
+import craftbeerImg from '../assets/images/item_craftbeer.webp';
 import makunouchiImg from '../assets/images/item_makunouchi_1785713864189.jpg';
-import hidaMatsutakeImg from '../assets/images/item_hida_matsutake_1785713876633.jpg';
+import hidaMatsutakeImg from '../assets/images/item_hida_matsutake.webp';
 
 export const MOCK_LINES: TrainLine[] = [
   {
