@@ -96,7 +96,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
             id: `act_ticket_${activeOrder.orderId}`,
             category: 'ticket' as const,
             title: `${activeOrder.trainName} ${activeOrder.carNo}号車 ${activeOrder.seatNo}席`,
-            subtitle: `${activeOrder.boardingStation || '松戸駅'} (${activeOrder.departureTime || '09:00'}) → ${activeOrder.destinationStation || '日立駅'} (${activeOrder.arrivalTime || '09:48'})`,
+            subtitle: `${activeOrder.boardingStation || '—'} (${activeOrder.departureTime || '—'}) → ${activeOrder.destinationStation || '—'} (${activeOrder.arrivalTime || '—'})`,
             date: '本日乗車予定',
             status: '予約確定・乗車前',
             statusColor: 'emerald',

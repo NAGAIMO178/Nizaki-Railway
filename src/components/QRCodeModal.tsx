@@ -59,7 +59,7 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({
               <div className="flex justify-between items-center text-xs">
                 <span className="text-[#6B6380]">ご乗車区間:</span>
                 <span className="font-bold text-[#221C35]">
-                  {activeOrder.boardingStation || '松戸駅'} → {activeOrder.destinationStation || '日立駅'}
+                  {activeOrder.boardingStation || '—'} → {activeOrder.destinationStation || '—'}
                 </span>
               </div>
               <div className="flex justify-between items-center text-xs">

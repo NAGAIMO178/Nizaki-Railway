@@ -1,29 +1,5 @@
 export type TabType = 'home' | 'location' | 'reservation' | 'equip' | 'events' | 'settings';
 
-export interface KanzakiEvent {
-  id: string;
-  title: string;
-  subtitle: string;
-  category: 'stamp' | 'tour' | 'kids' | 'seasonal' | 'special';
-  categoryLabel: string;
-  period: string;
-  location: string;
-  description: string;
-  details: string[];
-  imageUrl: string;
-  badge?: string;
-  status: 'open' | 'upcoming' | 'ending_soon' | 'ended';
-  capacity?: string;
-  fee?: string;
-  isJoined?: boolean;
-  pointReward?: number;
-  stampProgress?: {
-    current: number;
-    total: number;
-    checkpoints: { name: string; station: string; checked: boolean }[];
-  };
-}
-
 export interface TrainLine {
   id: string;
   name: string;
@@ -33,37 +9,6 @@ export interface TrainLine {
   statusText: string;
   delayMinutes?: number;
   infoMessage?: string;
-}
-
-export interface DepartureInfo {
-  id: string;
-  lineName: string;
-  platform: string;
-  trainType: '特別快速' | '特急' | '特急めぐり号' | '急行' | '普通' | '通勤快速';
-  trainTypeColor: string;
-  destination: string;
-  departureTime: string; // e.g. "14:02"
-  minutesRemaining: number;
-  congestion: 'vacant' | 'normal' | 'crowded' | 'very_crowded'; // 混雑度
-  carCount: number;
-  doorPosition: string;
-  isMeguriExpress?: boolean;
-  hasEDelivery?: boolean;
-  nextStops: string[];
-}
-
-export interface Station {
-  id: string;
-  name: string;
-  nameKana: string;
-  code: string;
-  lines: string[];
-  platforms: {
-    number: string;
-    lineName: string;
-    direction: string;
-    departures: DepartureInfo[];
-  }[];
 }
 
 export interface EquipItem {
@@ -77,21 +22,6 @@ export interface EquipItem {
   isLimited?: boolean;
   badge?: string;
   onlySeatTypes?: SeatClass[]; // 指定した座席の種類で予約したお客様だけ注文できる(未指定なら誰でも)
-}
-
-export interface LiveTrain {
-  id: string;
-  trainNumber: string; // e.g. "1402M"
-  lineId: string;
-  trainType: string;
-  trainTypeColor: string;
-  destination: string;
-  currentSection: string; // e.g. "松戸 〜 神埼本町"
-  direction: 'up' | 'down';
-  delayMinutes: number;
-  status: 'moving' | 'stopped' | 'approaching';
-  carCount: number;
-  hasSeatDelivery?: boolean;
 }
 
 // 座席の種類(予約画面で選んだもの): 自由席 / 普通指定席 / あやみ+ / プレミアム / めぐシート
