@@ -27,6 +27,15 @@ import { getSeatClassLabel, getSeatClassRibbon } from '../utils/seatUtils';
 import { MOCK_EQUIP_ITEMS } from '../data/mockData';
 import { SeatSelectionModal } from './SeatSelectionModal';
 import { getLocalDateString } from '../utils/orderExpiry';
+import {
+  EXPRESS_TYPES,
+  ExpressTrip,
+  findExpressTrips,
+  getExpressStations,
+  getTripDistanceKm,
+  loadLineData,
+  getCachedLineData,
+} from '../utils/diaTimetable';
 
 interface ReservationTabProps {
   activeOrder: ActiveOrder | null;
@@ -49,51 +58,43 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
   // Express Train Selection in E-Quick Service
   const [expressType, setExpressType] = useState<'ayami' | 'nliner' | 'meguri'>('ayami');
 
-  // Station lists per express train
-  const AYAMI_STATIONS = ['東京駅', '北千住駅', '松戸駅', '柏駅', '春日部駅', '大宮駅', '池袋駅', '新宿駅'];
-  const NLINER_STATIONS = ['東京駅', '大宮駅', '調布駅', '溝の口駅', '新横浜駅', '横浜駅'];
-  const MEGURI_STATIONS = ['松戸駅', '柏駅', '土浦駅', 'ひたちなか海浜公園駅', '日立駅'];
+  // 駅の一覧・時刻・営業キロは、全駅ダイヤ(小分けJSON)から取る
+  const expressConfig = EXPRESS_TYPES[expressType];
+  const [diaTick, setDiaTick] = useState(0);
+  const [diaError, setDiaError] = useState(false);
+  const [diaRetry, setDiaRetry] = useState(0);
+  const lineData = getCachedLineData(expressConfig.lineCode);
 
-  // 各列車ごとの起点駅からの営業キロ（km）マップ
-  const AYAMI_KM: Record<string, number> = {
-    '東京駅': 0.0,
-    '北千住駅': 10.5,
-    '松戸駅': 17.8,
-    '柏駅': 29.2,
-    '春日部駅': 48.1,
-    '大宮駅': 65.3,
-    '池袋駅': 82.4,
-    '新宿駅': 87.2,
-  };
+  React.useEffect(() => {
+    if (getCachedLineData(expressConfig.lineCode)) {
+      setDiaError(false);
+      return;
+    }
+    let alive = true;
+    setDiaError(false);
+    loadLineData(expressConfig.lineCode)
+      .then(() => {
+        if (alive) setDiaTick((t) => t + 1);
+      })
+      .catch(() => {
+        if (alive) setDiaError(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [expressConfig.lineCode, diaRetry]);
 
-  const NLINER_KM: Record<string, number> = {
-    '東京駅': 0.0,
-    '大宮駅': 30.5,
-    '調布駅': 52.1,
-    '溝の口駅': 62.8,
-    '新横浜駅': 78.4,
-    '横浜駅': 85.0,
-  };
-
-  const MEGURI_KM: Record<string, number> = {
-    '松戸駅': 0.0,
-    '柏駅': 11.5,
-    '土浦駅': 52.5,
-    'ひたちなか海浜公園駅': 111.0,
-    '日立駅': 138.0,
-  };
-
-  const currentStationList =
-    expressType === 'ayami'
-      ? AYAMI_STATIONS
-      : expressType === 'nliner'
-      ? NLINER_STATIONS
-      : MEGURI_STATIONS;
+  const stripEki = (name: string) => name.replace(/駅$/, '');
 
   // Form State for new booking when not reserved
   const [boardingStation, setBoardingStation] = useState('東京駅');
   const [destinationStation, setDestinationStation] = useState('大宮駅');
-  const [selectedTrainNo, setSelectedTrainNo] = useState<number>(101); // Default train
+  const [selectedTrainCode, setSelectedTrainCode] = useState<string>('');
+
+  // 駅の選択肢(ダイヤの読み込み前は、いまの選択だけ)
+  const currentStationList: string[] = lineData
+    ? getExpressStations(lineData, expressConfig.typeName).map((n) => `${n}駅`)
+    : [boardingStation, destinationStation];
   const [seatType, setSeatType] = useState<'standard' | 'reserved' | 'green' | 'premium' | 'megu'>('reserved');
 
   // Coupon Code State
@@ -164,10 +165,11 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
     setCouponMessage(null);
   };
 
-  // 乗車駅・降車駅の位置関係から上り/下りを自動判定
+  // 乗車駅・降車駅から、乗れる特急を求める
   const bIndex = currentStationList.indexOf(boardingStation);
-  const dIndex = currentStationList.indexOf(destinationStation);
-  const currentDirection: 'down' | 'up' = bIndex <= dIndex ? 'down' : 'up';
+  const trips: ExpressTrip[] = lineData
+    ? findExpressTrips(lineData, expressConfig.typeName, stripEki(boardingStation), stripEki(destinationStation))
+    : [];
 
   // Train Switcher Effect
   const handleExpressTypeChange = (type: 'ayami' | 'nliner' | 'meguri') => {
@@ -176,18 +178,16 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
       setBoardingStation('東京駅');
       setDestinationStation('大宮駅');
       setSeatType('reserved');
-      setSelectedTrainNo(101);
     } else if (type === 'nliner') {
       setBoardingStation('東京駅');
       setDestinationStation('横浜駅');
       setSeatType('reserved'); // Nライナーは普通指定席のみ
-      setSelectedTrainNo(1);
     } else {
       setBoardingStation('松戸駅');
       setDestinationStation('日立駅');
       setSeatType('megu');
-      setSelectedTrainNo(3);
     }
+    setSelectedTrainCode('');
   };
 
   // 乗車駅変更時の自動補正
@@ -204,76 +204,6 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
 
   // 降車駅の選択肢を取得
   const destinationOptions = currentStationList.filter((s, idx) => idx !== bIndex);
-
-  // 特急あやみ (毎時15分発) 101号〜
-  const ayamiSchedules = Array.from({ length: 14 }, (_, i) => {
-    const hour = 8 + i; // 8:15 〜 21:15
-    const hourStr = String(hour).padStart(2, '0');
-    return {
-      no: 101 + i * 2,
-      time: `${hourStr}:15`,
-      dest: '環状一回り（東京・大宮・新宿方面）',
-      trainName: `特急あやみ ${101 + i * 2}号`,
-      dir: 'down' as const,
-    };
-  });
-
-  // 特急Nライナー (毎時30分 / 00分発) 1号〜
-  const nlinerSchedules = [
-    // 下り (東京 → 大宮 → 新横浜 → 横浜)
-    { no: 1, time: '07:30', dir: 'down' as const, dest: '横浜行き', trainName: '特急Nライナー 1号' },
-    { no: 3, time: '08:30', dir: 'down' as const, dest: '横浜行き', trainName: '特急Nライナー 3号' },
-    { no: 5, time: '09:30', dir: 'down' as const, dest: '横浜行き', trainName: '特急Nライナー 5号' },
-    { no: 7, time: '10:30', dir: 'down' as const, dest: '横浜行き', trainName: '特急Nライナー 7号' },
-    { no: 9, time: '11:30', dir: 'down' as const, dest: '横浜行き', trainName: '特急Nライナー 9号' },
-    { no: 11, time: '12:30', dir: 'down' as const, dest: '横浜行き', trainName: '特急Nライナー 11号' },
-    { no: 13, time: '13:30', dir: 'down' as const, dest: '横浜行き', trainName: '特急Nライナー 13号' },
-    { no: 15, time: '14:30', dir: 'down' as const, dest: '横浜行き', trainName: '特急Nライナー 15号' },
-    { no: 17, time: '15:30', dir: 'down' as const, dest: '横浜行き', trainName: '特急Nライナー 17号' },
-    { no: 19, time: '16:30', dir: 'down' as const, dest: '横浜行き', trainName: '特急Nライナー 19号' },
-    { no: 21, time: '17:30', dir: 'down' as const, dest: '横浜行き', trainName: '特急Nライナー 21号' },
-    { no: 23, time: '18:30', dir: 'down' as const, dest: '横浜行き', trainName: '特急Nライナー 23号' },
-    { no: 25, time: '19:30', dir: 'down' as const, dest: '横浜行き', trainName: '特急Nライナー 25号' },
-    { no: 27, time: '20:30', dir: 'down' as const, dest: '横浜行き', trainName: '特急Nライナー 27号' },
-    { no: 29, time: '21:30', dir: 'down' as const, dest: '横浜行き', trainName: '特急Nライナー 29号' },
-    // 上り (横浜 → 新横浜 → 大宮 → 東京)
-    { no: 2, time: '08:00', dir: 'up' as const, dest: '東京行き', trainName: '特急Nライナー 2号' },
-    { no: 4, time: '09:00', dir: 'up' as const, dest: '東京行き', trainName: '特急Nライナー 4号' },
-    { no: 6, time: '10:00', dir: 'up' as const, dest: '東京行き', trainName: '特急Nライナー 6号' },
-    { no: 8, time: '11:00', dir: 'up' as const, dest: '東京行き', trainName: '特急Nライナー 8号' },
-    { no: 10, time: '12:00', dir: 'up' as const, dest: '東京行き', trainName: '特急Nライナー 10号' },
-    { no: 12, time: '13:00', dir: 'up' as const, dest: '東京行き', trainName: '特急Nライナー 12号' },
-    { no: 14, time: '14:00', dir: 'up' as const, dest: '東京行き', trainName: '特急Nライナー 14号' },
-    { no: 16, time: '15:00', dir: 'up' as const, dest: '東京行き', trainName: '特急Nライナー 16号' },
-    { no: 18, time: '16:00', dir: 'up' as const, dest: '東京行き', trainName: '特急Nライナー 18号' },
-    { no: 20, time: '17:00', dir: 'up' as const, dest: '東京行き', trainName: '特急Nライナー 20号' },
-    { no: 22, time: '18:00', dir: 'up' as const, dest: '東京行き', trainName: '特急Nライナー 22号' },
-    { no: 24, time: '19:00', dir: 'up' as const, dest: '東京行き', trainName: '特急Nライナー 24号' },
-    { no: 26, time: '20:00', dir: 'up' as const, dest: '東京行き', trainName: '特急Nライナー 26号' },
-    { no: 28, time: '21:00', dir: 'up' as const, dest: '東京行き', trainName: '特急Nライナー 28号' },
-    { no: 30, time: '22:00', dir: 'up' as const, dest: '東京行き', trainName: '特急Nライナー 30号' },
-  ];
-
-  // 特急めぐり (毎時13分 / 43分)
-  const MEGUI_DOWN_MINUTE = 13;
-  const MEGUI_UP_MINUTE = 43;
-  const meguriSchedules = [
-    { no: 1, hour: 7, time: '07:13', dir: 'down' as const, dest: '日立行き', minute: MEGUI_DOWN_MINUTE, trainName: '特急めぐり 1号' },
-    { no: 2, hour: 8, time: '08:43', dir: 'up' as const, dest: '松戸行き', minute: MEGUI_UP_MINUTE, trainName: '特急めぐり 2号' },
-    { no: 3, hour: 9, time: '09:13', dir: 'down' as const, dest: '日立行き', minute: MEGUI_DOWN_MINUTE, trainName: '特急めぐり 3号' },
-    { no: 4, hour: 10, time: '10:43', dir: 'up' as const, dest: '松戸行き', minute: MEGUI_UP_MINUTE, trainName: '特急めぐり 4号' },
-    { no: 5, hour: 11, time: '11:13', dir: 'down' as const, dest: '日立行き', minute: MEGUI_DOWN_MINUTE, trainName: '特急めぐり 5号' },
-    { no: 6, hour: 12, time: '12:43', dir: 'up' as const, dest: '松戸行き', minute: MEGUI_UP_MINUTE, trainName: '特急めぐり 6号' },
-    { no: 7, hour: 13, time: '13:13', dir: 'down' as const, dest: '日立行き', minute: MEGUI_DOWN_MINUTE, trainName: '特急めぐり 7号' },
-    { no: 8, hour: 14, time: '14:43', dir: 'up' as const, dest: '松戸行き', minute: MEGUI_UP_MINUTE, trainName: '特急めぐり 8号' },
-    { no: 9, hour: 15, time: '15:13', dir: 'down' as const, dest: '日立行き', minute: MEGUI_DOWN_MINUTE, trainName: '特急めぐり 9号' },
-    { no: 10, hour: 16, time: '16:43', dir: 'up' as const, dest: '松戸行き', minute: MEGUI_UP_MINUTE, trainName: '特急めぐり 10号' },
-    { no: 11, hour: 17, time: '17:13', dir: 'down' as const, dest: '日立行き', minute: MEGUI_DOWN_MINUTE, trainName: '特急めぐり 11号' },
-    { no: 12, hour: 18, time: '18:43', dir: 'up' as const, dest: '松戸行き', minute: MEGUI_UP_MINUTE, trainName: '特急めぐり 12号' },
-    { no: 13, hour: 19, time: '19:13', dir: 'down' as const, dest: '日立行き', minute: MEGUI_DOWN_MINUTE, trainName: '特急めぐり 13号' },
-    { no: 14, hour: 20, time: '20:43', dir: 'up' as const, dest: '松戸行き', minute: MEGUI_UP_MINUTE, trainName: '特急めぐり 14号' },
-    { no: 15, hour: 21, time: '21:13', dir: 'down' as const, dest: '日立行き', minute: MEGUI_DOWN_MINUTE, trainName: '特急めぐり 15号' },
-  ];
 
   // 現在時刻(HH:mm)に基づく運休・終了判定
   const [nowDate, setNowDate] = React.useState<Date>(new Date());
@@ -293,30 +223,28 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
     return currentMinutesFromMidnight >= trainMin - 5;
   };
 
-  const availableTrains =
-    expressType === 'ayami'
-      ? ayamiSchedules
-      : expressType === 'nliner'
-      ? nlinerSchedules.filter((t) => t.dir === currentDirection)
-      : meguriSchedules.filter((t) => t.dir === currentDirection);
+  const availableTrains = trips;
 
   // 過去になっていない（予約可能）列車の中で最も早いものを初期選択
   React.useEffect(() => {
     // 選択中の列車がまだ予約可能なら、ユーザーの選択を維持する
-    const selected = availableTrains.find((t) => t.no === selectedTrainNo);
-    if (selected && !isTrainEnded(selected.time)) return;
+    const selected = availableTrains.find((t) => t.code === selectedTrainCode);
+    if (selected && !isTrainEnded(selected.depTime)) return;
 
-    const activeValidTrain = availableTrains.find((t) => !isTrainEnded(t.time));
+    const activeValidTrain = availableTrains.find((t) => !isTrainEnded(t.depTime));
     if (activeValidTrain) {
-      setSelectedTrainNo(activeValidTrain.no);
+      setSelectedTrainCode(activeValidTrain.code);
     } else if (availableTrains.length > 0) {
-      setSelectedTrainNo(availableTrains[0].no);
+      setSelectedTrainCode(availableTrains[0].code);
+    } else {
+      setSelectedTrainCode('');
     }
-  }, [expressType, currentDirection, currentMinutesFromMidnight]);
+  }, [expressType, boardingStation, destinationStation, diaTick, currentMinutesFromMidnight]);
 
-  const currentTrainInfo = availableTrains.find((t) => t.no === selectedTrainNo) || availableTrains[0];
-  const isCurrentTrainEnded = currentTrainInfo ? isTrainEnded(currentTrainInfo.time) : true;
-  const isAllTrainsEnded = availableTrains.every((t) => isTrainEnded(t.time));
+  const currentTrainInfo: ExpressTrip | undefined =
+    availableTrains.find((t) => t.code === selectedTrainCode) || availableTrains[0];
+  const isCurrentTrainEnded = currentTrainInfo ? isTrainEnded(currentTrainInfo.depTime) : true;
+  const isAllTrainsEnded = availableTrains.every((t) => isTrainEnded(t.depTime));
 
   // Seat Selection Modal State
   const [isSeatSelectionModalOpen, setIsSeatSelectionModalOpen] = useState(false);
@@ -336,37 +264,19 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
     setTimeout(() => setShowCancelSuccessNotice(false), 6000);
   };
 
-  // 駅間の所要時間（分）計算ヘルパー
-  const calculateTravelMinutes = (startSt: string, endSt: string) => {
-    const sIdx = currentStationList.indexOf(startSt);
-    const eIdx = currentStationList.indexOf(endSt);
-    if (sIdx === -1 || eIdx === -1) return 30;
-    const diff = Math.abs(eIdx - sIdx);
-    return Math.max(15, diff * 15);
+  // 出発・到着時刻(HH:mm)から乗車時間(分)を求める(日またぎにも対応)
+  const minutesBetween = (dep?: string, arr?: string): number | null => {
+    if (!dep || !arr) return null;
+    const [h1, m1] = dep.split(':').map(Number);
+    const [h2, m2] = arr.split(':').map(Number);
+    if ([h1, m1, h2, m2].some(Number.isNaN)) return null;
+    const diff = h2 * 60 + m2 - (h1 * 60 + m1);
+    return diff >= 0 ? diff : diff + 24 * 60;
   };
 
-  // 出発時刻(HH:MM)と所要分から到着時刻(HH:MM)を計算
-  const calculateArrivalTime = (startTimeStr: string, minutesToAdd: number) => {
-    const [h, m] = startTimeStr.split(':').map(Number);
-    if (isNaN(h) || isNaN(m)) return '09:36';
-    const totalM = h * 60 + m + minutesToAdd;
-    const endH = Math.floor(totalM / 60) % 24;
-    const endM = totalM % 60;
-    return `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
-  };
-
-  // 距離(km)計算ヘルパー
-  const calculateDistance = (start: string, end: string) => {
-    const kmMap =
-      expressType === 'ayami'
-        ? AYAMI_KM
-        : expressType === 'nliner'
-        ? NLINER_KM
-        : MEGURI_KM;
-    const startKm = kmMap[start] ?? 0;
-    const endKm = kmMap[end] ?? 0;
-    return Math.abs(endKm - startKm);
-  };
+  // 乗車区間の営業キロ(ダイヤの駅間距離から)
+  const calculateDistance = (start: string, end: string) =>
+    lineData ? getTripDistanceKm(lineData, stripEki(start), stripEki(end)) : 0;
 
   // 営業キロ区分に基づく普通運賃計算
   const calculateFare = (dist: number) => {
@@ -474,21 +384,14 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
     isSpecialCar: boolean;
     specialCarFee: number;
   }) => {
-    if (isCurrentTrainEnded || isAllTrainsEnded) {
+    if (isCurrentTrainEnded || isAllTrainsEnded || !currentTrainInfo) {
       return;
     }
 
     const items: { item: EquipItem; quantity: number }[] = [];
     const prices = calculateTicketPrice();
-    const travelMins = calculateTravelMinutes(boardingStation, destinationStation);
-    const arrivalTime = calculateArrivalTime(currentTrainInfo.time, travelMins);
-
-    const trainName =
-      expressType === 'ayami'
-        ? `特急あやみ ${currentTrainInfo.no}号`
-        : expressType === 'nliner'
-        ? `特急Nライナー ${currentTrainInfo.no}号`
-        : `特急めぐり ${currentTrainInfo.no}号`;
+    const arrivalTime = currentTrainInfo.arrTime;
+    const trainName = currentTrainInfo.trainName;
 
     const finalTotalPrice = prices.fare + prices.expressFee + (isSpecialCar ? specialCarFee : 0);
 
@@ -500,7 +403,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
       seatType,
       boardingStation,
       destinationStation,
-      departureTime: currentTrainInfo.time,
+      departureTime: currentTrainInfo.depTime,
       arrivalTime,
       reservedDate: getLocalDateString(),
       items,
@@ -595,10 +498,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
 
                 <div className="flex flex-col items-center px-2">
                   <span className="text-[10px] text-[#857D99] font-bold">
-                    {calculateTravelMinutes(
-                      activeOrder.boardingStation || '松戸駅',
-                      activeOrder.destinationStation || '日立駅'
-                    )}分
+                    {minutesBetween(activeOrder.departureTime, activeOrder.arrivalTime) ?? '—'}分
                   </span>
                   <ArrowRight className="w-5 h-5 text-[#5B21B6]" />
                 </div>
@@ -793,25 +693,36 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
             <div>
               <div className="flex items-center justify-between text-[10px] text-[#6B6380] font-medium mb-1">
                 <span>乗車列車</span>
-                {expressType !== 'ayami' && (
+                {currentTrainInfo && (
                   <span className="text-[10px] font-bold text-[#5B21B6] bg-[#EFE8FA] px-2 py-0.5 rounded border border-[#DDD6FE]">
-                    {currentDirection === 'down' ? '下り列車' : '上り列車'}
+                    {currentTrainInfo.directionLabel}列車
                   </span>
                 )}
               </div>
               <select
-                value={selectedTrainNo}
-                onChange={(e) => setSelectedTrainNo(Number(e.target.value))}
+                value={currentTrainInfo && !isCurrentTrainEnded ? currentTrainInfo.code : ''}
+                onChange={(e) => setSelectedTrainCode(e.target.value)}
                 className="w-full bg-[#F4F3F8] border border-[#E6E2EE] rounded-xl px-3 py-2 text-xs font-bold text-[#221C35] cursor-pointer focus:outline-none"
               >
-                {availableTrains.map((tr) => {
-                  const ended = isTrainEnded(tr.time);
-                  return (
-                    <option key={tr.no} value={tr.no} disabled={ended}>
-                      {tr.trainName} ({tr.time}発 {tr.dest}) {ended ? '【予約終了】' : ''}
+                {availableTrains.every((tr) => isTrainEnded(tr.depTime)) && (
+                  <option value="">
+                    {diaError
+                      ? '時刻表を読み込めませんでした'
+                      : !lineData
+                      ? '時刻表を読み込み中…'
+                      : availableTrains.length === 0
+                      ? '該当する列車がありません'
+                      : '本日の予約受付は終了しました'}
+                  </option>
+                )}
+                {/* 発車5分前を過ぎた列車は一覧に出さない(特急の本数が多いため) */}
+                {availableTrains
+                  .filter((tr) => !isTrainEnded(tr.depTime))
+                  .map((tr) => (
+                    <option key={tr.code} value={tr.code}>
+                      {tr.trainName} ({tr.depTime}発 → {tr.arrTime}着)
                     </option>
-                  );
-                })}
+                  ))}
               </select>
             </div>
 
@@ -1039,7 +950,24 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
             })()}
 
             {/* Warning if train is ended */}
-            {isCurrentTrainEnded && (
+            {diaError && (
+              <div className="p-2.5 rounded-xl bg-rose-50 text-rose-700 text-xs text-center font-bold flex items-center justify-center gap-2">
+                <span>時刻表を読み込めませんでした</span>
+                <button
+                  type="button"
+                  onClick={() => setDiaRetry((n) => n + 1)}
+                  className="px-2 py-0.5 rounded bg-[#5B21B6] text-white cursor-pointer"
+                >
+                  再読み込み
+                </button>
+              </div>
+            )}
+            {!diaError && lineData && availableTrains.length === 0 && (
+              <div className="p-2.5 rounded-xl bg-amber-50 text-amber-800 text-xs text-center font-bold">
+                この区間を走る特急は、ありません
+              </div>
+            )}
+            {isCurrentTrainEnded && availableTrains.length > 0 && (
               <div className="p-2.5 rounded-xl bg-rose-50 text-rose-700 text-xs text-center font-bold">
                 発車5分前を過ぎたため予約できません
               </div>
@@ -1093,14 +1021,8 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
         isOpen={isSeatSelectionModalOpen}
         onClose={() => setIsSeatSelectionModalOpen(false)}
         expressType={expressType}
-        trainName={
-          expressType === 'ayami'
-            ? `特急あやみ ${currentTrainInfo?.no || 101}号`
-            : expressType === 'nliner'
-            ? `特急Nライナー ${currentTrainInfo?.no || 1}号`
-            : `特急めぐり ${currentTrainInfo?.no || 1}号`
-        }
-        departureTime={currentTrainInfo?.time || '09:15'}
+        trainName={currentTrainInfo?.trainName ?? ''}
+        departureTime={currentTrainInfo?.depTime ?? ''}
         boardingStation={boardingStation}
         destinationStation={destinationStation}
         initialSeatType={seatType}
