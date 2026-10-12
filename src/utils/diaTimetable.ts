@@ -7,6 +7,7 @@ import type { DynamicDeparture } from '../components/MyStationCard';
 type MasterLine = {
   name: string;
   loop: boolean;
+  loopKm?: number; // 環状線の一周の営業キロ(最後に起点へ戻る距離)。無いときは最後の駅間の長さで見積もる
   dirs: [string, string];
   stations: [string, number][];
   types: [string, string, number][];
@@ -265,6 +266,16 @@ export interface LineData {
 
 const lineCache = new Map<string, LineData>();
 
+// 環状線の一周の営業キロ(埼千環状線は、ダイヤ作成時の駅間距離の合計)
+const LOOP_LENGTH_KM: Record<string, number> = { SC: 108.1 };
+
+// 最後の起点までの距離
+const loopEndKm = (master: MasterLine): number => {
+  const km = master.stations.map((st) => st[1]);
+  const n = km.length;
+  return master.loopKm ?? km[n - 1] + (km[n - 1] - km[n - 2]);
+};
+
 export const getCachedLineData = (code: string): LineData | undefined => lineCache.get(code);
 
 // 1路線ぶんの全列車を読み込む(列車位置の表示用)
@@ -272,8 +283,10 @@ export const loadLineData = async (code: string): Promise<LineData> => {
   const cached = lineCache.get(code);
   if (cached) return cached;
   const master = await loadOnce<Master>('master.json');
-  const cfg = master[code];
-  if (!cfg) throw new Error(`路線が見つかりません (${code})`);
+  const found = master[code];
+  if (!found) throw new Error(`路線が見つかりません (${code})`);
+  // 環状線の一周の距離は、ダイヤのデータに無いので、作成時の値を補う(データに loopKm があればそちらを使う)
+  const cfg: MasterLine = found.loop && found.loopKm == null && LOOP_LENGTH_KM[code] ? { ...found, loopKm: LOOP_LENGTH_KM[code] } : found;
   const trains = await loadOnce<TrainRow[]>(`${code}_trains.json`);
   const data: LineData = { code, master: cfg, trains };
   lineCache.set(code, data);
@@ -323,7 +336,7 @@ export const computeLiveTrains = (data: LineData, lineId: string, direction: 1 |
     return direction === 1 ? idx : n - 1 - idx;
   };
   // 起点側からの距離(km)。環状線の最後の東京までの距離は、最後の駅間の長さで見積もる
-  const kmEnd = km[n - 1] + (km[n - 1] - km[n - 2]);
+  const kmEnd = loopEndKm(master);
   const kmOfPos = (pos: number): number => {
     if (loop) {
       if (direction === 1) return pos < n ? km[pos] : kmEnd;
@@ -430,4 +443,123 @@ export const computeLiveTrains = (data: LineData, lineId: string, direction: 1 |
   }
 
   return result;
+};
+
+
+// ---------------------------------------------------------------------------
+// 特急の予約(予約画面で使う)
+// ---------------------------------------------------------------------------
+
+export const EXPRESS_TYPES = {
+  ayami: { lineCode: 'SC', typeName: '特急あやみ', label: '特急あやみ', numberBase: 100 },
+  nliner: { lineCode: 'Y', typeName: '特急(Nライナー)', label: '特急Nライナー', numberBase: 0 },
+  meguri: { lineCode: 'TC', typeName: '特急めぐり', label: '特急めぐり', numberBase: 0 },
+} as const;
+
+export type ExpressKey = keyof typeof EXPRESS_TYPES;
+
+export interface ExpressTrip {
+  code: string; // ダイヤ上の列車番号(例: SCO118)
+  trainName: string; // 例: 特急あやみ 101号
+  directionLabel: string; // 下り / 上り / 外回り / 内回り
+  depSec: number; // 乗車駅の発車(0時からの秒数)
+  arrSec: number; // 降車駅の到着
+  depTime: string; // HH:mm
+  arrTime: string; // HH:mm
+  minutes: number; // 乗車時間(分)
+  destination: string; // この列車の終点
+  distanceKm: number; // 乗車区間の営業キロ(運賃の計算に使う)
+}
+
+const findTypeIdx = (data: LineData, typeName: string): number =>
+  data.master.types.findIndex((t) => t[0] === typeName);
+
+// 乗車駅から降車駅まで、進行方向(dirIdx: 0か1)に乗ったときの営業キロ。環状線は一周のうち進行方向に進む分
+const tripDistance = (master: MasterLine, bIdx: number, dIdx: number, dirIdx: 0 | 1): number => {
+  const km = master.stations.map((st) => st[1]);
+  const n = km.length;
+  if (!master.loop) return Math.abs(km[dIdx] - km[bIdx]);
+  const kmEnd = loopEndKm(master);
+  if (dirIdx === 0) return dIdx > bIdx ? km[dIdx] - km[bIdx] : kmEnd - km[bIdx] + km[dIdx];
+  return dIdx < bIdx ? km[bIdx] - km[dIdx] : km[bIdx] + (kmEnd - km[dIdx]);
+};
+
+// 乗る方向: 一方向にしか進まない路線は駅の並びで決める。環状線は、短く着く方向にする
+const chooseDirection = (master: MasterLine, bIdx: number, dIdx: number): 0 | 1 => {
+  if (!master.loop) return dIdx > bIdx ? 0 : 1;
+  return tripDistance(master, bIdx, dIdx, 0) <= tripDistance(master, bIdx, dIdx, 1) ? 0 : 1;
+};
+
+const stationIndexOf = (data: LineData, name: string): number =>
+  data.master.stations.findIndex((st) => st[0] === normalizeName(name));
+
+// その種別(特急)が停車する駅を、路線の並び順で返す(環状線の最後の東京は含めない)
+export const getExpressStations = (data: LineData, typeName: string): string[] => {
+  const typeIdx = findTypeIdx(data, typeName);
+  const dirCode = data.master.dirs[0];
+  const sample = data.trains.find((t) => t[1] === typeIdx && t[2] === dirCode);
+  if (!sample) return [];
+  const names: string[] = [];
+  for (let i = 0; i < sample[5].length; i += 3) {
+    const name = data.master.stations[sample[5][i]][0];
+    if (!names.includes(name)) names.push(name);
+  }
+  return names;
+};
+
+// 乗車区間の営業キロ(列車がなくても運賃が出せるように、列車とは別に求める)
+export const getTripDistanceKm = (data: LineData, boarding: string, destination: string): number => {
+  const bIdx = stationIndexOf(data, boarding);
+  const dIdx = stationIndexOf(data, destination);
+  if (bIdx < 0 || dIdx < 0 || bIdx === dIdx) return 0;
+  return tripDistance(data.master, bIdx, dIdx, chooseDirection(data.master, bIdx, dIdx));
+};
+
+// 乗車駅から降車駅まで乗れる特急を、発車の早い順に返す(24時以降に発車する列車は含めない)
+export const findExpressTrips = (data: LineData, typeName: string, boarding: string, destination: string): ExpressTrip[] => {
+  const { master } = data;
+  const typeIdx = findTypeIdx(data, typeName);
+  const bIdx = stationIndexOf(data, boarding);
+  const dIdx = stationIndexOf(data, destination);
+  if (typeIdx < 0 || bIdx < 0 || dIdx < 0 || bIdx === dIdx) return [];
+
+  const dirIdx = chooseDirection(master, bIdx, dIdx);
+  const dirCode = master.dirs[dirIdx];
+  const distanceKm = tripDistance(master, bIdx, dIdx, dirIdx);
+  const key = Object.values(EXPRESS_TYPES).find((e) => e.typeName === typeName);
+  const label = key?.label ?? typeName;
+  const base = key?.numberBase ?? 0;
+
+  // 号数: 路線の1つ目の方向が奇数、もう一方が偶数。方向ごとに発車の早い順に 1,3,5… / 2,4,6…
+  const ofType = data.trains.filter((t) => t[1] === typeIdx && t[2] === dirCode).sort((a, b) => a[4] - b[4]);
+  const numberOf = new Map<string, number>();
+  ofType.forEach((t, i) => numberOf.set(t[0], base + i * 2 + 1 + dirIdx));
+
+  const trips: ExpressTrip[] = [];
+  for (const t of ofType) {
+    const stops: { idx: number; a: number; d: number }[] = [];
+    for (let i = 0; i < t[5].length; i += 3) stops.push({ idx: t[5][i], a: t[5][i + 1], d: t[5][i + 2] });
+    const i = stops.findIndex((st) => st.idx === bIdx);
+    if (i < 0) continue;
+    const j = stops.findIndex((st, k) => k > i && st.idx === dIdx);
+    if (j < 0) continue;
+
+    const depSec = t[4] + (stops[i].d !== -1 ? stops[i].d : stops[i].a);
+    const arrSec = t[4] + (stops[j].a !== -1 ? stops[j].a : stops[j].d);
+    if (depSec >= DAY) continue;
+
+    trips.push({
+      code: t[0],
+      trainName: `${label} ${numberOf.get(t[0])}号`,
+      directionLabel: master.loop ? (dirIdx === 0 ? '外回り' : '内回り') : dirIdx === 0 ? '下り' : '上り',
+      depSec,
+      arrSec,
+      depTime: formatDiaTime(depSec),
+      arrTime: formatDiaTime(arrSec),
+      minutes: Math.round((arrSec - depSec) / 60),
+      destination: master.stations[stops[stops.length - 1].idx][0],
+      distanceKm,
+    });
+  }
+  return trips.sort((a, b) => a.depSec - b.depSec);
 };
