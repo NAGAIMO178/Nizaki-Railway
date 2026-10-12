@@ -43,6 +43,8 @@ export const EquipTab: React.FC<EquipTabProps> = ({
     // 座席の種類で制限された商品(めぐシート限定など)は、対象外の座席では追加できない
     const target = items.find((i) => i.id === itemId);
     if (delta > 0 && target && !canOrderItem(target, activeOrder?.seatType)) return;
+    // 特急券を予約していないときは、商品を追加できない
+    if (delta > 0 && !activeOrder) return;
     // めぐシート以外で予約している場合は、デリバリーの商品を追加できない
     if (delta > 0 && activeOrder && !canUseDelivery(activeOrder.seatType)) return;
     const current = cart[itemId] || 0;
@@ -211,13 +213,17 @@ export const EquipTab: React.FC<EquipTabProps> = ({
                   </span>
 
                   {/* Quantity Control Button */}
-                  {qty === 0 && activeOrder && !canUseDelivery(activeOrder.seatType) ? (
+                  {qty === 0 && !activeOrder ? (
+                    <span className="text-[10px] font-bold text-[#6B6380] bg-[#F4F3F8] px-2.5 py-1 rounded-lg border border-[#E6E2EE] whitespace-nowrap">
+                      特急券のご予約が必要です
+                    </span>
+                  ) : qty === 0 && activeOrder && !canUseDelivery(activeOrder.seatType) ? (
                     <span className="text-[10px] font-bold text-[#6B6380] bg-[#F4F3F8] px-2.5 py-1 rounded-lg border border-[#E6E2EE] whitespace-nowrap">
                       めぐシート専用
                     </span>
                   ) : qty === 0 && !canOrderItem(item, activeOrder?.seatType) ? (
                     <span className="text-[10px] font-bold text-[#6B6380] bg-[#F4F3F8] px-2.5 py-1 rounded-lg border border-[#E6E2EE] whitespace-nowrap">
-                      {activeOrder ? `${getItemRestrictionLabel(item)}の商品です` : `${getItemRestrictionLabel(item)}(ご予約が必要)`}
+                      {getItemRestrictionLabel(item)}の商品です
                     </span>
                   ) : qty === 0 ? (
                     <button
