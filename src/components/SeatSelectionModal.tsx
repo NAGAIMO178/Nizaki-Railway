@@ -372,7 +372,7 @@ const SeatButton: React.FC<SeatButtonProps> = ({
     return (
       <button
         onClick={onClick}
-        className="bg-gray-900 text-white font-mono font-bold text-[10px] py-1 rounded text-center shadow-xs cursor-pointer transition-all border border-gray-900"
+        className="w-full bg-gray-900 text-white font-mono font-bold text-[10px] py-1 rounded text-center shadow-xs cursor-pointer transition-all border border-gray-900"
       >
         {seatId}
       </button>
@@ -382,7 +382,7 @@ const SeatButton: React.FC<SeatButtonProps> = ({
   return (
     <button
       onClick={onClick}
-      className="bg-white hover:bg-gray-100 text-gray-800 font-mono text-[10px] py-1 rounded text-center border border-gray-300 transition-all cursor-pointer"
+      className="w-full bg-white hover:bg-gray-100 text-gray-800 font-mono text-[10px] py-1 rounded text-center border border-gray-300 transition-all cursor-pointer"
     >
       {seatId}
     </button>
