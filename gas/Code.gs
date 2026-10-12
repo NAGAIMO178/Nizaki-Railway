@@ -202,7 +202,7 @@ function handleReservationInquiry(replyToken, userId, text) {
     const totalIndex = headers.indexOf('合計金額');
     const statusIndex = headers.indexOf('ステータス');
 
-    // 検索: ユーザーID または 送信された予約番号
+    // 検索: このLINEアカウントに紐づく予約だけ(予約番号を送っても、他人の予約は見られない)
     const matched = [];
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
@@ -213,7 +213,7 @@ function handleReservationInquiry(replyToken, userId, text) {
       if (statusIndex !== -1 && String(row[statusIndex]) === 'キャンセル') continue;
       if (isReservationRowExpired(headers, row)) continue;
 
-      if ((userId !== 'unknown' && rowUserId === userId) || (rowOrderId && text.toUpperCase().includes(rowOrderId))) {
+      if (userId !== 'unknown' && rowUserId !== '' && rowUserId === userId) {
         matched.push({
           orderId: rowOrderId,
           train: trainIndex !== -1 ? row[trainIndex] : '特急めぐり号',
@@ -226,7 +226,7 @@ function handleReservationInquiry(replyToken, userId, text) {
     if (matched.length === 0) {
       replyToLine(replyToken, [{
         type: 'text',
-        text: 'お客様のLINEアカウントに紐づく有効なご予約が見つかりませんでした。\n予約番号（例: EQ-12345）を直接入力してお試しください。'
+        text: 'お客様のLINEアカウントに紐づく有効なご予約が見つかりませんでした。\n神埼鉄道アプリで、神埼IDにログインした状態でご予約ください。'
       }]);
       return;
     }

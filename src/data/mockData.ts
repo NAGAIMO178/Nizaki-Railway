@@ -3,7 +3,7 @@ import gyokuroImg from '../assets/images/item_gyokuro.webp';
 import clockImg from '../assets/images/item_clock.webp';
 import parfaitImg from '../assets/images/item_parfait.webp';
 import craftbeerImg from '../assets/images/item_craftbeer.webp';
-import makunouchiImg from '../assets/images/item_makunouchi_1785713864189.jpg';
+import makunouchiImg from '../assets/images/item_makunouchi.webp';
 import hidaMatsutakeImg from '../assets/images/item_hida_matsutake.webp';
 
 export const MOCK_LINES: TrainLine[] = [
