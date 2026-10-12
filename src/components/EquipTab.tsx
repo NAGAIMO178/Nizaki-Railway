@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { UtensilsCrossed, ShoppingBag, Plus, Minus, Check, ShoppingCart, Info } from 'lucide-react';
 import { EquipItem, ActiveOrder } from '../types';
+import { canOrderItem, getItemRestrictionLabel } from '../utils/seatUtils';
 
 interface EquipTabProps {
   items: EquipItem[];
@@ -38,6 +39,9 @@ export const EquipTab: React.FC<EquipTabProps> = ({
   );
 
   const handleQuantityChange = (itemId: string, delta: number) => {
+    // 座席の種類で制限された商品(めぐシート限定など)は、対象外の座席では追加できない
+    const target = items.find((i) => i.id === itemId);
+    if (delta > 0 && target && !canOrderItem(target, activeOrder?.seatType)) return;
     const current = cart[itemId] || 0;
     const updated = Math.max(0, current + delta);
     const newCart = { ...cart };
@@ -210,7 +214,11 @@ export const EquipTab: React.FC<EquipTabProps> = ({
                   </span>
 
                   {/* Quantity Control Button */}
-                  {qty === 0 ? (
+                  {qty === 0 && !canOrderItem(item, activeOrder?.seatType) ? (
+                    <span className="text-[10px] font-bold text-[#6B6380] bg-[#F4F3F8] px-2.5 py-1 rounded-lg border border-[#E6E2EE] whitespace-nowrap">
+                      {activeOrder ? `${getItemRestrictionLabel(item)}の商品です` : `${getItemRestrictionLabel(item)}(ご予約が必要)`}
+                    </span>
+                  ) : qty === 0 ? (
                     <button
                       onClick={() => handleQuantityChange(item.id, 1)}
                       className="bg-[#EFE8FA] hover:bg-[#5B21B6] text-[#5B21B6] hover:text-white font-bold text-[10px] px-2.5 py-1 rounded-lg border border-[#5B21B6]/20 flex items-center gap-1 transition-colors cursor-pointer"

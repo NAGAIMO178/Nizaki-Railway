@@ -76,6 +76,7 @@ export interface EquipItem {
   isPopular?: boolean;
   isLimited?: boolean;
   badge?: string;
+  onlySeatTypes?: SeatClass[]; // 指定した座席の種類で予約したお客様だけ注文できる(未指定なら誰でも)
 }
 
 export interface LiveTrain {

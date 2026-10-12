@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { X, UtensilsCrossed, Check, ShoppingBag, AlertCircle, Tag } from 'lucide-react';
 import { EquipItem, ActiveOrder } from '../types';
-import { getSeatClassLabel } from '../utils/seatUtils';
+import { getSeatClassLabel, canOrderItem, getItemRestrictionLabel } from '../utils/seatUtils';
 
 interface EDeliveryModalProps {
   isOpen: boolean;
@@ -9,6 +9,7 @@ interface EDeliveryModalProps {
   equipItems: EquipItem[];
   onConfirmOrder: (order: ActiveOrder) => void;
   initialCart?: { [key: string]: number };
+  onCartChange?: (cart: { [key: string]: number }) => void; // 画面内でカゴを変えたときに、アプリ側のカゴにも反映する
   activeOrder?: ActiveOrder | null;
   isLoggedIn?: boolean;
   onRequireLogin?: (reason: string, onLoggedIn?: () => void) => void;
@@ -28,6 +29,7 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
   equipItems,
   onConfirmOrder,
   initialCart,
+  onCartChange,
   activeOrder,
   isLoggedIn = false,
   onRequireLogin,
@@ -74,6 +76,16 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
     })
     .filter(Boolean) as { item: EquipItem; quantity: number }[];
 
+  // 座席の種類で制限された商品(めぐシート限定など)が、対象外の座席のカゴに入っている場合
+  const blockedItems = hasNoOrder ? [] : selectedItems.filter((ci) => !canOrderItem(ci.item, activeOrder?.seatType));
+  const hasBlockedItems = blockedItems.length > 0;
+  const removeFromCart = (itemId: string) => {
+    const next = { ...cart };
+    delete next[itemId];
+    setCart(next);
+    onCartChange?.(next);
+  };
+
   const rawTotalPrice = selectedItems.reduce((sum, ci) => sum + ci.item.price * ci.quantity, 0);
 
   // 1品割引計算 (最も高額な1品をクーポンの割引率で割引)
@@ -112,7 +124,7 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (selectedItems.length === 0 || isStandardSeat || hasNoOrder) return;
+    if (selectedItems.length === 0 || isStandardSeat || hasNoOrder || hasBlockedItems) return;
 
     if (!isLoggedIn && onRequireLogin) {
       onRequireLogin('車内デリバリーのご注文確定には、神埼IDログインが必要です。');
@@ -203,6 +215,26 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
                       現在ご予約中の座席は<strong className="underline decoration-rose-400">【自由席 ({activeOrder?.carNo}号車 {activeOrder?.seatNo})】</strong>です。車内デリバリーは指定席・特別車（あやみ+・めぐシート）専用サービスのため、自由席への配達・購入確定はできません。
                     </div>
                   </div>
+                </div>
+              )}
+
+              {hasBlockedItems && (
+                <div className="bg-rose-50 border border-rose-200 rounded-2xl p-3.5 space-y-2 text-rose-900 animate-fadeIn">
+                  <div className="font-extrabold text-xs text-rose-950">ご予約の座席では注文できない商品があります</div>
+                  {blockedItems.map(({ item }) => (
+                    <div key={item.id} className="flex items-center justify-between gap-2 text-[11px] text-rose-800">
+                      <span className="min-w-0">
+                        {item.name}（{getItemRestrictionLabel(item)}）
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removeFromCart(item.id)}
+                        className="shrink-0 px-2 py-1 rounded-lg bg-white border border-rose-300 text-rose-700 font-bold cursor-pointer"
+                      >
+                        カゴから外す
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
 
@@ -481,7 +513,7 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
 
                 <button
                   type="submit"
-                  disabled={selectedItems.length === 0 || isStandardSeat || hasNoOrder}
+                  disabled={selectedItems.length === 0 || isStandardSeat || hasNoOrder || hasBlockedItems}
                   className="bg-[#5B21B6] hover:bg-[#4C1D95] disabled:opacity-40 text-white font-extrabold text-xs sm:text-sm py-3 px-5 rounded-xl shadow-md flex items-center justify-center gap-2 cursor-pointer transition-all whitespace-nowrap shrink-0"
                 >
                   <ShoppingBag className="w-4 h-4 text-white shrink-0" />
@@ -490,6 +522,8 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
                       ? '自由席へのデリバリー不可'
                       : hasNoOrder
                       ? '指定席の予約が必要'
+                      : hasBlockedItems
+                      ? '注文できない商品があります'
                       : selectedItems.length === 0
                       ? '商品を選択してください'
                       : activeOrder && activeOrder.items && activeOrder.items.length > 0

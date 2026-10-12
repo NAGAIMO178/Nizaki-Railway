@@ -644,6 +644,7 @@ export default function App() {
         equipItems={MOCK_EQUIP_ITEMS}
         onConfirmOrder={handleConfirmOrder}
         initialCart={selectedCart}
+        onCartChange={setSelectedCart}
         activeOrder={activeOrder}
         isLoggedIn={isLoggedIn}
         onRequireLogin={handleRequireLogin}
