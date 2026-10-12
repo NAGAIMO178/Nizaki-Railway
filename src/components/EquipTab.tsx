@@ -74,7 +74,7 @@ export const EquipTab: React.FC<EquipTabProps> = ({
             E-DELIVERY 座席配送カタログ
           </h2>
           <p className="text-xs text-[#6B6380]">
-            「めぐしーと」専用の座席直配送サービス
+            指定席・あやみ+・めぐシートのお客様向けの座席直配送サービス
           </p>
         </div>
       </div>

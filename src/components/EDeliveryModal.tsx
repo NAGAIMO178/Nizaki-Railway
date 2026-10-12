@@ -200,7 +200,7 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
                   <div className="space-y-0.5">
                     <div className="font-extrabold text-xs text-rose-950">自由席にはデリバリーできません</div>
                     <div className="text-[11px] leading-snug text-rose-800">
-                      現在ご予約中の座席は<strong className="underline decoration-rose-400">【自由席 ({activeOrder?.carNo}号車 {activeOrder?.seatNo})】</strong>です。車内デリバリーは「めぐシート（1号車）」または指定席専用サービスのため、自由席への配達・購入確定はできません。
+                      現在ご予約中の座席は<strong className="underline decoration-rose-400">【自由席 ({activeOrder?.carNo}号車 {activeOrder?.seatNo})】</strong>です。車内デリバリーは指定席・特別車（あやみ+・めぐシート）専用サービスのため、自由席への配達・購入確定はできません。
                     </div>
                   </div>
                 </div>
@@ -210,9 +210,9 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
                 <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 flex items-start gap-2.5 text-amber-900 animate-fadeIn">
                   <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
                   <div className="space-y-0.5">
-                    <div className="font-extrabold text-xs text-amber-950">特急券（めぐシート・指定席）予約が必要です</div>
+                    <div className="font-extrabold text-xs text-amber-950">指定席の特急券の予約が必要です</div>
                     <div className="text-[11px] leading-snug text-amber-800">
-                      特急券・座席予約が見つかりません。車内デリバリーをご利用いただくには、先に「予約」タブより特急めぐりの『めぐシート（1号車）』や指定席をご予約ください。
+                      特急券・座席予約が見つかりません。車内デリバリーをご利用いただくには、先に「予約」タブより、指定席・あやみ+・めぐシートのいずれかをご予約ください。
                     </div>
                   </div>
                 </div>
@@ -337,7 +337,7 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
                     <span className="whitespace-nowrap">
                       {activeOrder && activeOrder.items && activeOrder.items.length > 0
                         ? '② 今回追加するお弁当・商品（デリバリータブ選択分）'
-                        : '② ご注文商品（めぐしーと座席へお届け）'}
+                        : '② ご注文商品（ご予約の座席へお届け）'}
                     </span>
                     <span className="text-[10px] text-[#5B21B6] bg-[#EFE8FA] px-2 py-0.5 rounded font-bold whitespace-nowrap">
                       保温パックでお届け
@@ -487,9 +487,9 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
                   <ShoppingBag className="w-4 h-4 text-white shrink-0" />
                   <span className="whitespace-nowrap">
                     {isStandardSeat
-                      ? '普通席へのデリバリー不可'
+                      ? '自由席へのデリバリー不可'
                       : hasNoOrder
-                      ? 'めぐしーと予約が必要'
+                      ? '指定席の予約が必要'
                       : selectedItems.length === 0
                       ? '商品を選択してください'
                       : activeOrder && activeOrder.items && activeOrder.items.length > 0
