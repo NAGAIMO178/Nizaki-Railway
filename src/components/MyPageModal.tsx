@@ -120,7 +120,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
             date: '本日デリバリー予定',
             status: activeOrder.status === 'delivering' ? '配達中' : '準備中',
             statusColor: 'purple',
-            amount: `¥${activeOrder.items.reduce((sum, i) => sum + i.item.price * i.quantity, 0).toLocaleString()}`,
+            amount: `¥${Math.max(0, activeOrder.items.reduce((sum, i) => sum + i.item.price * i.quantity, 0) - (activeOrder.itemDiscount || 0)).toLocaleString()}`,
             pointsEarned: 50,
           },
         ]
@@ -129,7 +129,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
     ...orderHistory.flatMap((h): AccountActivityItem[] => {
       const done = h.result === 'completed';
       const date = h.reservedDate ? h.reservedDate.replace(/-/g, '/') : '';
-      const deliveryTotal = h.items.reduce((sum, i) => sum + i.price * i.quantity, 0);
+      const deliveryTotal = Math.max(0, h.items.reduce((sum, i) => sum + i.price * i.quantity, 0) - (h.itemDiscount || 0));
       const list: AccountActivityItem[] = [
         {
           id: `act_hist_ticket_${h.orderId}`,
@@ -164,11 +164,11 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
         id: `act_pt_${p.id}`,
         category: (isEventReward ? 'event' : 'point') as 'event' | 'point',
         title: p.title,
-        subtitle: isEventReward ? 'イベント報酬 (N-POINT付与)' : `N-POINT 獲得・付与`,
+        subtitle: isEventReward ? 'イベント報酬 (N-POINT付与)' : p.points < 0 ? 'N-POINT 取消' : `N-POINT 獲得・付与`,
         date: p.date,
-        status: '付与済',
-        statusColor: isEventReward ? 'indigo' : 'amber',
-        amount: `+${p.points} pt`,
+        status: p.points < 0 ? '取消' : '付与済',
+        statusColor: p.points < 0 ? 'slate' : isEventReward ? 'indigo' : 'amber',
+        amount: `${p.points < 0 ? '−' : '+'}${Math.abs(p.points)} pt`,
       };
     }),
   ];
