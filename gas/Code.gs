@@ -385,7 +385,7 @@ function buildDisruptionSummary() {
 
   const summary = hasDelay
     ? ('【運行支障情報】' + delayedNames.join('、') + 'が発生しております。')
-    : '現在、神埼鉄道グループ全線でほぼ平常通り運転しております。';
+    : '現在、神埼鉄道グループ全線でほぼ平常通り運転しております。\n(列車ごとの数分程度の遅れは、アプリの「列車位置」でご確認いただけます)';
 
   return { hasDelay: hasDelay, summary: summary, lines: lines };
 }

@@ -130,6 +130,7 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
       ...activeOrder,
       items: selectedItems,
       totalPrice: finalTotalPrice,
+      itemDiscount: discountAmount,
       status: 'confirmed',
     };
 

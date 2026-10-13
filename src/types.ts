@@ -43,6 +43,9 @@ export interface ActiveOrder {
   status: 'confirmed' | 'preparing' | 'delivering' | 'delivered';
   estimatedDeliveryTime: string;
   deliveryStation: string;
+  ownerEmail?: string; // この予約をしたアカウント(端末を共有しても、ほかのアカウントには見せない)
+  itemDiscount?: number; // デリバリーのクーポン割引の合計(totalPrice にはすでに引いてある)
+  earnedPoints?: number; // この予約で付与済みのN-POINT(取消のときに取り消す)
 }
 
 // 終了した予約(乗車済み・キャンセル)の記録。アカウント利用履歴の「特急券」「デリバリー」に表示する
@@ -59,6 +62,7 @@ export interface OrderHistoryItem {
   reservedDate?: string;
   ticketPrice: number;
   items: { name: string; quantity: number; price: number }[];
+  itemDiscount?: number; // デリバリーのクーポン割引の合計
   result: 'completed' | 'cancelled';
 }
 

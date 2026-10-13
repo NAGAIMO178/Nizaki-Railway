@@ -262,6 +262,9 @@ export const StatusCard: React.FC<StatusCardProps> = ({ lines }) => {
                 );
               })}
             </div>
+            <div className="text-[10px] text-[#6B6380] leading-relaxed">
+              ※列車ごとの数分程度の遅れは、ここには表示されません。「列車位置」タブで、列車ごとにご確認いただけます。
+            </div>
           </div>
         )}
       </div>

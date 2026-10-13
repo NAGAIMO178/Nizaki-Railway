@@ -32,6 +32,50 @@ const getPointStoragePrefix = (email?: string | null) => {
 
 const MY_STATIONS_STORAGE_KEY = 'kanzaki_my_stations';
 
+const normEmail = (email?: string | null) => (email || '').trim().toLowerCase();
+
+// 予約はアカウントごとにこの端末へ保存する(ログアウトや、別のアカウントでのログインで混ざらないように)
+const LEGACY_ORDER_KEY = 'kanzaki_active_order';
+const orderStorageKey = (email?: string | null) => {
+  const prefix = getPointStoragePrefix(email);
+  return prefix ? `${prefix}_active_order` : null;
+};
+
+// そのアカウントの保存済み予約を読む。到着時刻を過ぎていたものは消して expired で返す
+const readStoredOrder = (email?: string | null): { order: ActiveOrder | null; expired: ActiveOrder | null } => {
+  const none = { order: null, expired: null };
+  const key = orderStorageKey(email);
+  if (!key) return none;
+  try {
+    let raw = localStorage.getItem(key);
+    if (raw === null) {
+      // 以前の版は全アカウント共通の1か所に保存していた。最初にログインしたアカウントの予約として引き継ぐ
+      const legacy = localStorage.getItem(LEGACY_ORDER_KEY);
+      if (legacy !== null) {
+        localStorage.removeItem(LEGACY_ORDER_KEY);
+        raw = legacy;
+      }
+    }
+    if (raw === null) return none;
+    const parsed = JSON.parse(raw);
+    // 開発時の初期モックデータ（EQ-84920）が自動保存されていた場合は破棄して未予約状態にする
+    if (!parsed || parsed.orderId === 'EQ-84920') {
+      localStorage.removeItem(key);
+      return none;
+    }
+    // 日付なしの旧データは「今日の予約」とみなす
+    const order: ActiveOrder = { ...parsed, reservedDate: parsed.reservedDate || getLocalDateString(), ownerEmail: normEmail(email) };
+    if (isOrderExpired(order)) {
+      localStorage.removeItem(key);
+      return { order: null, expired: order };
+    }
+    return { order, expired: null };
+  } catch (e) {
+    console.warn('Failed to parse saved active order:', e);
+    return none;
+  }
+};
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>('home');
   const [headerStationName, setHeaderStationName] = useState<string>('松戸');
@@ -49,6 +93,9 @@ export default function App() {
   });
 
   const isLoggedIn = currentUser !== null;
+  // ログイン直後に実行される予約確定など、古い画面の関数から呼ばれても、最新のログイン状態で動かすための参照
+  const currentUserRef = React.useRef(currentUser);
+  currentUserRef.current = currentUser;
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [loginReason, setLoginReason] = useState<string | undefined>(undefined);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
@@ -134,8 +181,9 @@ export default function App() {
       departureTime: order.departureTime,
       arrivalTime: order.arrivalTime,
       reservedDate: order.reservedDate,
-      ticketPrice: Math.max(0, order.totalPrice - itemsTotal),
+      ticketPrice: Math.max(0, order.totalPrice + (order.itemDiscount || 0) - itemsTotal),
       items: items.map((ci) => ({ name: ci.item.name, quantity: ci.quantity, price: ci.item.price })),
+      itemDiscount: order.itemDiscount || 0,
       result,
     };
     const key = `${prefix}_order_history`;
@@ -157,11 +205,12 @@ export default function App() {
   const expiredOnLoadRef = React.useRef<ActiveOrder | null>(null);
 
   const addPoints = (points: number, title?: string, type: 'reservation' | 'stamp' | 'coupon' | 'equip' = 'reservation') => {
-    if (!currentUser || !currentUser.email) return;
-    const prefix = getPointStoragePrefix(currentUser.email);
+    const user = currentUserRef.current;
+    if (!user || !user.email) return;
+    const prefix = getPointStoragePrefix(user.email);
 
     setNPointBalance((prev) => {
-      const newBal = prev + points;
+      const newBal = Math.max(0, prev + points);
       if (prefix) {
         try {
           localStorage.setItem(`${prefix}_balance`, newBal.toString());
@@ -306,6 +355,7 @@ export default function App() {
     setCurrentUser(null);
     setNPointBalance(0);
     setPointHistory([]);
+    setSelectedCart({});
     try {
       localStorage.removeItem('kanzaki_current_user');
     } catch (e) {
@@ -313,29 +363,11 @@ export default function App() {
     }
   };
 
+  const orderEmailRef = React.useRef<string | null>(currentUser?.email ?? null);
   const [activeOrder, setActiveOrder] = useState<ActiveOrder | null>(() => {
-    try {
-      const saved = localStorage.getItem('kanzaki_active_order');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        // 開発時の初期モックデータ（EQ-84920）が自動保存されていた場合は破棄して未予約状態にする
-        if (parsed?.orderId === 'EQ-84920') {
-          localStorage.removeItem('kanzaki_active_order');
-          return null;
-        }
-        // 日付なしの旧データは「今日の予約」とみなす
-        const order: ActiveOrder = parsed.reservedDate ? parsed : { ...parsed, reservedDate: getLocalDateString() };
-        if (isOrderExpired(order)) {
-          expiredOnLoadRef.current = order;
-          localStorage.removeItem('kanzaki_active_order');
-          return null;
-        }
-        return order;
-      }
-    } catch (e) {
-      console.warn('Failed to parse saved active order:', e);
-    }
-    return null;
+    const stored = readStoredOrder(currentUser?.email);
+    expiredOnLoadRef.current = stored.expired;
+    return stored.order;
   });
 
   // 起動時にすでに終了していた予約を、ログイン中のアカウントの履歴に残す
@@ -350,19 +382,22 @@ export default function App() {
   // 到着時刻を過ぎた予約は自動で終了し、新しい予約ができるようにする
   React.useEffect(() => {
     if (!activeOrder) return;
+    // ログインし直した直後など、別のアカウントの予約が一瞬残っているときは触らない
+    if (normEmail(activeOrder.ownerEmail) !== normEmail(currentUser?.email)) return;
     const expireIfNeeded = () => {
       if (isOrderExpired(activeOrder)) {
         archiveOrderRef.current(activeOrder, 'completed');
         setActiveOrder(null);
         try {
-          localStorage.removeItem('kanzaki_active_order');
+          const key = orderStorageKey(activeOrder.ownerEmail);
+          if (key) localStorage.removeItem(key);
         } catch {}
       }
     };
     expireIfNeeded();
     const timer = setInterval(expireIfNeeded, 30000);
     return () => clearInterval(timer);
-  }, [activeOrder]);
+  }, [activeOrder, currentUser?.email]);
 
   // Registered My Stations state (Max 3, Default: Tokyo)
   const [registeredStations, setRegisteredStations] = useState<RegisterableStation[]>(() => {
@@ -410,12 +445,14 @@ export default function App() {
   React.useEffect(() => {
     if (activeOrder) {
       try {
-        localStorage.setItem('kanzaki_active_order', JSON.stringify(activeOrder));
+        const key = orderStorageKey(activeOrder.ownerEmail);
+        if (key) localStorage.setItem(key, JSON.stringify(activeOrder));
       } catch (e) {
         console.warn('localStorage save failed:', e);
       }
 
-      if (sessionToken) {
+      // いまログインしているアカウントの予約だけを台帳へ送る
+      if (sessionToken && normEmail(activeOrder.ownerEmail) === normEmail(currentUser?.email)) {
         // 画像などを含めず、台帳に必要な項目だけを送る
         const { orderId, trainName, carNo, seatNo, seatType, boardingStation, destinationStation, departureTime, arrivalTime, reservedDate, totalPrice } = activeOrder;
         callGas('createReservation', {
@@ -424,12 +461,27 @@ export default function App() {
         }).catch((err) => console.warn('Failed to sync reservation:', err));
       }
     }
-  }, [activeOrder, sessionToken]);
+  }, [activeOrder, sessionToken, currentUser?.email]);
+
+  // ログアウト・別のアカウントでのログインのときは、そのアカウントの予約に切り替える
+  React.useEffect(() => {
+    const email = currentUser?.email ?? null;
+    if (orderEmailRef.current === email) return;
+    orderEmailRef.current = email;
+    const stored = readStoredOrder(email);
+    setActiveOrder(stored.order);
+    setSelectedCart({});
+    if (stored.expired) archiveOrderRef.current(stored.expired, 'completed');
+  }, [currentUser?.email]);
 
   const handleConfirmOrder = (order: ActiveOrder) => {
+    // 特急券・注文金額に応じた N-POINT 還元 (合計金額の3% 還元、最低50pt)
+    const owner = normEmail(currentUserRef.current?.email) || undefined;
+    const earnedPoints = owner ? Math.max(50, Math.floor((order.totalPrice || 2000) * 0.03)) : 0;
+
     setActiveOrder((prevOrder) => {
       if (!prevOrder) {
-        return order;
+        return { ...order, ownerEmail: owner, earnedPoints };
       }
 
       // 既存の購入済みアイテムと今回追加した注文アイテムを統合（マージ）
@@ -453,21 +505,23 @@ export default function App() {
       const mergedItems = Array.from(itemMap.values());
       const mergedItemTotalPrice = mergedItems.reduce((sum, ci) => sum + ci.item.price * ci.quantity, 0);
 
-      // 基本運賃・特急料金
-      const baseTicketFee = prevOrder.totalPrice - (prevOrder.items || []).reduce((sum, ci) => sum + ci.item.price * ci.quantity, 0);
+      // 基本運賃・特急料金(これまでのクーポン割引は、合計に引いてあるので足し戻して求める)
+      const prevDiscount = prevOrder.itemDiscount || 0;
+      const baseTicketFee = prevOrder.totalPrice + prevDiscount - (prevOrder.items || []).reduce((sum, ci) => sum + ci.item.price * ci.quantity, 0);
+      const itemDiscount = prevDiscount + (order.itemDiscount || 0);
 
       const nextOrder: ActiveOrder = {
         ...prevOrder,
         orderId: prevOrder.orderId,
         items: mergedItems,
-        totalPrice: baseTicketFee + mergedItemTotalPrice,
+        itemDiscount,
+        totalPrice: Math.max(0, baseTicketFee + mergedItemTotalPrice - itemDiscount),
+        earnedPoints: (prevOrder.earnedPoints || 0) + earnedPoints,
       };
 
       return nextOrder;
     });
 
-    // 特急券・注文金額に応じた N-POINT 還元 (合計金額の3% 還元、最低50pt)
-    const earnedPoints = Math.max(50, Math.floor((order.totalPrice || 2000) * 0.03));
     const trainTitle = order.trainName ? `${order.trainName} 乗車・デリバリー利用` : '特急列車予約・車内デリバリー利用';
     addPoints(earnedPoints, trainTitle, 'reservation');
     setSelectedCart({}); // 購入確定後にカートを空にする
@@ -475,10 +529,18 @@ export default function App() {
 
   const handleCancelOrder = () => {
     const cancelId = activeOrder?.orderId;
-    if (activeOrder) archiveOrder(activeOrder, 'cancelled');
+    if (activeOrder) {
+      archiveOrder(activeOrder, 'cancelled');
+      // この予約でもらったポイントは、取り消す(予約と取消を繰り返してポイントが増えないように)
+      const earned = activeOrder.earnedPoints || 0;
+      if (earned > 0) {
+        addPoints(-earned, `予約取消によるポイント取消（${activeOrder.trainName}）`, 'reservation');
+      }
+    }
+    const ownerKey = orderStorageKey(activeOrder?.ownerEmail || currentUser?.email);
     setActiveOrder(null);
     try {
-      localStorage.removeItem('kanzaki_active_order');
+      if (ownerKey) localStorage.removeItem(ownerKey);
     } catch (e) {}
 
     if (cancelId && sessionToken) {

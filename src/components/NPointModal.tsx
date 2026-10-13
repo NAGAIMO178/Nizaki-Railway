@@ -185,8 +185,8 @@ export const NPointModal: React.FC<NPointModalProps> = ({
                       <div className="font-bold text-[#221C35]">{item.title}</div>
                       <div className="text-[10px] text-[#6B6380]">{item.date}</div>
                     </div>
-                    <span className="font-mono font-black text-emerald-600 text-sm">
-                      +{item.points.toLocaleString()} pt
+                    <span className={`font-mono font-black text-sm ${item.points < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                      {item.points < 0 ? '−' : '+'}{Math.abs(item.points).toLocaleString()} pt
                     </span>
                   </div>
                 ))}
