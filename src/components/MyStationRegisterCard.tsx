@@ -186,9 +186,6 @@ export const MyStationRegisterCard: React.FC<MyStationRegisterCardProps> = ({
         <div className="flex items-center gap-2 min-w-0">
           <Star className="w-4 h-4 text-[#5B21B6] fill-[#5B21B6] shrink-0" />
           <span className="text-xs sm:text-sm font-bold text-[#221C35] whitespace-nowrap">マイ駅設定・変更</span>
-          <span className="text-xs text-[#857D99] truncate hidden xs:inline">
-            ({registeredStations.map((s) => s.name).join('・') || '未登録'})
-          </span>
         </div>
 
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
