@@ -6,6 +6,10 @@ export const LAUNCH_AT: string | null = null; // 例: '2026-10-31T00:00:00+09:00
 
 const PREVIEW_KEY = 'nizaki_preview';
 
+// 公開記念ボーナスを受け取れる期間(公開日から)。サーバーは、期限を見ない(アプリの画面だけで区切る)
+export const LAUNCH_BONUS_DAYS = 30;
+
+
 export const isLaunched = (): boolean => {
   try {
     const param = new URLSearchParams(window.location.search).get('preview');
@@ -16,4 +20,11 @@ export const isLaunched = (): boolean => {
     // 保存できない環境でも、日付の判定は続ける
   }
   return LAUNCH_AT !== null && Date.now() >= Date.parse(LAUNCH_AT);
+};
+
+// 公開記念ボーナスの案内を出す期間か(公開日が決まっていないあいだの作業用リンクでは、常に出す)
+export const isLaunchBonusOpen = (): boolean => {
+  if (!isLaunched()) return false;
+  if (LAUNCH_AT === null) return true;
+  return Date.now() < Date.parse(LAUNCH_AT) + LAUNCH_BONUS_DAYS * 24 * 60 * 60 * 1000;
 };

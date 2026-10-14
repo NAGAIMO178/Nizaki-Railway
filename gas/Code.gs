@@ -1117,7 +1117,8 @@ const EVENT_REWARD_TABLE = {
   stage1: { points: 150, title: '神埼奇譚 第1幕解明報奨' },
   stage2: { points: 150, title: '神埼奇譚 第2幕解明報奨' },
   stage3: { points: 150, title: '神埼奇譚 第3幕解明報奨' },
-  mashin: { points: 300, title: 'ミステリートレイン完全制覇' }
+  mashin: { points: 300, title: 'ミステリートレイン完全制覇' },
+  launch2: { points: 300, title: 'NIZAKI 2.0 公開記念ボーナス' }
 };
 const RESERVATION_POINT_RATE = 0.03;
 const RESERVATION_POINT_MIN = 50;
@@ -1449,6 +1450,7 @@ function buildAccountData(memberId, ledger, coupons, mystery) {
       return { date: r.ts, title: r.title, points: r.points, kind: r.kind };
     }),
     usedCoupons: coupons.codes.slice(),
+    claimedEvents: Object.keys(ledger.keys).filter(function (k) { return k.indexOf('event:') === 0; }).map(function (k) { return k.slice(6); }),
     mystery: { stage: mystery.stage, stamps: mystery.stamps, cleared: mystery.cleared },
     orders: readMemberOrders(memberId),
     rides: readMemberRides(memberId)

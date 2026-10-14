@@ -19,6 +19,7 @@ import { QRCodeModal } from './components/QRCodeModal';
 import { LoginModal } from './components/LoginModal';
 import { MyPageModal } from './components/MyPageModal';
 import { MenuDrawer } from './components/MenuDrawer';
+import { LaunchWelcome, LAUNCH_BONUS_ID } from './components/LaunchWelcome';
 import { MOCK_LINES, MOCK_EQUIP_ITEMS } from './data/mockData';
 import { POINT_CODES, normalizePointCode } from './data/pointCodes';
 import { getLocalDateString, isOrderExpired } from './utils/orderExpiry';
@@ -846,6 +847,16 @@ export default function App() {
         activeTab={activeTab}
         onChangeTab={setActiveTab}
         hasActiveOrder={!!activeOrder}
+      />
+
+      {/* NIZAKI 2.0 公開後だけ: 初めての案内と、公開記念ポイントの受け取り */}
+      <LaunchWelcome
+        cloudOn={cloudOn}
+        ready={cloud.ready}
+        error={cloud.error}
+        claimedEvents={cloud.account?.claimedEvents}
+        isLoggedIn={isLoggedIn}
+        onClaim={() => cloud.earnEvent(LAUNCH_BONUS_ID)}
       />
 
       <MenuDrawer
