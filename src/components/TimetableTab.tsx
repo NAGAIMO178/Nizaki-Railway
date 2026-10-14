@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
 import { REGISTERABLE_LINES } from './MyStationRegisterCard';
+import { RouteSearch } from './RouteSearch';
+import { isLaunched } from '../utils/launch';
 import {
   loadTimetableLines,
   loadStationTimetable,
@@ -44,6 +46,9 @@ export const TimetableTab: React.FC = () => {
   const [ttRetry, setTtRetry] = useState(0);
   const [dirIdx, setDirIdx] = useState(0);
   const [nowSec, setNowSec] = useState(() => nowAsServiceSec(new Date()));
+  // 経路検索は、公開日まで隠す(公開前に確かめるときは、URLの末尾に ?preview=1)
+  const showRoute = isLaunched();
+  const [mode, setMode] = useState<'timetable' | 'route'>('timetable');
 
   useEffect(() => {
     let alive = true;
@@ -106,6 +111,28 @@ export const TimetableTab: React.FC = () => {
   }, [timetable, dirIdx]);
 
   const currentLine = lines?.find((l) => l.code === lineCode);
+
+  const modeToggle = showRoute ? (
+    <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[#E6E2EE]" role="tablist" aria-label="時刻表と経路検索">
+      {([
+        ['timetable', '時刻表'],
+        ['route', '経路検索'],
+      ] as const).map(([id, label]) => (
+        <button
+          key={id}
+          type="button"
+          role="tab"
+          aria-selected={mode === id}
+          onClick={() => setMode(id)}
+          className={`py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+            mode === id ? 'bg-white text-[#5B21B6] shadow-xs' : 'text-[#6B6380] hover:text-[#221C35]'
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  ) : null;
 
   // 駅の時刻表
   if (stationIdx !== null) {
@@ -217,10 +244,22 @@ export const TimetableTab: React.FC = () => {
     );
   }
 
+  // 経路検索
+  if (showRoute && mode === 'route') {
+    return (
+      <div className="max-w-md mx-auto px-4 py-4 pb-28 space-y-3 animate-fadeIn">
+        <h2 className="text-base font-black text-[#221C35]">経路検索</h2>
+        {modeToggle}
+        <RouteSearch />
+      </div>
+    );
+  }
+
   // 路線と駅の一覧
   return (
     <div className="max-w-md mx-auto px-4 py-4 pb-28 space-y-3 animate-fadeIn">
       <h2 className="text-base font-black text-[#221C35]">時刻表</h2>
+      {modeToggle}
 
       {linesError && (
         <div className="bg-white border border-[#E6E2EE] rounded-2xl p-4 text-center space-y-2">

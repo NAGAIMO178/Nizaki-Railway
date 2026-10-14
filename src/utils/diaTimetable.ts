@@ -476,7 +476,7 @@ const findTypeIdx = (data: LineData, typeName: string): number =>
   data.master.types.findIndex((t) => t[0] === typeName);
 
 // 乗車駅から降車駅まで、進行方向(dirIdx: 0か1)に乗ったときの営業キロ。環状線は一周のうち進行方向に進む分
-const tripDistance = (master: MasterLine, bIdx: number, dIdx: number, dirIdx: 0 | 1): number => {
+export const tripDistance = (master: MasterLine, bIdx: number, dIdx: number, dirIdx: 0 | 1): number => {
   const km = master.stations.map((st) => st[1]);
   const n = km.length;
   if (!master.loop) return Math.abs(km[dIdx] - km[bIdx]);

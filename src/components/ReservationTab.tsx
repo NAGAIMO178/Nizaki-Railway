@@ -36,6 +36,7 @@ import {
   loadLineData,
   getCachedLineData,
 } from '../utils/diaTimetable';
+import { calculateFare } from '../utils/fare';
 
 interface ReservationTabProps {
   activeOrder: ActiveOrder | null;
@@ -277,19 +278,6 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
   // 乗車区間の営業キロ(ダイヤの駅間距離から)
   const calculateDistance = (start: string, end: string) =>
     lineData ? getTripDistanceKm(lineData, stripEki(start), stripEki(end)) : 0;
-
-  // 営業キロ区分に基づく普通運賃計算
-  const calculateFare = (dist: number) => {
-    if (dist <= 0) return 0;
-    if (dist <= 3) return 150;
-    if (dist <= 5) return 180;
-    if (dist <= 10) return 230;
-    if (dist <= 30) return 390;
-    if (dist <= 50) return 660;
-    if (dist <= 100) return 1000;
-    if (dist <= 200) return 1980;
-    return 3300;
-  };
 
   // 座席料金・普通運賃計算ヘルパー
   const calculateTicketPrice = () => {
