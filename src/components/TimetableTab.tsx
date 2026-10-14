@@ -34,6 +34,9 @@ const StationBadge: React.FC<{ lineCode: string; idx: number }> = ({ lineCode, i
   </span>
 );
 
+// 別のタブへ移って戻ったときに、時刻表と経路検索のどちらを見ていたかを、アプリを開いているあいだは覚えておく
+let lastMode: 'timetable' | 'route' = 'timetable';
+
 export const TimetableTab: React.FC = () => {
   const [lines, setLines] = useState<TimetableLine[] | null>(null);
   const [linesError, setLinesError] = useState(false);
@@ -48,7 +51,11 @@ export const TimetableTab: React.FC = () => {
   const [nowSec, setNowSec] = useState(() => nowAsServiceSec(new Date()));
   // 経路検索は、公開日まで隠す(公開前に確かめるときは、URLの末尾に ?preview=1)
   const showRoute = isLaunched();
-  const [mode, setMode] = useState<'timetable' | 'route'>('timetable');
+  const [mode, setModeState] = useState<'timetable' | 'route'>(lastMode);
+  const setMode = (m: 'timetable' | 'route') => {
+    lastMode = m;
+    setModeState(m);
+  };
 
   useEffect(() => {
     let alive = true;
