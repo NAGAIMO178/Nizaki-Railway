@@ -48,11 +48,29 @@ function doPost(e) {
     const json = JSON.parse(e.postData.contents);
 
     // ① Webアプリからの特急予約の登録・取消(ログイン証が必要)
+    // (NIZAKI 2.0 の公開後のアプリだけが awardPoints: true を付ける。付けないと、ポイントの台帳には触れない)
     if (json.action === 'createReservation') {
-      return handleCreateReservation(json.sessionToken, json.order);
+      return handleCreateReservation(json.sessionToken, json.order, json.awardPoints === true);
     }
     if (json.action === 'cancelReservation') {
-      return handleCancelReservation(json.sessionToken, json.orderId);
+      return handleCancelReservation(json.sessionToken, json.orderId, json.awardPoints === true);
+    }
+
+    // ①.1 NIZAKI 2.0: アカウントのデータ(ポイント・クーポン・ミステリー・予約の履歴)をクラウドで持つ(ログイン証が必要)
+    if (json.action === 'syncAccount') {
+      return handleSyncAccount(json.sessionToken, json.local);
+    }
+    if (json.action === 'earnEventReward') {
+      return handleEarnEventReward(json.sessionToken, json.stage);
+    }
+    if (json.action === 'redeemPointCode') {
+      return handleRedeemPointCode(json.sessionToken, json.code);
+    }
+    if (json.action === 'useCoupon') {
+      return handleUseCoupon(json.sessionToken, json.code);
+    }
+    if (json.action === 'saveMysteryProgress') {
+      return handleSaveMysteryProgress(json.sessionToken, json.progress);
     }
 
     // ①.5 神埼ID 会員認証まわり（LINE経由の新規登録／ログイン）
@@ -573,7 +591,7 @@ function limitText(value, max) {
 /**
  * 予約の登録・更新(予約番号が同じ行があれば更新する)
  */
-function handleCreateReservation(sessionToken, order) {
+function handleCreateReservation(sessionToken, order, awardPoints) {
   const memberId = verifySessionToken(sessionToken);
   if (!memberId) {
     return createJsonResponse({ status: 'error', message: 'ログインの有効期限が切れています。もう一度ログインしてください。' });
@@ -620,12 +638,14 @@ function handleCreateReservation(sessionToken, order) {
     };
 
     let targetRow = -1;
+    let previousTotal = null; // 更新のとき、更新前の合計金額(デリバリーを足したときのポイントを求める)
     for (let i = 1; i < data.length; i++) {
       if (String(data[i][col['予約番号']]) === values['予約番号']) {
         if (String(data[i][col['会員ID']]) !== memberId) {
           return createJsonResponse({ status: 'error', message: 'この予約番号は使用できません。' });
         }
         targetRow = i + 1;
+        previousTotal = Number(data[i][col['合計金額']]) || 0;
         break;
       }
     }
@@ -647,6 +667,12 @@ function handleCreateReservation(sessionToken, order) {
       }
     });
 
+    // 公開後のアプリ: 明細(デリバリーの商品と割引)を残し、ポイントをサーバーが付ける
+    if (awardPoints) {
+      saveReservationDetail(sheet, targetRow, order);
+      awardReservationPoints(memberId, String(order.orderId), values['合計金額'], previousTotal, limitText(order.trainName, 60));
+    }
+
     return createJsonResponse({ status: 'success' });
   } finally {
     lock.releaseLock();
@@ -656,7 +682,7 @@ function handleCreateReservation(sessionToken, order) {
 /**
  * 予約の取消(行は残し、ステータスを「キャンセル」にする)
  */
-function handleCancelReservation(sessionToken, orderId) {
+function handleCancelReservation(sessionToken, orderId, awardPoints) {
   const memberId = verifySessionToken(sessionToken);
   if (!memberId) {
     return createJsonResponse({ status: 'error', message: 'ログインの有効期限が切れています。もう一度ログインしてください。' });
@@ -674,6 +700,10 @@ function handleCancelReservation(sessionToken, orderId) {
     if (String(data[i][idCol]) === String(orderId) && String(data[i][memberCol]) === memberId) {
       sheet.getRange(i + 1, statusCol + 1).setValue('キャンセル');
     }
+  }
+  // 公開後のアプリ: その予約で付けたポイントを差し引く
+  if (awardPoints) {
+    revokeReservationPoints(memberId, String(orderId));
   }
   return createJsonResponse({ status: 'success' });
 }
@@ -1047,4 +1077,463 @@ function loginLockedResponse() {
 function createJsonResponse(data) {
   return ContentService.createTextOutput(JSON.stringify(data))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ==============================================================================
+// NIZAKI 2.0: アカウントのデータ(ポイント・クーポン・ミステリー・予約の履歴)をクラウドで持つ
+// (設計: docs/NIZAKI-2.0-plan.md)
+// 公開前のアプリは、これらの処理を呼ばない。createReservation / cancelReservation も、
+// 公開後のアプリが awardPoints: true を付けたときだけ、ポイント台帳に触れる。
+// ==============================================================================
+const SHEET_POINTS = 'ポイント台帳';
+const POINT_HEADERS = ['日時', '会員ID', '種別', '名札', 'ポイント', 'タイトル'];
+const SHEET_USED_COUPONS = '使用済みクーポン';
+const USED_COUPON_HEADERS = ['会員ID', 'コード', '日時'];
+const SHEET_MYSTERY = 'ミステリー進行';
+const MYSTERY_HEADERS = ['会員ID', '解放した幕', 'スタンプ', '制覇', '更新日時'];
+
+const MIGRATION_POINT_CAP = 3000; // 端末のポイントを引き継ぐ上限
+const WELCOME_POINTS = 500;
+const EVENT_STAGE_POINTS = 150; // ミステリー1幕を解いたとき
+const MYSTERY_STAGE_COUNT = 3;
+const RESERVATION_POINT_RATE = 0.03;
+const RESERVATION_POINT_MIN = 50;
+const HISTORY_LIMIT = 30;
+const ORDER_HISTORY_LIMIT = 30;
+// ポイントの付与コード(アプリのソースには置かず、ここだけに持つ)
+const POINT_CODE_TABLE = {
+  GIVE300: { points: 300, title: '【ミステリー制覇特典】消えた試運転列車の謎' }
+};
+const VALID_COUPON_CODES = ['AYAMI300', 'DISH20'];
+
+function cellText(v, pattern) {
+  return v instanceof Date ? Utilities.formatDate(v, 'Asia/Tokyo', pattern || 'yyyy/MM/dd HH:mm:ss') : String(v === undefined || v === null ? '' : v);
+}
+
+function nowText() {
+  return Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm:ss');
+}
+
+function getOrCreateSheetWithHeaders(name, headers, textColumns) {
+  const ss = getDataSpreadsheet();
+  let sheet = ss.getSheetByName(name);
+  if (!sheet) {
+    sheet = ss.insertSheet(name);
+    sheet.appendRow(headers);
+    sheet.getRange(1, 1, 1, headers.length).setBackground('#5B21B6').setFontColor('#FFFFFF').setFontWeight('bold');
+    // 日時などを、シートが日付に変えてしまわないよう、文字のまま保つ
+    (textColumns || []).forEach(function (c) { sheet.getRange(1, c, 1000, 1).setNumberFormat('@'); });
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function authMember(sessionToken) {
+  const memberId = verifySessionToken(sessionToken);
+  if (!memberId) {
+    return { error: createJsonResponse({ status: 'error', code: 'session', message: 'ログインの有効期限が切れています。もう一度ログインしてください。' }) };
+  }
+  if (!findMemberById(memberId)) {
+    return { error: createJsonResponse({ status: 'error', message: '会員情報が見つかりません。' }) };
+  }
+  return { memberId: memberId };
+}
+
+function withScriptLock(fn) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+  } catch (err) {
+    return createJsonResponse({ status: 'error', message: '混み合っています。しばらくしてからもう一度お試しください。' });
+  }
+  try {
+    return fn();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ---- ポイント台帳 ----
+function readMemberPoints(memberId) {
+  const sheet = getOrCreateSheetWithHeaders(SHEET_POINTS, POINT_HEADERS, [1]);
+  const data = sheet.getDataRange().getValues();
+  const rows = [];
+  const keys = {};
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][1]) !== memberId) continue;
+    const row = {
+      ts: cellText(data[i][0]),
+      kind: String(data[i][2]),
+      key: String(data[i][3]),
+      points: Number(data[i][4]) || 0,
+      title: String(data[i][5])
+    };
+    rows.push(row);
+    keys[row.key] = row;
+  }
+  return { sheet: sheet, rows: rows, keys: keys };
+}
+
+// 同じ会員・同じ名札は、1つだけ。すでにあれば、何もしない(二重に付かない)。呼ぶ側が、ロックを持っていること
+function addPointEntry(ledger, memberId, kind, key, points, title) {
+  if (ledger.keys[key]) return false;
+  const ts = nowText();
+  ledger.sheet.appendRow([ts, memberId, kind, key, points, title]);
+  const row = { ts: ts, kind: kind, key: key, points: points, title: title };
+  ledger.rows.push(row);
+  ledger.keys[key] = row;
+  return true;
+}
+
+function ledgerBalance(ledger) {
+  let total = 0;
+  ledger.rows.forEach(function (r) { total += r.points; });
+  return Math.max(0, total);
+}
+
+function normalizePointCodeServer(raw) {
+  return String(raw === undefined || raw === null ? '' : raw).trim().toUpperCase().replace(/[\s_-]/g, '');
+}
+
+function eventStagesFrom(local) {
+  const out = [];
+  const arr = local && Array.isArray(local.eventStages) ? local.eventStages : [];
+  arr.forEach(function (v) {
+    const n = Math.floor(Number(v));
+    if (n >= 1 && n <= MYSTERY_STAGE_COUNT && out.indexOf(n) === -1) out.push(n);
+  });
+  return out;
+}
+
+function redeemedCodesFrom(local) {
+  const out = [];
+  const arr = local && Array.isArray(local.redeemedCodes) ? local.redeemedCodes : [];
+  arr.forEach(function (v) {
+    const code = normalizePointCodeServer(v);
+    if (POINT_CODE_TABLE[code] && out.indexOf(code) === -1) out.push(code);
+  });
+  return out;
+}
+
+function usedCouponsFrom(local) {
+  const out = [];
+  const arr = local && Array.isArray(local.usedCoupons) ? local.usedCoupons : [];
+  arr.forEach(function (v) {
+    const code = normalizePointCodeServer(v);
+    if (VALID_COUPON_CODES.indexOf(code) !== -1 && out.indexOf(code) === -1) out.push(code);
+  });
+  return out;
+}
+
+function eventRewardTitle(stage) {
+  return '神埼奇譚 第' + stage + '幕解明報奨';
+}
+
+// 初めてのとき1回だけ: 端末のポイントがあれば、上限つきで引き継ぐ。無ければ、ウェルカムボーナス
+function ensureAccountInitialized(ledger, memberId, local) {
+  if (ledger.keys['welcome'] || ledger.keys['migration']) return;
+  const raw = local && typeof local.balance === 'number' && isFinite(local.balance) && local.balance >= 0 ? Math.floor(local.balance) : null;
+  if (raw === null) {
+    addPointEntry(ledger, memberId, 'welcome', 'welcome', WELCOME_POINTS, '神埼ID 新規登録ウェルカムボーナス');
+    return;
+  }
+  const credited = Math.min(raw, MIGRATION_POINT_CAP);
+  const note = raw > MIGRATION_POINT_CAP ? '(申告' + raw + 'pt・上限適用)' : '(申告' + raw + 'pt)';
+  addPointEntry(ledger, memberId, 'migration', 'migration', credited, '端末のポイントの引き継ぎ' + note);
+  // 端末の残高にすでに含まれている1回限りの報酬は、重ねて付かないよう、0ptの印だけを残す
+  eventStagesFrom(local).forEach(function (stage) {
+    addPointEntry(ledger, memberId, 'event', 'event:stage' + stage, 0, '引き継ぎ済み: ' + eventRewardTitle(stage));
+  });
+  redeemedCodesFrom(local).forEach(function (code) {
+    addPointEntry(ledger, memberId, 'code', 'code:' + code, 0, '引き継ぎ済み: コード' + code);
+  });
+}
+
+// 2台目以降の端末などで、まだ台帳にない1回限りの報酬を、サーバーの金額で付ける(残高は、引き継がない)
+function mergeLocalClaims(ledger, memberId, local) {
+  if (!local) return;
+  eventStagesFrom(local).forEach(function (stage) {
+    addPointEntry(ledger, memberId, 'event', 'event:stage' + stage, EVENT_STAGE_POINTS, eventRewardTitle(stage));
+  });
+  redeemedCodesFrom(local).forEach(function (code) {
+    addPointEntry(ledger, memberId, 'code', 'code:' + code, POINT_CODE_TABLE[code].points, POINT_CODE_TABLE[code].title);
+  });
+}
+
+// ---- 使用済みクーポン ----
+function readMemberCoupons(memberId) {
+  const sheet = getOrCreateSheetWithHeaders(SHEET_USED_COUPONS, USED_COUPON_HEADERS, [3]);
+  const data = sheet.getDataRange().getValues();
+  const codes = [];
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === memberId) codes.push(String(data[i][1]));
+  }
+  return { sheet: sheet, codes: codes };
+}
+
+function addUsedCoupon(cs, memberId, code) {
+  if (cs.codes.indexOf(code) !== -1) return false;
+  cs.sheet.appendRow([memberId, code, nowText()]);
+  cs.codes.push(code);
+  return true;
+}
+
+// ---- ミステリー進行(先へ進むときだけ書き換える) ----
+function sanitizeMystery(p) {
+  const stage = p && Math.floor(Number(p.stage)) >= 1 ? Math.min(Math.floor(Number(p.stage)), MYSTERY_STAGE_COUNT) : 1;
+  const stamps = [];
+  (p && Array.isArray(p.stamps) ? p.stamps : []).forEach(function (s) {
+    const n = s ? Math.floor(Number(s.stageNumber)) : 0;
+    if (n >= 1 && n <= MYSTERY_STAGE_COUNT && !stamps.some(function (x) { return x.stageNumber === n; })) {
+      stamps.push({
+        stageNumber: n,
+        stationId: limitText(s.stationId, 30),
+        stationName: limitText(s.stationName, 30),
+        stampedAt: limitText(s.stampedAt, 40)
+      });
+    }
+  });
+  return { stage: stage, stamps: stamps, cleared: !!(p && p.cleared) };
+}
+
+function readMemberMystery(memberId) {
+  const sheet = getOrCreateSheetWithHeaders(SHEET_MYSTERY, MYSTERY_HEADERS, [5]);
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) !== memberId) continue;
+    let stamps = [];
+    try { stamps = JSON.parse(String(data[i][2] || '[]')); } catch (err) { stamps = []; }
+    const m = sanitizeMystery({ stage: data[i][1], stamps: stamps, cleared: String(data[i][3]) === 'true' || data[i][3] === true });
+    m.row = i + 1;
+    m.sheet = sheet;
+    return m;
+  }
+  return { stage: 1, stamps: [], cleared: false, row: -1, sheet: sheet };
+}
+
+function mergeMystery(memberId, localProgress) {
+  const current = readMemberMystery(memberId);
+  if (!localProgress) return current;
+  const incoming = sanitizeMystery(localProgress);
+  const stamps = current.stamps.slice();
+  incoming.stamps.forEach(function (s) {
+    if (!stamps.some(function (x) { return x.stageNumber === s.stageNumber; })) stamps.push(s);
+  });
+  stamps.sort(function (a, b) { return a.stageNumber - b.stageNumber; });
+  const merged = {
+    stage: Math.max(current.stage, incoming.stage),
+    stamps: stamps,
+    cleared: current.cleared || incoming.cleared
+  };
+  const changed = merged.stage !== current.stage || merged.cleared !== current.cleared || merged.stamps.length !== current.stamps.length;
+  if (changed || current.row === -1) {
+    const values = [memberId, merged.stage, JSON.stringify(merged.stamps), merged.cleared ? 'true' : 'false', nowText()];
+    if (current.row === -1) {
+      current.sheet.appendRow(values);
+    } else {
+      current.sheet.getRange(current.row, 1, 1, values.length).setValues([values]);
+    }
+  }
+  merged.sheet = current.sheet;
+  merged.row = current.row;
+  return merged;
+}
+
+// ---- 予約の履歴(予約台帳から作る) ----
+function readMemberOrders(memberId) {
+  const sheet = getDataSpreadsheet().getSheetByName(SHEET_RESERVATIONS);
+  if (!sheet) return [];
+  const data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return [];
+  const headers = data[0];
+  const col = {};
+  headers.forEach(function (h, i) { col[h] = i; });
+  const orders = [];
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    if (String(row[col['会員ID']]) !== memberId) continue;
+    const cancelled = String(row[col['ステータス']]) === 'キャンセル';
+    const finished = cancelled || isReservationRowExpired(headers, row);
+    if (!finished) continue; // まだ乗っていない予約は、履歴に含めない
+    let detail = { items: [], itemDiscount: 0 };
+    if (col['明細'] !== undefined && row[col['明細']]) {
+      try { detail = JSON.parse(String(row[col['明細']])); } catch (err) { detail = { items: [], itemDiscount: 0 }; }
+    }
+    const items = Array.isArray(detail.items) ? detail.items : [];
+    const itemDiscount = Number(detail.itemDiscount) || 0;
+    const itemsTotal = items.reduce(function (sum, it) { return sum + (Number(it.price) || 0) * (Number(it.quantity) || 0); }, 0);
+    const total = Number(row[col['合計金額']]) || 0;
+    orders.push({
+      orderId: String(row[col['予約番号']]),
+      trainName: String(row[col['列車名']]),
+      carNo: Number(row[col['号車']]) || 0,
+      seatNo: String(row[col['座席番号']]),
+      seatType: String(row[col['席種']]),
+      boardingStation: String(row[col['乗車駅']]),
+      destinationStation: String(row[col['降車駅']]),
+      departureTime: cellText(row[col['出発時刻']], 'HH:mm'),
+      arrivalTime: cellText(row[col['到着時刻']], 'HH:mm'),
+      reservedDate: cellText(row[col['予約日']], 'yyyy-MM-dd'),
+      ticketPrice: Math.max(0, total + itemDiscount - itemsTotal),
+      items: items,
+      itemDiscount: itemDiscount,
+      result: cancelled ? 'cancelled' : 'completed',
+      sortKey: cellText(row[col['予約日時']])
+    });
+  }
+  orders.sort(function (a, b) { return a.sortKey < b.sortKey ? 1 : a.sortKey > b.sortKey ? -1 : 0; });
+  return orders.slice(0, ORDER_HISTORY_LIMIT).map(function (o) { delete o.sortKey; return o; });
+}
+
+function buildAccountData(memberId, ledger, coupons, mystery) {
+  return {
+    initialized: true,
+    migrated: !!ledger.keys['migration'],
+    balance: ledgerBalance(ledger),
+    history: ledger.rows.slice(-HISTORY_LIMIT).reverse().map(function (r) {
+      return { date: r.ts, title: r.title, points: r.points, kind: r.kind };
+    }),
+    usedCoupons: coupons.codes.slice(),
+    mystery: { stage: mystery.stage, stamps: mystery.stamps, cleared: mystery.cleared },
+    orders: readMemberOrders(memberId)
+  };
+}
+
+// ---- 公開されるAPI ----
+
+/**
+ * ログインしたとき・画面を開いたときに呼ぶ。初めてなら、端末のデータを1回だけ引き継ぐ(無ければウェルカムボーナス)。
+ * 2回目以降は、端末のデータのうち、まだ台帳にない1回限りの報酬・使用済みクーポン・ミステリーの進行だけを足し合わせる。
+ */
+function handleSyncAccount(sessionToken, local) {
+  const a = authMember(sessionToken);
+  if (a.error) return a.error;
+  return withScriptLock(function () {
+    const ledger = readMemberPoints(a.memberId);
+    ensureAccountInitialized(ledger, a.memberId, local);
+    mergeLocalClaims(ledger, a.memberId, local);
+    const coupons = readMemberCoupons(a.memberId);
+    usedCouponsFrom(local).forEach(function (c) { addUsedCoupon(coupons, a.memberId, c); });
+    const mystery = mergeMystery(a.memberId, local && local.mystery);
+    return createJsonResponse({ status: 'success', account: buildAccountData(a.memberId, ledger, coupons, mystery) });
+  });
+}
+
+function handleEarnEventReward(sessionToken, stage) {
+  const a = authMember(sessionToken);
+  if (a.error) return a.error;
+  const n = Math.floor(Number(stage));
+  if (!(n >= 1 && n <= MYSTERY_STAGE_COUNT)) {
+    return createJsonResponse({ status: 'error', message: '報酬の内容が正しくありません。' });
+  }
+  return withScriptLock(function () {
+    const ledger = readMemberPoints(a.memberId);
+    ensureAccountInitialized(ledger, a.memberId, null);
+    const added = addPointEntry(ledger, a.memberId, 'event', 'event:stage' + n, EVENT_STAGE_POINTS, eventRewardTitle(n));
+    return createJsonResponse({ status: 'success', added: added, points: added ? EVENT_STAGE_POINTS : 0, balance: ledgerBalance(ledger) });
+  });
+}
+
+function handleRedeemPointCode(sessionToken, rawCode) {
+  const a = authMember(sessionToken);
+  if (a.error) return a.error;
+  const code = normalizePointCodeServer(rawCode);
+  if (!code) return createJsonResponse({ status: 'error', message: 'コードを入力してください。' });
+  const def = POINT_CODE_TABLE[code];
+  if (!def) return createJsonResponse({ status: 'error', message: '無効なコードです。' });
+  return withScriptLock(function () {
+    const ledger = readMemberPoints(a.memberId);
+    ensureAccountInitialized(ledger, a.memberId, null);
+    if (!addPointEntry(ledger, a.memberId, 'code', 'code:' + code, def.points, def.title)) {
+      return createJsonResponse({ status: 'error', message: 'このコードは既に使用済みです。' });
+    }
+    return createJsonResponse({ status: 'success', points: def.points, balance: ledgerBalance(ledger), title: def.title });
+  });
+}
+
+function handleUseCoupon(sessionToken, rawCode) {
+  const a = authMember(sessionToken);
+  if (a.error) return a.error;
+  const code = normalizePointCodeServer(rawCode);
+  if (VALID_COUPON_CODES.indexOf(code) === -1) {
+    return createJsonResponse({ status: 'error', message: '無効なクーポンコードです。' });
+  }
+  return withScriptLock(function () {
+    const coupons = readMemberCoupons(a.memberId);
+    if (!addUsedCoupon(coupons, a.memberId, code)) {
+      return createJsonResponse({ status: 'error', alreadyUsed: true, message: 'このクーポンは既に使用済みです。' });
+    }
+    return createJsonResponse({ status: 'success' });
+  });
+}
+
+function handleSaveMysteryProgress(sessionToken, progress) {
+  const a = authMember(sessionToken);
+  if (a.error) return a.error;
+  return withScriptLock(function () {
+    const m = mergeMystery(a.memberId, progress || {});
+    return createJsonResponse({ status: 'success', mystery: { stage: m.stage, stamps: m.stamps, cleared: m.cleared } });
+  });
+}
+
+// ---- 予約まわりのポイント(予約の登録・取消のロックの中から呼ばれる) ----
+
+// 予約の明細(デリバリーの商品と割引)を、予約台帳の「明細」列に残す(列が無ければ、このとき足す)
+function saveReservationDetail(sheet, row, order) {
+  const lastCol = Math.max(sheet.getLastColumn(), 1);
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  let col = headers.indexOf('明細') + 1;
+  if (col === 0) {
+    col = headers.filter(function (v) { return v !== ''; }).length + 1;
+    sheet.getRange(1, col).setValue('明細');
+  }
+  const items = (Array.isArray(order.items) ? order.items : []).slice(0, 20).map(function (it) {
+    return { name: limitText(it && it.name, 60), quantity: Math.floor(Number(it && it.quantity)) || 0, price: Math.floor(Number(it && it.price)) || 0 };
+  });
+  const detail = { items: items, itemDiscount: Math.max(0, Math.floor(Number(order.itemDiscount)) || 0) };
+  sheet.getRange(row, col).setValue(JSON.stringify(detail));
+}
+
+function awardReservationPoints(memberId, orderId, total, previousTotal, trainName) {
+  const ledger = readMemberPoints(memberId);
+  ensureAccountInitialized(ledger, memberId, null);
+  if (previousTotal === null) {
+    // 新しい予約: 合計金額の3%(最低50pt)
+    const points = Math.max(RESERVATION_POINT_MIN, Math.floor(total * RESERVATION_POINT_RATE));
+    addPointEntry(ledger, memberId, 'reservation', 'reservation:' + orderId, points, (trainName || '特急列車予約') + ' 乗車・デリバリー利用');
+    return;
+  }
+  if (total > previousTotal) {
+    // デリバリーを足した: 増えた金額の3%(最低50pt)。金額が変わらない再送では、何も付かない
+    const prefix = 'delivery:' + orderId + ':';
+    let n = 1;
+    Object.keys(ledger.keys).forEach(function (k) { if (k.indexOf(prefix) === 0) n++; });
+    const points = Math.max(RESERVATION_POINT_MIN, Math.floor((total - previousTotal) * RESERVATION_POINT_RATE));
+    addPointEntry(ledger, memberId, 'delivery', prefix + n, points, (trainName || '特急列車予約') + ' 乗車・デリバリー利用');
+  }
+}
+
+function revokeReservationPoints(memberId, orderId) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+  } catch (err) {
+    Logger.log('ポイント取消のロックを取れませんでした: ' + orderId);
+    return;
+  }
+  try {
+    const ledger = readMemberPoints(memberId);
+    const cancelKey = 'cancel:' + orderId;
+    if (ledger.keys[cancelKey]) return;
+    const prefix = 'delivery:' + orderId + ':';
+    let earned = 0;
+    ledger.rows.forEach(function (r) {
+      if (r.key === 'reservation:' + orderId || r.key.indexOf(prefix) === 0) earned += r.points;
+    });
+    if (earned > 0) {
+      addPointEntry(ledger, memberId, 'cancel', cancelKey, -earned, '予約取消によるポイント取消');
+    }
+  } finally {
+    lock.releaseLock();
+  }
 }
