@@ -61,7 +61,7 @@ function doPost(e) {
       return handleSyncAccount(json.sessionToken, json.local);
     }
     if (json.action === 'earnEventReward') {
-      return handleEarnEventReward(json.sessionToken, json.stage);
+      return handleEarnEventReward(json.sessionToken, json.rewardId);
     }
     if (json.action === 'redeemPointCode') {
       return handleRedeemPointCode(json.sessionToken, json.code);
@@ -760,6 +760,8 @@ function handleDeleteAccount(email, password) {
 
   // 台帳に残る記録からLINEユーザーIDを消し、個人と結びつかない形にする(失敗時は会員行を消さずエラーにして再試行できるようにする)
   anonymizeLineUserId(member.lineUserId, member.memberId);
+  // NIZAKI 2.0 で作る、ポイント・使用済みクーポン・ミステリー進行の、この会員の行も消す(表が無ければ、何もしない)
+  deleteCloudAccountData(member.memberId);
 
   const sheet = getOrCreateMembersSheet();
   const data = sheet.getDataRange().getValues();
@@ -779,6 +781,21 @@ function handleDeleteAccount(email, password) {
 /**
  * 予約台帳・クーポン発行ログの該当LINEユーザーIDを「削除済み」に置き換える
  */
+// この会員の、ポイント台帳・使用済みクーポン・ミステリー進行の行を消す(会員IDの列は、表ごとに違う)
+function deleteCloudAccountData(memberId) {
+  if (!memberId) return;
+  const ss = getDataSpreadsheet();
+  [[SHEET_POINTS, 1], [SHEET_USED_COUPONS, 0], [SHEET_MYSTERY, 0]].forEach(function (def) {
+    const sheet = ss.getSheetByName(def[0]);
+    if (!sheet) return;
+    const data = sheet.getDataRange().getValues();
+    // 下から消す(行番号がずれないように)
+    for (let i = data.length - 1; i >= 1; i--) {
+      if (String(data[i][def[1]]) === String(memberId)) sheet.deleteRow(i + 1);
+    }
+  });
+}
+
 function anonymizeLineUserId(lineUserId, memberId) {
   if (!lineUserId && !memberId) return;
   const ss = getDataSpreadsheet();
@@ -1094,8 +1111,14 @@ const MYSTERY_HEADERS = ['会員ID', '解放した幕', 'スタンプ', '制覇'
 
 const MIGRATION_POINT_CAP = 3000; // 端末のポイントを引き継ぐ上限
 const WELCOME_POINTS = 500;
-const EVENT_STAGE_POINTS = 150; // ミステリー1幕を解いたとき
 const MYSTERY_STAGE_COUNT = 3;
+// 1回限りのイベント報酬(アカウントごとに1回。名札は 'event:' + id)
+const EVENT_REWARD_TABLE = {
+  stage1: { points: 150, title: '神埼奇譚 第1幕解明報奨' },
+  stage2: { points: 150, title: '神埼奇譚 第2幕解明報奨' },
+  stage3: { points: 150, title: '神埼奇譚 第3幕解明報奨' },
+  mashin: { points: 300, title: 'ミステリートレイン完全制覇' }
+};
 const RESERVATION_POINT_RATE = 0.03;
 const RESERVATION_POINT_MIN = 50;
 const HISTORY_LIMIT = 30;
@@ -1137,6 +1160,10 @@ function authMember(sessionToken) {
     return { error: createJsonResponse({ status: 'error', message: '会員情報が見つかりません。' }) };
   }
   return { memberId: memberId };
+}
+
+function notSyncedYetResponse() {
+  return createJsonResponse({ status: 'error', message: '最初の同期が終わっていません。少し待って、もう一度お試しください。' });
 }
 
 function withScriptLock(fn) {
@@ -1195,12 +1222,12 @@ function normalizePointCodeServer(raw) {
   return String(raw === undefined || raw === null ? '' : raw).trim().toUpperCase().replace(/[\s_-]/g, '');
 }
 
-function eventStagesFrom(local) {
+function eventRewardsFrom(local) {
   const out = [];
-  const arr = local && Array.isArray(local.eventStages) ? local.eventStages : [];
+  const arr = local && Array.isArray(local.eventRewards) ? local.eventRewards : [];
   arr.forEach(function (v) {
-    const n = Math.floor(Number(v));
-    if (n >= 1 && n <= MYSTERY_STAGE_COUNT && out.indexOf(n) === -1) out.push(n);
+    const id = String(v);
+    if (EVENT_REWARD_TABLE[id] && out.indexOf(id) === -1) out.push(id);
   });
   return out;
 }
@@ -1225,10 +1252,6 @@ function usedCouponsFrom(local) {
   return out;
 }
 
-function eventRewardTitle(stage) {
-  return '神埼奇譚 第' + stage + '幕解明報奨';
-}
-
 // 初めてのとき1回だけ: 端末のポイントがあれば、上限つきで引き継ぐ。無ければ、ウェルカムボーナス
 function ensureAccountInitialized(ledger, memberId, local) {
   if (ledger.keys['welcome'] || ledger.keys['migration']) return;
@@ -1241,8 +1264,8 @@ function ensureAccountInitialized(ledger, memberId, local) {
   const note = raw > MIGRATION_POINT_CAP ? '(申告' + raw + 'pt・上限適用)' : '(申告' + raw + 'pt)';
   addPointEntry(ledger, memberId, 'migration', 'migration', credited, '端末のポイントの引き継ぎ' + note);
   // 端末の残高にすでに含まれている1回限りの報酬は、重ねて付かないよう、0ptの印だけを残す
-  eventStagesFrom(local).forEach(function (stage) {
-    addPointEntry(ledger, memberId, 'event', 'event:stage' + stage, 0, '引き継ぎ済み: ' + eventRewardTitle(stage));
+  eventRewardsFrom(local).forEach(function (id) {
+    addPointEntry(ledger, memberId, 'event', 'event:' + id, 0, '引き継ぎ済み: ' + EVENT_REWARD_TABLE[id].title);
   });
   redeemedCodesFrom(local).forEach(function (code) {
     addPointEntry(ledger, memberId, 'code', 'code:' + code, 0, '引き継ぎ済み: コード' + code);
@@ -1252,8 +1275,8 @@ function ensureAccountInitialized(ledger, memberId, local) {
 // 2台目以降の端末などで、まだ台帳にない1回限りの報酬を、サーバーの金額で付ける(残高は、引き継がない)
 function mergeLocalClaims(ledger, memberId, local) {
   if (!local) return;
-  eventStagesFrom(local).forEach(function (stage) {
-    addPointEntry(ledger, memberId, 'event', 'event:stage' + stage, EVENT_STAGE_POINTS, eventRewardTitle(stage));
+  eventRewardsFrom(local).forEach(function (id) {
+    addPointEntry(ledger, memberId, 'event', 'event:' + id, EVENT_REWARD_TABLE[id].points, EVENT_REWARD_TABLE[id].title);
   });
   redeemedCodesFrom(local).forEach(function (code) {
     addPointEntry(ledger, memberId, 'code', 'code:' + code, POINT_CODE_TABLE[code].points, POINT_CODE_TABLE[code].title);
@@ -1419,18 +1442,19 @@ function handleSyncAccount(sessionToken, local) {
   });
 }
 
-function handleEarnEventReward(sessionToken, stage) {
+function handleEarnEventReward(sessionToken, rewardId) {
   const a = authMember(sessionToken);
   if (a.error) return a.error;
-  const n = Math.floor(Number(stage));
-  if (!(n >= 1 && n <= MYSTERY_STAGE_COUNT)) {
+  const id = String(rewardId === undefined || rewardId === null ? '' : rewardId);
+  const def = EVENT_REWARD_TABLE[id];
+  if (!def) {
     return createJsonResponse({ status: 'error', message: '報酬の内容が正しくありません。' });
   }
   return withScriptLock(function () {
     const ledger = readMemberPoints(a.memberId);
-    ensureAccountInitialized(ledger, a.memberId, null);
-    const added = addPointEntry(ledger, a.memberId, 'event', 'event:stage' + n, EVENT_STAGE_POINTS, eventRewardTitle(n));
-    return createJsonResponse({ status: 'success', added: added, points: added ? EVENT_STAGE_POINTS : 0, balance: ledgerBalance(ledger) });
+    if (!ledger.keys['welcome'] && !ledger.keys['migration']) return notSyncedYetResponse();
+    const added = addPointEntry(ledger, a.memberId, 'event', 'event:' + id, def.points, def.title);
+    return createJsonResponse({ status: 'success', added: added, points: added ? def.points : 0, balance: ledgerBalance(ledger) });
   });
 }
 
@@ -1443,7 +1467,7 @@ function handleRedeemPointCode(sessionToken, rawCode) {
   if (!def) return createJsonResponse({ status: 'error', message: '無効なコードです。' });
   return withScriptLock(function () {
     const ledger = readMemberPoints(a.memberId);
-    ensureAccountInitialized(ledger, a.memberId, null);
+    if (!ledger.keys['welcome'] && !ledger.keys['migration']) return notSyncedYetResponse();
     if (!addPointEntry(ledger, a.memberId, 'code', 'code:' + code, def.points, def.title)) {
       return createJsonResponse({ status: 'error', message: 'このコードは既に使用済みです。' });
     }
@@ -1496,7 +1520,8 @@ function saveReservationDetail(sheet, row, order) {
 
 function awardReservationPoints(memberId, orderId, total, previousTotal, trainName) {
   const ledger = readMemberPoints(memberId);
-  ensureAccountInitialized(ledger, memberId, null);
+  // 最初の同期(端末のポイントの引き継ぎ)が済む前は、付けない。先に初期化すると、端末のポイントが引き継げなくなる
+  if (!ledger.keys['welcome'] && !ledger.keys['migration']) return;
   if (previousTotal === null) {
     // 新しい予約: 合計金額の3%(最低50pt)
     const points = Math.max(RESERVATION_POINT_MIN, Math.floor(total * RESERVATION_POINT_RATE));

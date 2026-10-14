@@ -8,7 +8,8 @@ interface NPointModalProps {
   balance: number;
   pointHistory?: PointHistoryItem[];
   currentUser?: UserProfile | null;
-  onRedeemCode?: (code: string) => { ok: boolean; message: string };
+  // クラウドが基準の会員は、サーバーの返事を待つので、返事が遅れて届くこともある
+  onRedeemCode?: (code: string) => { ok: boolean; message: string } | Promise<{ ok: boolean; message: string }>;
 }
 
 // 会員ランクの英字表記(カードに表示)
@@ -27,10 +28,10 @@ export const NPointModal: React.FC<NPointModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleRedeem = (e: React.FormEvent) => {
+  const handleRedeem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!onRedeemCode) return;
-    const result = onRedeemCode(redeemInput);
+    const result = await onRedeemCode(redeemInput);
     setRedeemResult(result);
     if (result.ok) setRedeemInput('');
   };

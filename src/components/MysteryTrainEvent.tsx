@@ -31,6 +31,8 @@ import { LINE_OA_ADD_FRIEND_URL } from '../utils/accountApi';
 interface MysteryTrainEventProps {
   onBack?: () => void;
   onAddNPoints?: (points: number, title?: string, type?: 'stamp' | 'coupon') => void;
+  // 公開後で、ログイン証のある会員(進行はクラウドが持つので、「白紙に戻す」は出さない)
+  cloudMode?: boolean;
 }
 
 interface SavedStampData {
@@ -42,6 +44,7 @@ interface SavedStampData {
 
 export const MysteryTrainEvent: React.FC<MysteryTrainEventProps> = ({
   onAddNPoints,
+  cloudMode = false,
 }) => {
   // プレイヤーが到達済みの最高ステージ (1, 2, 3)
   const [maxUnlockedStage, setMaxUnlockedStage] = useState<number>(() => {
@@ -437,15 +440,17 @@ export const MysteryTrainEvent: React.FC<MysteryTrainEventProps> = ({
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setIsResetConfirmOpen(true)}
-              className="text-[11px] text-stone-400 hover:text-amber-300 flex items-center gap-1 py-1 px-2.5 rounded bg-black/40 border border-stone-700 hover:border-amber-500/50 transition-colors cursor-pointer active:scale-[0.98]"
-              title="捜査記録を白紙に戻す"
-            >
-              <RotateCcw className="w-3 h-3" />
-              <span>白紙に戻す</span>
-            </button>
+            {!cloudMode && (
+              <button
+                type="button"
+                onClick={() => setIsResetConfirmOpen(true)}
+                className="text-[11px] text-stone-400 hover:text-amber-300 flex items-center gap-1 py-1 px-2.5 rounded bg-black/40 border border-stone-700 hover:border-amber-500/50 transition-colors cursor-pointer active:scale-[0.98]"
+                title="捜査記録を白紙に戻す"
+              >
+                <RotateCcw className="w-3 h-3" />
+                <span>白紙に戻す</span>
+              </button>
+            )}
           </div>
 
           {/* 三幕のセレクター */}

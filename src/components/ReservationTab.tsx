@@ -45,6 +45,8 @@ interface ReservationTabProps {
   onCancelOrder: () => void;
   isLoggedIn?: boolean;
   onRequireLogin?: (reason: string, onLoggedIn?: () => void) => void;
+  // クーポンを使ったとき(公開後、クラウドが基準の会員が、使用済みをサーバーへ送るため)
+  onCouponUsed?: (code: string) => void;
 }
 
 export const ReservationTab: React.FC<ReservationTabProps> = ({
@@ -54,6 +56,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
   onCancelOrder,
   isLoggedIn = false,
   onRequireLogin,
+  onCouponUsed,
 }) => {
   const [copiedCode, setCopiedCode] = useState(false);
   // Express Train Selection in E-Quick Service
@@ -121,6 +124,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
       if (!current.includes(compact)) {
         current.push(compact);
         localStorage.setItem('kanzaki_used_coupons', JSON.stringify(current));
+        onCouponUsed?.(compact);
       }
     } catch (e) {
       console.error('Failed to save used coupon:', e);
