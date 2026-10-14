@@ -42,6 +42,14 @@
   }
 }
 
+/* 公開日の案内(下のカード)が出ているあいだ、マイページなどの画面が、カードと重ならないようにする */
+body[data-welcome-tour] .fixed.inset-0.z-50 {
+  padding-bottom: 14rem;
+}
+body[data-welcome-tour] .fixed.inset-0.z-50 > div {
+  max-height: calc(100dvh - 15rem) !important;
+}
+
 /* 横スクロールのタブ列でスクロールバーを隠す */
 @utility scrollbar-none {
   scrollbar-width: none;

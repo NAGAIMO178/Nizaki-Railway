@@ -342,7 +342,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
           {/* 遅れの知らせ(公開後): 見張る範囲を選ぶ */}
           {showDelaySetting && (
-            <div className="space-y-1.5 border-b border-[#F0EEF6] pb-3">
+            <div id="delay-setting" className="space-y-1.5 border-b border-[#F0EEF6] pb-3">
               <div className="text-xs font-bold text-[#221C35]">列車の遅れの知らせ</div>
               <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-[#E6E2EE]" role="radiogroup" aria-label="列車の遅れの知らせ">
                 {([

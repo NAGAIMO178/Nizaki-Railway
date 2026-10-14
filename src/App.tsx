@@ -7,7 +7,7 @@ import { MyStationCard } from './components/MyStationCard';
 import { MyStationRegisterCard, RegisterableStation, REGISTERABLE_LINES } from './components/MyStationRegisterCard';
 import { FooterNav } from './components/FooterNav';
 import { TrainLocationTab } from './components/TrainLocationTab';
-import { TimetableTab } from './components/TimetableTab';
+import { TimetableTab, presetTimetableMode } from './components/TimetableTab';
 import { ReservationTab } from './components/ReservationTab';
 import { EquipTab } from './components/EquipTab';
 import { EventsTab } from './components/EventsTab';
@@ -19,7 +19,7 @@ import { QRCodeModal } from './components/QRCodeModal';
 import { LoginModal } from './components/LoginModal';
 import { MyPageModal } from './components/MyPageModal';
 import { MenuDrawer } from './components/MenuDrawer';
-import { LaunchWelcome, LAUNCH_BONUS_ID } from './components/LaunchWelcome';
+import { LaunchWelcome, LAUNCH_BONUS_ID, WelcomeStep } from './components/LaunchWelcome';
 import { MOCK_LINES, MOCK_EQUIP_ITEMS } from './data/mockData';
 import { POINT_CODES, normalizePointCode } from './data/pointCodes';
 import { getLocalDateString, isOrderExpired } from './utils/orderExpiry';
@@ -492,6 +492,23 @@ export default function App() {
   const [isRouteMapModalOpen, setIsRouteMapModalOpen] = useState(false);
   const [isQRCodeModalOpen, setIsQRCodeModalOpen] = useState(false);
   const [isMyPageOpen, setIsMyPageOpen] = useState(false);
+
+  // 公開日の案内が、説明している場所を、実際に開く(マイレージ・ポイントは、クラウドの会員だけ。ほかは、ホームのまま)
+  const handleWelcomeStep = (step: WelcomeStep) => {
+    const member = cloudOnRef.current;
+    setIsMenuOpen(false);
+    setIsMyPageOpen(step === 'mileage' && member);
+    setIsNPointModalOpen(step === 'save' && member);
+    if (step === 'route') {
+      presetTimetableMode('route');
+      setActiveTab('timetable');
+    } else if (step === 'delay') {
+      setActiveTab('settings');
+      window.setTimeout(() => document.getElementById('delay-setting')?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 200);
+    } else {
+      setActiveTab('home');
+    }
+  };
   const [selectedCart, setSelectedCart] = useState<{ [key: string]: number }>({});
 
   // 予約状態が更新されたらローカルストレージに保存し、ログイン済みの会員ならGAS(予約台帳)にも記録する
@@ -857,6 +874,7 @@ export default function App() {
         claimedEvents={cloud.account?.claimedEvents}
         isLoggedIn={isLoggedIn}
         onClaim={() => cloud.earnEvent(LAUNCH_BONUS_ID)}
+        onStep={handleWelcomeStep}
       />
 
       <MenuDrawer
