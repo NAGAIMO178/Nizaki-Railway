@@ -23,6 +23,9 @@ import { MOCK_LINES, MOCK_EQUIP_ITEMS } from './data/mockData';
 import { POINT_CODES, normalizePointCode } from './data/pointCodes';
 import { getLocalDateString, isOrderExpired } from './utils/orderExpiry';
 import { callGas } from './utils/accountApi';
+import { isLaunched } from './utils/launch';
+import { useCloudAccount } from './utils/useCloudAccount';
+import { rewardIdFromTitle } from './utils/cloudAccount';
 import { TabType, ActiveOrder, EquipItem, PointHistoryItem, UserProfile, OrderHistoryItem } from './types';
 
 // Helper to sanitize email for storage key
@@ -101,6 +104,24 @@ export default function App() {
   // ログイン直後に実行される予約確定など、古い画面の関数から呼ばれても、最新のログイン状態で動かすための参照
   const currentUserRef = React.useRef(currentUser);
   currentUserRef.current = currentUser;
+
+  // NIZAKI 2.0(公開後): ログイン証のある会員の、ポイント・履歴・クーポン・ミステリーは、クラウドが基準になる。
+  // 公開前は、cloudOn も demoOn も false なので、これまでどおり端末の保存先を使う。
+  const cloud = useCloudAccount(currentUser);
+  const cloudOn = cloud.active;
+  const cloudOnRef = React.useRef(cloudOn);
+  cloudOnRef.current = cloudOn;
+  // 公開後のデモ会員(ログイン証なし): ポイントは貯められるが、保存しない(画面を開いているあいだだけ)
+  const demoOn = isLaunched() && currentUser !== null && !currentUser.sessionToken;
+  const demoOnRef = React.useRef(demoOn);
+  demoOnRef.current = demoOn;
+  const memStoreRef = React.useRef(new Map<string, string>());
+  const storeGet = (key: string): string | null =>
+    demoOnRef.current ? (memStoreRef.current.get(key) ?? null) : localStorage.getItem(key);
+  const storeSet = (key: string, value: string) => {
+    if (demoOnRef.current) memStoreRef.current.set(key, value);
+    else localStorage.setItem(key, value);
+  };
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [loginReason, setLoginReason] = useState<string | undefined>(undefined);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
@@ -113,26 +134,28 @@ export default function App() {
 
   // Load user-specific points and history whenever currentUser email changes
   React.useEffect(() => {
-    if (!currentUser || !currentUser.email) {
+    if (!currentUser || !currentUser.email || cloudOn) {
+      // クラウドが基準の会員は、端末の保存先を使わない(表示は、クラウドの内容)
       setNPointBalance(0);
       setPointHistory([]);
       setOrderHistory([]);
       return;
     }
+    if (demoOn) memStoreRef.current.clear(); // デモ会員は、開くたびに最初から
 
     const prefix = getPointStoragePrefix(currentUser.email);
     if (!prefix) return;
 
     try {
-      const savedOrders = JSON.parse(localStorage.getItem(`${prefix}_order_history`) || '[]');
+      const savedOrders = JSON.parse(storeGet(`${prefix}_order_history`) || '[]');
       setOrderHistory(Array.isArray(savedOrders) ? savedOrders : []);
     } catch {
       setOrderHistory([]);
     }
 
     try {
-      const savedBalance = localStorage.getItem(`${prefix}_balance`);
-      const savedHistory = localStorage.getItem(`${prefix}_history`);
+      const savedBalance = storeGet(`${prefix}_balance`);
+      const savedHistory = storeGet(`${prefix}_history`);
 
       if (savedBalance !== null) {
         setNPointBalance(parseInt(savedBalance, 10));
@@ -140,7 +163,7 @@ export default function App() {
         // 新規アカウント向け初期ウェルカムボーナス (500pt)
         const initialPoints = 500;
         setNPointBalance(initialPoints);
-        localStorage.setItem(`${prefix}_balance`, initialPoints.toString());
+        storeSet(`${prefix}_balance`, initialPoints.toString());
       }
 
       if (savedHistory !== null) {
@@ -162,15 +185,16 @@ export default function App() {
           },
         ];
         setPointHistory(welcomeHistory);
-        localStorage.setItem(`${prefix}_history`, JSON.stringify(welcomeHistory));
+        storeSet(`${prefix}_history`, JSON.stringify(welcomeHistory));
       }
     } catch (e) {
       console.warn('Failed to load points for user:', e);
     }
-  }, [currentUser?.email]);
+  }, [currentUser?.email, cloudOn]);
 
   // 終わった予約(乗車済み・キャンセル)を履歴に残す。この端末内に、アカウントごとに最大30件
   const archiveOrder = (order: ActiveOrder, result: 'completed' | 'cancelled') => {
+    if (cloudOnRef.current) return; // クラウドが基準の会員の履歴は、サーバーの予約台帳から作る
     const prefix = getPointStoragePrefix(currentUser?.email);
     if (!prefix) return;
     const items = order.items || [];
@@ -194,12 +218,12 @@ export default function App() {
     const key = `${prefix}_order_history`;
     let saved: OrderHistoryItem[] = [];
     try {
-      const parsed = JSON.parse(localStorage.getItem(key) || '[]');
+      const parsed = JSON.parse(storeGet(key) || '[]');
       if (Array.isArray(parsed)) saved = parsed;
     } catch {}
     const next = [entry, ...saved.filter((h) => h.orderId !== entry.orderId)].slice(0, 30);
     try {
-      localStorage.setItem(key, JSON.stringify(next));
+      storeSet(key, JSON.stringify(next));
     } catch {}
     setOrderHistory(next);
   };
@@ -212,13 +236,14 @@ export default function App() {
   const addPoints = (points: number, title?: string, type: 'reservation' | 'stamp' | 'coupon' | 'equip' = 'reservation') => {
     const user = currentUserRef.current;
     if (!user || !user.email) return;
+    if (cloudOnRef.current) return; // クラウドが基準の会員のポイントは、サーバーが付ける
     const prefix = getPointStoragePrefix(user.email);
 
     setNPointBalance((prev) => {
       const newBal = Math.max(0, prev + points);
       if (prefix) {
         try {
-          localStorage.setItem(`${prefix}_balance`, newBal.toString());
+          storeSet(`${prefix}_balance`, newBal.toString());
         } catch {}
       }
       return newBal;
@@ -243,7 +268,7 @@ export default function App() {
       const newHist = [newHistoryItem, ...prev].slice(0, 30);
       if (prefix) {
         try {
-          localStorage.setItem(`${prefix}_history`, JSON.stringify(newHist));
+          storeSet(`${prefix}_history`, JSON.stringify(newHist));
         } catch {}
       }
       return newHist;
@@ -254,26 +279,34 @@ export default function App() {
   // ログインしていない場合は、従来どおりポイントは付与されない
   const addEventRewardOnce = (points: number, title?: string, type: 'reservation' | 'stamp' | 'coupon' | 'equip' = 'stamp') => {
     if (!currentUser || !currentUser.email) return;
+    if (cloudOnRef.current) {
+      // クラウドが基準の会員: ミステリーの進行を送り、報酬は、サーバーが1回だけ付ける
+      cloud.pushMystery();
+      const rewardId = rewardIdFromTitle(title);
+      if (rewardId) void cloud.earnEvent(rewardId);
+      return;
+    }
     const prefix = getPointStoragePrefix(currentUser.email);
     if (!prefix) return;
     const rewardKey = title || `event_${points}`;
     const storageKey = `${prefix}_event_rewards`;
     let granted: string[] = [];
     try {
-      const parsed = JSON.parse(localStorage.getItem(storageKey) || '[]');
+      const parsed = JSON.parse(storeGet(storageKey) || '[]');
       if (Array.isArray(parsed)) granted = parsed;
     } catch {}
     if (granted.includes(rewardKey)) return;
     addPoints(points, title, type);
     try {
-      localStorage.setItem(storageKey, JSON.stringify([...granted, rewardKey]));
+      storeSet(storageKey, JSON.stringify([...granted, rewardKey]));
     } catch {}
   };
 
-  const redeemPointCode = (rawCode: string): { ok: boolean; message: string } => {
+  const redeemPointCode = (rawCode: string): { ok: boolean; message: string } | Promise<{ ok: boolean; message: string }> => {
     if (!currentUser || !currentUser.email) {
       return { ok: false, message: 'コードのご利用には神埼IDログインが必要です。' };
     }
+    if (cloudOnRef.current) return cloud.redeemCode(rawCode); // クラウドが基準の会員: サーバーが判定する
     const code = normalizePointCode(rawCode);
     if (!code) return { ok: false, message: 'コードを入力してください。' };
 
@@ -286,7 +319,7 @@ export default function App() {
     const storageKey = `${prefix}_redeemed_codes`;
     let redeemed: string[] = [];
     try {
-      const parsed = JSON.parse(localStorage.getItem(storageKey) || '[]');
+      const parsed = JSON.parse(storeGet(storageKey) || '[]');
       if (Array.isArray(parsed)) redeemed = parsed;
     } catch {}
 
@@ -296,7 +329,7 @@ export default function App() {
 
     addPoints(entry.points, entry.title, 'coupon');
     try {
-      localStorage.setItem(storageKey, JSON.stringify([...redeemed, code]));
+      storeSet(storageKey, JSON.stringify([...redeemed, code]));
     } catch {}
     return { ok: true, message: `${entry.points.toLocaleString()} pt を付与しました。` };
   };
@@ -308,10 +341,11 @@ export default function App() {
   };
 
   const readUsedDeliveryCoupons = (): string[] => {
+    if (cloudOnRef.current) return cloud.account?.usedCoupons ?? []; // クラウドが基準の会員
     const key = getUsedDeliveryCouponsKey();
     if (!key) return [];
     try {
-      const parsed = JSON.parse(localStorage.getItem(key) || '[]');
+      const parsed = JSON.parse(storeGet(key) || '[]');
       return Array.isArray(parsed) ? parsed : [];
     } catch {
       return [];
@@ -321,12 +355,16 @@ export default function App() {
   const isDeliveryCouponUsed = (code: string): boolean => readUsedDeliveryCoupons().includes(code);
 
   const markDeliveryCouponUsed = (code: string) => {
+    if (cloudOnRef.current) {
+      cloud.markCouponUsed(code);
+      return;
+    }
     const key = getUsedDeliveryCouponsKey();
     if (!key) return;
     const used = readUsedDeliveryCoupons();
     if (used.includes(code)) return;
     try {
-      localStorage.setItem(key, JSON.stringify([...used, code]));
+      storeSet(key, JSON.stringify([...used, code]));
     } catch {}
   };
 
@@ -457,16 +495,31 @@ export default function App() {
       }
 
       // いまログインしているアカウントの予約だけを台帳へ送る
-      if (sessionToken && normEmail(activeOrder.ownerEmail) === normEmail(currentUser?.email)) {
+      // (クラウドが基準の会員は、最初の同期が済むまで待つ。先に送ると、端末のポイントの引き継ぎより先に、ウェルカムボーナスになってしまう)
+      if (sessionToken && normEmail(activeOrder.ownerEmail) === normEmail(currentUser?.email) && !(cloudOn && !cloud.ready)) {
+        const awardOnServer = cloudOn && !cloud.error; // サーバーがポイントを付ける(同期できなかったときは、付けずに予約だけ送る)
         // 画像などを含めず、台帳に必要な項目だけを送る
         const { orderId, trainName, carNo, seatNo, seatType, boardingStation, destinationStation, departureTime, arrivalTime, reservedDate, totalPrice } = activeOrder;
-        callGas('createReservation', {
-          sessionToken,
-          order: { orderId, trainName, carNo, seatNo, seatType, boardingStation, destinationStation, departureTime, arrivalTime, reservedDate, totalPrice },
-        }).catch((err) => console.warn('Failed to sync reservation:', err));
+        const base = { orderId, trainName, carNo, seatNo, seatType, boardingStation, destinationStation, departureTime, arrivalTime, reservedDate, totalPrice };
+        const payload = awardOnServer
+          ? {
+              sessionToken,
+              order: {
+                ...base,
+                items: (activeOrder.items || []).map((ci) => ({ id: ci.item.id, name: ci.item.name, quantity: ci.quantity, price: ci.item.price })),
+                itemDiscount: activeOrder.itemDiscount || 0,
+              },
+              awardPoints: true,
+            }
+          : { sessionToken, order: base };
+        callGas('createReservation', payload)
+          .then(() => {
+            if (awardOnServer) void cloud.refresh(); // 付いたポイントを、画面に反映する
+          })
+          .catch((err) => console.warn('Failed to sync reservation:', err));
       }
     }
-  }, [activeOrder, sessionToken, currentUser?.email]);
+  }, [activeOrder, sessionToken, currentUser?.email, cloudOn, cloud.ready, cloud.error]);
 
   // ログアウト・別のアカウントでのログインのときは、そのアカウントの予約に切り替える
   React.useEffect(() => {
@@ -549,17 +602,25 @@ export default function App() {
     } catch (e) {}
 
     if (cancelId && sessionToken) {
-      callGas('cancelReservation', { sessionToken, orderId: cancelId }).catch((err) =>
-        console.warn('Cancel sync failed:', err)
-      );
+      const onCloud = cloudOnRef.current;
+      callGas('cancelReservation', { sessionToken, orderId: cancelId, ...(onCloud ? { awardPoints: true } : {}) })
+        .then(() => {
+          if (onCloud) void cloud.refresh(); // 差し引かれたポイントを、画面に反映する
+        })
+        .catch((err) => console.warn('Cancel sync failed:', err));
     }
   };
+
+  // 画面に出す、ポイント・履歴(クラウドが基準の会員は、クラウドの内容)
+  const shownBalance = cloudOn ? (cloud.account?.balance ?? 0) : nPointBalance;
+  const shownPointHistory = cloudOn ? (cloud.account?.history ?? []) : pointHistory;
+  const shownOrderHistory = cloudOn ? (cloud.account?.orders ?? []) : orderHistory;
 
   return (
     <PhoneContainer>
       {/* 1. Header */}
       <Header
-        nPointBalance={nPointBalance}
+        nPointBalance={shownBalance}
         onOpenNPointModal={() => setIsNPointModalOpen(true)}
         onOpenRouteMapModal={() => setIsRouteMapModalOpen(true)}
         onOpenQRCodeModal={() => setIsQRCodeModalOpen(true)}
@@ -668,6 +729,7 @@ export default function App() {
                 onCancelOrder={handleCancelOrder}
                 isLoggedIn={isLoggedIn}
                 onRequireLogin={handleRequireLogin}
+                onCouponUsed={cloudOn ? cloud.markCouponUsed : undefined}
               />
             ) : (
               <EquipTab
@@ -689,11 +751,16 @@ export default function App() {
         {/* イベント */}
         {activeTab === 'events' && (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-28 md:pb-12">
-            <EventsTab
-              onAddNPoints={(points, title, type) => addEventRewardOnce(points, title, type || 'stamp')}
-              isLoggedIn={isLoggedIn}
-              onRequireLogin={handleRequireLogin}
-            />
+            {cloudOn && !cloud.ready ? (
+              <div className="text-center text-xs text-[#857D99] py-10">読み込み中…</div>
+            ) : (
+              <EventsTab
+                onAddNPoints={(points, title, type) => addEventRewardOnce(points, title, type || 'stamp')}
+                isLoggedIn={isLoggedIn}
+                onRequireLogin={handleRequireLogin}
+                cloudMode={cloudOn}
+              />
+            )}
           </div>
         )}
 
@@ -701,7 +768,7 @@ export default function App() {
         {activeTab === 'settings' && (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-28 md:pb-12">
             <SettingsTab
-              nPointBalance={nPointBalance}
+              nPointBalance={shownBalance}
               registeredStations={registeredStations}
               onUpdateRegisteredStations={setRegisteredStations}
               onOpenNPointModal={() => setIsNPointModalOpen(true)}
@@ -772,10 +839,12 @@ export default function App() {
         isOpen={isMyPageOpen}
         onClose={() => setIsMyPageOpen(false)}
         currentUser={currentUser}
-        balance={nPointBalance}
-        pointHistory={pointHistory}
+        balance={shownBalance}
+        pointHistory={shownPointHistory}
         activeOrder={activeOrder}
-        orderHistory={orderHistory}
+        orderHistory={shownOrderHistory}
+        hideDeleteAccount={demoOn}
+        cloudMode={cloudOn}
         onLogout={handleLogout}
         onOpenNPointModal={() => {
           setIsMyPageOpen(false);
@@ -790,8 +859,8 @@ export default function App() {
       <NPointModal
         isOpen={isNPointModalOpen}
         onClose={() => setIsNPointModalOpen(false)}
-        balance={nPointBalance}
-        pointHistory={pointHistory}
+        balance={shownBalance}
+        pointHistory={shownPointHistory}
         currentUser={currentUser}
         onRedeemCode={redeemPointCode}
       />

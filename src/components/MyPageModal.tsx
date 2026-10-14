@@ -36,6 +36,10 @@ interface MyPageModalProps {
   onLogout: () => void;
   onOpenNPointModal: () => void;
   onOpenQRCodeModal: () => void;
+  // 公開後のデモ会員は、アカウント削除を出さない
+  hideDeleteAccount?: boolean;
+  // 公開後で、ログイン証のある会員(記録はサーバーが持つ)
+  cloudMode?: boolean;
 }
 
 export const MyPageModal: React.FC<MyPageModalProps> = ({
@@ -49,6 +53,8 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
   onLogout,
   onOpenNPointModal,
   onOpenQRCodeModal,
+  hideDeleteAccount = false,
+  cloudMode = false,
 }) => {
   const [activeHistoryTab, setActiveHistoryTab] = useState<'all' | 'ticket' | 'delivery' | 'event' | 'point'>('all');
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -536,6 +542,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
           </div>
 
           {/* 6. Delete Account Section */}
+          {!hideDeleteAccount && (
           <div className="pt-2">
             {!showDeleteConfirm ? (
               <button
@@ -559,7 +566,9 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                       アカウント削除の確認
                     </h4>
                     <p className="text-[11px] text-rose-800 mt-1 leading-relaxed">
-                      この操作は取り消せません。メールアドレスやパスワードなどの会員情報がサーバーから削除されます。この端末に保存されているN-POINT（{balance.toLocaleString()}pt）や予約の記録は端末内に残ります（ブラウザのデータ削除で消えます）。続行するには、確認のためパスワードを入力してください。
+                      {cloudMode
+                        ? 'この操作は取り消せません。メールアドレスやパスワードなどの会員情報に加えて、N-POINT（' + balance.toLocaleString() + 'pt）・ポイントの履歴・使用済みクーポン・ミステリーの記録が、サーバーから削除されます。続行するには、確認のためパスワードを入力してください。'
+                        : 'この操作は取り消せません。メールアドレスやパスワードなどの会員情報がサーバーから削除されます。この端末に保存されているN-POINT（' + balance.toLocaleString() + 'pt）や予約の記録は端末内に残ります（ブラウザのデータ削除で消えます）。続行するには、確認のためパスワードを入力してください。'}
                     </p>
                   </div>
                 </div>
@@ -608,6 +617,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
               </div>
             )}
           </div>
+          )}
         </div>
 
         {/* Modal Footer */}

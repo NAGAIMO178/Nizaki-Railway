@@ -14,12 +14,15 @@ interface EventsTabProps {
   onAddNPoints?: (points: number, title?: string, type?: 'stamp' | 'coupon') => void;
   isLoggedIn?: boolean;
   onRequireLogin?: (reason: string, onLoggedIn?: () => void) => void;
+  // 公開後で、ログイン証のある会員(ミステリーの進行はクラウドが持つので、「白紙に戻す」は出さない)
+  cloudMode?: boolean;
 }
 
 export const EventsTab: React.FC<EventsTabProps> = ({
   onAddNPoints,
   isLoggedIn = false,
   onRequireLogin,
+  cloudMode = false,
 }) => {
   // 選択中のイベントID ('portal': 一覧選択画面, 'mashin': 斬丸と三つの雅石, 'kaitan': 消えた試運転列車)
   const [selectedEventId, setSelectedEventId] = useState<'portal' | 'mashin' | 'kaitan'>(() => {
@@ -310,7 +313,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
                   <ArrowRight className="w-4 h-4" />
                 </button>
 
-                {kaitanProgress.stage > 1 && (
+                {kaitanProgress.stage > 1 && !cloudMode && (
                   <button
                     type="button"
                     onClick={handleResetKaitan}
@@ -388,18 +391,21 @@ export const EventsTab: React.FC<EventsTabProps> = ({
             <ArrowLeft className="w-4 h-4" />
             <span>← イベント選択一覧へ戻る</span>
           </button>
-          <button
-            type="button"
-            onClick={handleResetKaitan}
-            className="text-stone-400 hover:text-red-300 flex items-center gap-1 cursor-pointer"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>白紙に戻す</span>
-          </button>
+          {!cloudMode && (
+            <button
+              type="button"
+              onClick={handleResetKaitan}
+              className="text-stone-400 hover:text-red-300 flex items-center gap-1 cursor-pointer"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>白紙に戻す</span>
+            </button>
+          )}
         </div>
 
         <MysteryTrainEvent 
           onAddNPoints={onAddNPoints}
+          cloudMode={cloudMode}
           onBack={() => handleSelectEvent('portal')}
         />
       </div>
