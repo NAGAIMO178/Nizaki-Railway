@@ -153,7 +153,19 @@ export function useCloudAccount(user: UserProfile | null): CloudApi {
       if (!t) return null;
       try {
         const r = await earnEventReward(t, rewardId);
-        await refresh();
+        // 結果をすぐ画面に反映して(残高と、受け取り済みの印)、全体の同期は、待たずに裏で行う(待つと、通信が2回分かかる)
+        setAccount((prev) => {
+          if (!prev) return prev;
+          const claimed = prev.claimedEvents ?? [];
+          const next = {
+            ...prev,
+            balance: r.added ? r.balance : prev.balance,
+            claimedEvents: claimed.includes(rewardId) ? claimed : [...claimed, rewardId],
+          };
+          if (memberRef.current) writeCache(memberRef.current, next);
+          return next;
+        });
+        void refresh();
         return { added: r.added, points: r.points };
       } catch {
         setError(true);
