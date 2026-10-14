@@ -16,12 +16,25 @@ export interface MysteryProgress {
   cleared: boolean;
 }
 
+// 乗車済みの予約(乗車記録・マイレージの元になる)
+export interface RideRecord {
+  orderId: string;
+  trainName: string;
+  boardingStation: string;
+  destinationStation: string;
+  reservedDate: string;
+  departureTime: string;
+  seatType: string;
+  totalPrice: number;
+}
+
 export interface CloudAccount {
   balance: number;
   history: PointHistoryItem[];
   usedCoupons: string[];
   mystery: MysteryProgress;
   orders: OrderHistoryItem[];
+  rides: RideRecord[];
   migrated: boolean;
 }
 
@@ -154,6 +167,7 @@ interface RawAccount {
   usedCoupons: string[];
   mystery: MysteryProgress;
   orders: OrderHistoryItem[];
+  rides?: RideRecord[];
 }
 
 const HISTORY_TYPE: Record<string, PointHistoryItem['type']> = {
@@ -180,6 +194,7 @@ const toAccount = (raw: RawAccount): CloudAccount => ({
   usedCoupons: raw.usedCoupons,
   mystery: raw.mystery,
   orders: raw.orders,
+  rides: raw.rides ?? [],
 });
 
 interface CloudResponse {

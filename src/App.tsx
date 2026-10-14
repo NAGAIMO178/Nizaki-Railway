@@ -28,6 +28,7 @@ import { useCloudAccount } from './utils/useCloudAccount';
 import { rewardIdFromTitle } from './utils/cloudAccount';
 import { useDelayNotifyMode } from './utils/delayNotifySettings';
 import { useDelayWatcher } from './utils/useDelayWatcher';
+import { computeMileage, Mileage } from './utils/mileage';
 import { TabType, ActiveOrder, EquipItem, PointHistoryItem, UserProfile, OrderHistoryItem } from './types';
 
 // Helper to sanitize email for storage key
@@ -621,6 +622,30 @@ export default function App() {
     }
   };
 
+  // マイレージ(公開後のクラウドの会員だけ): 乗車済みの予約から、累計の営業キロ・ランクを求める
+  const [mileage, setMileage] = React.useState<Mileage | null>(null);
+  const ridesForMileage = cloud.account?.rides;
+  React.useEffect(() => {
+    if (!cloudOn || !ridesForMileage) {
+      setMileage(null);
+      return;
+    }
+    let alive = true;
+    computeMileage(ridesForMileage)
+      .then((m) => {
+        if (alive) setMileage(m);
+      })
+      .catch(() => {
+        if (alive) setMileage(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [cloudOn, ridesForMileage]);
+  // ランクは、マイレージで決まる(公開前や、デモ会員は、これまでの表示のまま)
+  const shownUser: UserProfile | null =
+    currentUser && cloudOn && mileage ? { ...currentUser, rank: mileage.rank as UserProfile['rank'] } : currentUser;
+
   // 画面に出す、ポイント・履歴(クラウドが基準の会員は、クラウドの内容)
   const shownBalance = cloudOn ? (cloud.account?.balance ?? 0) : nPointBalance;
   const shownPointHistory = cloudOn ? (cloud.account?.history ?? []) : pointHistory;
@@ -803,7 +828,7 @@ export default function App() {
               onOpenNPointModal={() => setIsNPointModalOpen(true)}
               activeOrder={activeOrder}
               isLoggedIn={isLoggedIn}
-              currentUser={currentUser}
+              currentUser={shownUser}
               onLoginClick={() => {
                 setLoginReason('神埼IDでログインまたは新規会員登録を行います。');
                 setPendingAction(null);
@@ -867,13 +892,14 @@ export default function App() {
       <MyPageModal
         isOpen={isMyPageOpen}
         onClose={() => setIsMyPageOpen(false)}
-        currentUser={currentUser}
+        currentUser={shownUser}
         balance={shownBalance}
         pointHistory={shownPointHistory}
         activeOrder={activeOrder}
         orderHistory={shownOrderHistory}
         hideDeleteAccount={demoOn}
         cloudMode={cloudOn}
+        mileage={mileage}
         onLogout={handleLogout}
         onOpenNPointModal={() => {
           setIsMyPageOpen(false);
@@ -890,7 +916,7 @@ export default function App() {
         onClose={() => setIsNPointModalOpen(false)}
         balance={shownBalance}
         pointHistory={shownPointHistory}
-        currentUser={currentUser}
+        currentUser={shownUser}
         onRedeemCode={redeemPointCode}
       />
 
