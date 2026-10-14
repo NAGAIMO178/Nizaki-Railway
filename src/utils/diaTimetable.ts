@@ -564,3 +564,98 @@ export const findExpressTrips = (data: LineData, typeName: string, boarding: str
   }
   return trips.sort((a, b) => a.depSec - b.depSec);
 };
+
+// ---------------------------------------------------------------------------
+// 駅の時刻表(路線ごとの駅一覧と、駅ごとの1日の発車時刻)
+// ---------------------------------------------------------------------------
+export interface TimetableLine {
+  code: string;
+  name: string;
+  loop: boolean;
+  stations: string[];
+}
+
+export interface TimetableDeparture {
+  sec: number;
+  typeAbbr: string;
+  typeName: string;
+  paid: boolean;
+  dest: string;
+}
+
+export interface TimetableDirection {
+  code: string;
+  label: string;
+  // この方向で、いちばん多い行き先(表では、これと違う行き先だけ書く)
+  mainDest: string;
+  departures: TimetableDeparture[];
+}
+
+export interface StationTimetable {
+  lineCode: string;
+  lineName: string;
+  stationName: string;
+  directions: TimetableDirection[];
+  types: { name: string; abbr: string; paid: boolean }[];
+}
+
+export const loadTimetableLines = async (): Promise<TimetableLine[]> => {
+  const master = await loadOnce<Master>('master.json');
+  // アプリ内の路線の並び(神埼線・神埼高速線・埼千環状線・土浦線)にそろえる
+  const order = Object.keys(LINE_IDS);
+  return Object.entries(master)
+    .sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]))
+    .map(([code, cfg]) => ({
+      code,
+      name: cfg.name,
+      loop: cfg.loop,
+      stations: cfg.stations.map((s) => s[0]),
+    }));
+};
+
+export const loadStationTimetable = async (lineCode: string, stationIdx: number): Promise<StationTimetable> => {
+  const master = await loadOnce<Master>('master.json');
+  const cfg = master[lineCode];
+  if (!cfg || !cfg.stations[stationIdx]) throw new Error('駅が見つかりません');
+  const [trains, file] = await Promise.all([
+    loadOnce<TrainRow[]>(`${lineCode}_trains.json`),
+    loadOnce<StationFile>(`${lineCode}_st${stationIdx}.json`),
+  ]);
+
+  const directions: TimetableDirection[] = cfg.dirs.map((dirCode, i) => {
+    const label = cfg.loop
+      ? i === 0 ? '外回り' : '内回り'
+      : `${cfg.stations[i === 0 ? cfg.stations.length - 1 : 0][0]}方面`;
+    const departures: TimetableDeparture[] = (file[dirCode] || []).map(([sec, typeIdx, trainIdx]) => {
+      const stops = trains[trainIdx][5];
+      const type = cfg.types[typeIdx];
+      return {
+        sec,
+        typeAbbr: type[1],
+        typeName: type[0],
+        paid: type[2] === 1,
+        dest: cfg.stations[stops[stops.length - 3]][0],
+      };
+    });
+
+    const count = new Map<string, number>();
+    departures.forEach((d) => count.set(d.dest, (count.get(d.dest) || 0) + 1));
+    let mainDest = '';
+    let best = 0;
+    count.forEach((n, dest) => {
+      if (n > best) {
+        best = n;
+        mainDest = dest;
+      }
+    });
+    return { code: dirCode, label, mainDest, departures };
+  });
+
+  return {
+    lineCode,
+    lineName: cfg.name,
+    stationName: cfg.stations[stationIdx][0],
+    directions,
+    types: cfg.types.map((t) => ({ name: t[0], abbr: t[1], paid: t[2] === 1 })),
+  };
+};

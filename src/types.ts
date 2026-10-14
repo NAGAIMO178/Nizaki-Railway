@@ -1,5 +1,5 @@
 // 'settings' は下のタブには出さず、ヘッダーのメニューから開く画面
-export type TabType = 'home' | 'location' | 'reservation' | 'events' | 'settings';
+export type TabType = 'home' | 'location' | 'timetable' | 'reservation' | 'events' | 'settings';
 
 export interface TrainLine {
   id: string;
