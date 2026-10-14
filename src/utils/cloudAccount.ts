@@ -32,6 +32,7 @@ export interface CloudAccount {
   balance: number;
   history: PointHistoryItem[];
   usedCoupons: string[];
+  claimedEvents: string[]; // 受け取り済みの1回限りの報酬('launch2' など)。古い保存データには無い
   mystery: MysteryProgress;
   orders: OrderHistoryItem[];
   rides: RideRecord[];
@@ -165,6 +166,7 @@ interface RawAccount {
   migrated: boolean;
   history: { date: string; title: string; points: number; kind: string }[];
   usedCoupons: string[];
+  claimedEvents?: string[];
   mystery: MysteryProgress;
   orders: OrderHistoryItem[];
   rides?: RideRecord[];
@@ -192,6 +194,7 @@ const toAccount = (raw: RawAccount): CloudAccount => ({
     type: HISTORY_TYPE[h.kind] || 'reservation',
   })),
   usedCoupons: raw.usedCoupons,
+  claimedEvents: raw.claimedEvents ?? [],
   mystery: raw.mystery,
   orders: raw.orders,
   rides: raw.rides ?? [],

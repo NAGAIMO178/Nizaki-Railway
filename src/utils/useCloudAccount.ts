@@ -28,7 +28,8 @@ export interface CloudApi {
   error: boolean;
   account: CloudAccount | null;
   refresh: () => Promise<boolean>;
-  earnEvent: (rewardId: string) => Promise<void>;
+  // 受け取れたか(added)と、付いたポイント。通信できなかったときは null
+  earnEvent: (rewardId: string) => Promise<{ added: boolean; points: number } | null>;
   redeemCode: (code: string) => Promise<{ ok: boolean; message: string }>;
   markCouponUsed: (code: string) => void;
   // ミステリーの進行を、端末の保存先から読んで、サーバーへ送る(幕を解いたあとなどに呼ぶ)
@@ -147,14 +148,16 @@ export function useCloudAccount(user: UserProfile | null): CloudApi {
 
   const earnEvent = useCallback(
     async (rewardId: string) => {
-      if (!(await firstSyncRef.current)) return;
+      if (!(await firstSyncRef.current)) return null;
       const t = tokenRef.current;
-      if (!t) return;
+      if (!t) return null;
       try {
-        await earnEventReward(t, rewardId);
+        const r = await earnEventReward(t, rewardId);
         await refresh();
+        return { added: r.added, points: r.points };
       } catch {
         setError(true);
+        return null;
       }
     },
     [refresh]
