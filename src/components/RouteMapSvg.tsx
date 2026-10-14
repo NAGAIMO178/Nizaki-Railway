@@ -65,7 +65,7 @@ export const NetworkMapSvg: React.FC<{ map: NetworkMap; names: Record<string, st
     ))}
 
     {/* 凡例 */}
-    <g transform={`translate(${map.width - 300}, ${map.height - 190})`}>
+    <g transform={`translate(${map.legend.x}, ${map.legend.y})`}>
       <rect x={-14} y={-26} width={300} height={176} rx={12} fill="#FFFFFF" stroke="#E6E2EE" strokeWidth={2} />
       {map.lines.map((l, i) => (
         <g key={l.code} transform={`translate(0, ${i * 30})`}>
