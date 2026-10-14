@@ -19,7 +19,9 @@ type TrainRow = [string, number, string, string, number, number[]];
 // {方向: [[発車秒, 種別番号, 列車の添字], ...]}
 type StationFile = Record<string, [number, number, number][]>;
 
-const BASE_URL = `${import.meta.env.BASE_URL}data/dia/`;
+// ダイヤは、公開前は data/dia/、公開後(NIZAKI 2.0 のダイヤ改正)は data/dia-2/ を読む。
+// 公開前の本家には、新しいダイヤを見せない。作業用リンク(?preview=1)では、公開後と同じ新しいダイヤを読む。
+const diaBaseUrl = (): string => `${import.meta.env.BASE_URL}data/${isLaunched() ? 'dia-2' : 'dia'}/`;
 
 const LINE_IDS: Record<string, string> = {
   Y: 'kanzaki',
@@ -114,7 +116,7 @@ export const normalizeStationName = normalizeName;
 
 const fetchJson = async <T>(file: string): Promise<T> => {
   // ダイヤを更新したときに、古いデータがブラウザに残らないよう、アプリの版数を付ける
-  const res = await fetch(`${BASE_URL}${file}?v=${__APP_VERSION__}`);
+  const res = await fetch(`${diaBaseUrl()}${file}?v=${__APP_VERSION__}`);
   if (!res.ok) throw new Error(`ダイヤの読み込みに失敗しました (${file}: ${res.status})`);
   return res.json();
 };
@@ -122,11 +124,13 @@ const fetchJson = async <T>(file: string): Promise<T> => {
 // 同じファイルは1度しか読まない(失敗したときは次回やり直す)
 const promiseCache = new Map<string, Promise<unknown>>();
 const loadOnce = <T>(file: string): Promise<T> => {
-  let p = promiseCache.get(file) as Promise<T> | undefined;
+  // どちらのダイヤを読んでいるかも、キャッシュの名前に入れる(公開の時刻をまたいでも、混ざらない)
+  const key = `${diaBaseUrl()}${file}`;
+  let p = promiseCache.get(key) as Promise<T> | undefined;
   if (!p) {
     p = fetchJson<T>(file);
-    promiseCache.set(file, p);
-    p.catch(() => promiseCache.delete(file));
+    promiseCache.set(key, p);
+    p.catch(() => promiseCache.delete(key));
   }
   return p;
 };
