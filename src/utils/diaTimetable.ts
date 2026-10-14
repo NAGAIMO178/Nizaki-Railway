@@ -610,6 +610,21 @@ export interface StationTimetable {
   types: { name: string; abbr: string; paid: boolean }[];
 }
 
+// 路線図用: 路線ごとの名前・駅の並び・営業キロ(master.json だけを読む。列車のデータは読まない)
+export interface MasterSummary {
+  name: string;
+  loop: boolean;
+  stations: [string, number][];
+}
+export const loadMasterSummary = async (): Promise<Record<string, MasterSummary>> => {
+  const master = await loadOnce<Master>('master.json');
+  const out: Record<string, MasterSummary> = {};
+  Object.entries(master).forEach(([code, cfg]) => {
+    out[code] = { name: cfg.name, loop: cfg.loop, stations: cfg.stations.map(([n, km]) => [n, km] as [string, number]) };
+  });
+  return out;
+};
+
 export const loadTimetableLines = async (): Promise<TimetableLine[]> => {
   const master = await loadOnce<Master>('master.json');
   // アプリ内の路線の並び(神埼線・神埼高速線・埼千環状線・土浦線)にそろえる
