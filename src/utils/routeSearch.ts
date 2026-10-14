@@ -194,7 +194,7 @@ const delayFor = (ctx: Ctx, net: Net, line: string, trainIdx: number, station: s
   const data = net.lines[line];
   const train = data.trains[trainIdx];
   const dirIdx = (data.master.dirs.indexOf(train[2]) === 1 ? 1 : 0) as 0 | 1;
-  const r = resolveTrainDelay(line, train[0], ctx.dayStartMs, dirIdx, station, ctx.dayStartMs + schedDep * 1000);
+  const r = resolveTrainDelay(line, train[0], ctx.dayStartMs, dirIdx, station, ctx.dayStartMs + schedDep * 1000, train[4]);
   const value = { min: r.delayMinutes, suspended: r.isSuspended };
   ctx.delayCache.set(key, value);
   return value;
