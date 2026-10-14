@@ -2,6 +2,7 @@
 // データの仕様は public/data/dia/README.md を参照。
 // 時刻は「0時0分0秒からの経過秒」で、86400以上は翌日(24時以降)。
 import { disruptionManager } from './disruptionManager';
+import { isLaunched } from './launch';
 import type { DynamicDeparture } from '../components/MyStationCard';
 
 type MasterLine = {
@@ -39,6 +40,10 @@ const GRACE_SEC = 30;
 // ごく一部の列車に付ける。同じ列車は同じ日なら、どの画面でも同じ遅れになる(模擬)。
 // ---------------------------------------------------------------------------
 const AUTO_DELAY_RATE = 0.02; // 全列車のうち、遅れる割合
+// 朝夕のラッシュ(NIZAKI 2.0。公開後だけ): 始発駅を出る時刻がこの範囲の列車は、遅れる割合を上げる。
+// 範囲は、ダイヤの本数が増える時間帯に合わせた(7〜10時・17〜20時)。1時間に遅れる列車は、2本ほどから5〜6本ほどになる。
+const RUSH_DELAY_RATE = 0.04;
+const RUSH_HOURS: [number, number][] = [[7, 10], [17, 20]];
 const AUTO_DELAY_MAX_MIN = 5; // 遅れの最大(分)
 
 const hash32 = (text: string): number => {
@@ -56,10 +61,16 @@ const hash32 = (text: string): number => {
   return h >>> 0;
 };
 
-const autoDelayMinutes = (lineCode: string, trainNo: string, serviceDayStartMs: number): number => {
+const isRushStart = (trainStartSec: number): boolean => {
+  const h = (((trainStartSec % DAY) + DAY) % DAY) / 3600;
+  return RUSH_HOURS.some(([from, to]) => h >= from && h < to);
+};
+
+const autoDelayMinutes = (lineCode: string, trainNo: string, serviceDayStartMs: number, trainStartSec?: number): number => {
   const d = new Date(serviceDayStartMs);
   const key = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}|${lineCode}|${trainNo}`;
-  if (hash32(`a|${key}`) / 4294967296 >= AUTO_DELAY_RATE) return 0;
+  const rate = trainStartSec !== undefined && isRushStart(trainStartSec) && isLaunched() ? RUSH_DELAY_RATE : AUTO_DELAY_RATE;
+  if (hash32(`a|${key}`) / 4294967296 >= rate) return 0;
   return 1 + Math.floor((hash32(`b|${key}`) / 4294967296) * AUTO_DELAY_MAX_MIN);
 };
 
@@ -75,12 +86,13 @@ const resolveDelay = (
   serviceDayStartMs: number,
   seedTimestamp: number,
   direction: 1 | 2,
-  position: { stationName: string; isBetween?: boolean }
+  position: { stationName: string; isBetween?: boolean },
+  trainStartSec?: number // その列車が始発駅を出る時刻(0時からの秒)。ラッシュの判定に使う
 ): ResolvedDelay => {
   const eff = disruptionManager.getEffectiveDelayForTrain(disruptionLineId, seedTimestamp, direction, position);
   if (eff.isSuspended) return { delayMinutes: 0, isSuspended: true };
   if (eff.delayMinutes > 0) return { delayMinutes: eff.delayMinutes, isSuspended: false };
-  return { delayMinutes: autoDelayMinutes(lineCode, trainNo, serviceDayStartMs), isSuspended: false };
+  return { delayMinutes: autoDelayMinutes(lineCode, trainNo, serviceDayStartMs, trainStartSec), isSuspended: false };
 };
 
 // 経路検索用: ある列車が、その駅を出るときの遅れ(運行指令があれば優先。無ければ、日付と列車番号で決まる自動の遅れ)
@@ -90,9 +102,10 @@ export const resolveTrainDelay = (
   serviceDayStartMs: number,
   dirIdx: 0 | 1,
   stationName: string,
-  seedTimestamp: number
+  seedTimestamp: number,
+  trainStartSec?: number
 ): ResolvedDelay =>
-  resolveDelay(LINE_IDS[lineCode] || 'kanzaki', lineCode, trainNo, serviceDayStartMs, seedTimestamp, dirIdx === 0 ? 1 : 2, { stationName });
+  resolveDelay(LINE_IDS[lineCode] || 'kanzaki', lineCode, trainNo, serviceDayStartMs, seedTimestamp, dirIdx === 0 ? 1 : 2, { stationName }, trainStartSec);
 
 const normalizeName = (name: string): string => name.replace(/（.*?）/g, '').trim();
 
@@ -236,7 +249,7 @@ export const computeBoard = (data: BoardData, platform: 1 | 2, nowMs: number, li
     const depTs = base + c.eff * 1000;
     const eff = resolveDelay(LINE_IDS[c.line.code] || 'kanzaki', c.line.code, train[0], c.dayMs, depTs, platform, {
       stationName: data.stationName,
-    });
+    }, train[4]);
     const hh = String(Math.floor(c.eff / 3600) % 24).padStart(2, '0');
     const mm = String(Math.floor((c.eff % 3600) / 60)).padStart(2, '0');
     return {
@@ -429,7 +442,7 @@ export const computeLiveTrains = (data: LineData, lineId: string, direction: 1 |
     const eff = resolveDelay(lineId, data.code, t[0], serviceDayMs, base + t0 * 1000, direction, {
       stationName,
       isBetween,
-    });
+    }, t0);
     if (eff.isSuspended) continue;
     const delay = eff.delayMinutes;
 
