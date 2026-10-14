@@ -83,6 +83,17 @@ const resolveDelay = (
   return { delayMinutes: autoDelayMinutes(lineCode, trainNo, serviceDayStartMs), isSuspended: false };
 };
 
+// 経路検索用: ある列車が、その駅を出るときの遅れ(運行指令があれば優先。無ければ、日付と列車番号で決まる自動の遅れ)
+export const resolveTrainDelay = (
+  lineCode: string,
+  trainNo: string,
+  serviceDayStartMs: number,
+  dirIdx: 0 | 1,
+  stationName: string,
+  seedTimestamp: number
+): ResolvedDelay =>
+  resolveDelay(LINE_IDS[lineCode] || 'kanzaki', lineCode, trainNo, serviceDayStartMs, seedTimestamp, dirIdx === 0 ? 1 : 2, { stationName });
+
 const normalizeName = (name: string): string => name.replace(/（.*?）/g, '').trim();
 
 // 駅名の読み(カッコ書き)を除いた形。画面側の駅名との照合に使う

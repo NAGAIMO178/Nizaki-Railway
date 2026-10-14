@@ -1,8 +1,18 @@
-import React, { useEffect, useState } from 'react';
-import { ArrowUpDown, Search, RefreshCw } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { ArrowUpDown, Search, RefreshCw, SlidersHorizontal, ChevronRight } from 'lucide-react';
 import { REGISTERABLE_LINES } from './MyStationRegisterCard';
+import { RouteFilterSheet } from './RouteFilterSheet';
+import { RouteDetail } from './RouteDetail';
 import { formatDiaTime } from '../utils/diaTimetable';
 import { loadRouteStations, searchRoutes, RouteResult } from '../utils/routeSearch';
+import {
+  RouteOptions,
+  loadRouteOptions,
+  saveRouteOptions,
+  countChangedOptions,
+  loadLastQuery,
+  saveLastQuery,
+} from '../utils/routeOptions';
 
 const DAY = 86400;
 
@@ -21,26 +31,54 @@ const toServiceSec = (text: string): number | null => {
   return sec < 4 * 3600 ? sec + DAY : sec;
 };
 
+const dayLabelOf = (d: Date = new Date()): string => `${d.getMonth() + 1}月${d.getDate()}日(${'日月火水木金土'[d.getDay()]})`;
+
 const timeLabel = (sec: number): string => formatDiaTime(sec);
+
+// 時刻表タブから別のタブへ移って戻ったときに、前回の検索を続きから見られるよう、アプリを開いているあいだは覚えておく
+interface Session {
+  from: string;
+  to: string;
+  timeText: string;
+  options: RouteOptions;
+  results: RouteResult[];
+  searchedAt: string;
+  dayLabel: string;
+}
+let lastSession: Session | null = null;
 
 export const RouteSearch: React.FC = () => {
   const [stations, setStations] = useState<string[] | null>(null);
   const [stationsError, setStationsError] = useState(false);
   const [retry, setRetry] = useState(0);
-  const [from, setFrom] = useState('東京');
-  const [to, setTo] = useState('大宮');
-  const [timeText, setTimeText] = useState(nowText);
-  const [results, setResults] = useState<RouteResult[] | null>(null);
+
+  const restored = lastSession;
+  const [from, setFrom] = useState(() => restored?.from ?? loadLastQuery()?.from ?? '東京');
+  const [to, setTo] = useState(() => restored?.to ?? loadLastQuery()?.to ?? '大宮');
+  const [timeText, setTimeText] = useState(() => restored?.timeText ?? nowText());
+  const [options, setOptions] = useState<RouteOptions>(() => loadRouteOptions());
+  const [results, setResults] = useState<RouteResult[] | null>(restored?.results ?? null);
+  const [searchedAt, setSearchedAt] = useState(restored?.searchedAt ?? '');
+  const [dayLabel, setDayLabel] = useState(restored?.dayLabel ?? '');
+  const [usedRealtime, setUsedRealtime] = useState(restored?.options.realtime ?? true);
+  const [resultKey, setResultKey] = useState(0);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [detailIdx, setDetailIdx] = useState<number | null>(null);
+  const optionsChanged = useRef(false);
 
   useEffect(() => {
     let alive = true;
     setStationsError(false);
     loadRouteStations()
       .then((s) => {
-        if (alive) setStations(s);
+        if (!alive) return;
+        setStations(s);
+        // 駅の名前が変わっていたときは、覚えていた駅を使わない
+        setFrom((v) => (s.includes(v) ? v : '東京'));
+        setTo((v) => (s.includes(v) ? v : '大宮'));
       })
       .catch(() => {
         if (alive) setStationsError(true);
@@ -50,22 +88,32 @@ export const RouteSearch: React.FC = () => {
     };
   }, [retry]);
 
-  const handleSearch = async () => {
+  const runSearch = async (fromV: string, toV: string, timeV: string, optsV: RouteOptions) => {
     setMessage(null);
     setSearchError(false);
-    if (from === to) {
+    if (fromV === toV) {
       setResults(null);
       setMessage('出発駅と到着駅が同じです。');
       return;
     }
-    const sec = toServiceSec(timeText);
+    const sec = toServiceSec(timeV);
     if (sec === null) {
       setMessage('出発の時刻を入れてください。');
       return;
     }
     setSearching(true);
     try {
-      setResults(await searchRoutes(from, to, sec));
+      const found = await searchRoutes(fromV, toV, sec, optsV);
+      const at = nowText();
+      const day = dayLabelOf();
+      setResults(found);
+      setSearchedAt(at);
+      setDayLabel(day);
+      setUsedRealtime(optsV.realtime);
+      setResultKey((n) => n + 1); // 結果が前回と同じでも、検索したことが見えるように、表示をやり直す
+      setDetailIdx(null);
+      saveLastQuery(fromV, toV);
+      lastSession = { from: fromV, to: toV, timeText: timeV, options: optsV, results: found, searchedAt: at, dayLabel: day };
     } catch {
       setResults(null);
       setSearchError(true);
@@ -74,11 +122,29 @@ export const RouteSearch: React.FC = () => {
     }
   };
 
+  const handleSearch = () => runSearch(from, to, timeText, options);
+
+  const handleOptionsChange = (next: RouteOptions) => {
+    setOptions(next);
+    saveRouteOptions(next);
+    optionsChanged.current = true;
+  };
+
+  const closeSheet = () => {
+    setSheetOpen(false);
+    // 条件を変えたときは、結果が出ていれば、そのまま探し直す
+    if (optionsChanged.current) {
+      optionsChanged.current = false;
+      if (results !== null) runSearch(from, to, timeText, options);
+    }
+  };
+
   const swap = () => {
     setFrom(to);
     setTo(from);
     setResults(null);
     setMessage(null);
+    setDetailIdx(null);
   };
 
   if (stationsError) {
@@ -99,8 +165,23 @@ export const RouteSearch: React.FC = () => {
 
   if (!stations) return <div className="text-center text-xs text-[#857D99] py-10">読み込み中…</div>;
 
-  const selectClass =
-    'flex-1 min-w-0 bg-transparent text-sm font-bold text-[#221C35] outline-none py-2 cursor-pointer';
+  // 詳細
+  if (results && detailIdx !== null && results[detailIdx]) {
+    return (
+      <RouteDetail
+        result={results[detailIdx]}
+        from={lastSession?.from ?? from}
+        to={lastSession?.to ?? to}
+        dayLabel={dayLabel}
+        searchedAt={searchedAt}
+        realtime={usedRealtime}
+        onBack={() => setDetailIdx(null)}
+      />
+    );
+  }
+
+  const selectClass = 'flex-1 min-w-0 bg-transparent text-sm font-bold text-[#221C35] outline-none py-2 cursor-pointer';
+  const changed = countChangedOptions(options);
 
   return (
     <div className="space-y-3">
@@ -156,15 +237,31 @@ export const RouteSearch: React.FC = () => {
           </button>
         </div>
 
-        <button
-          type="button"
-          onClick={handleSearch}
-          disabled={searching}
-          className="w-full py-3 rounded-xl bg-[#5B21B6] hover:bg-[#4C1D95] disabled:opacity-60 text-white font-bold text-sm flex items-center justify-center gap-2 cursor-pointer"
-        >
-          <Search className="w-4 h-4" />
-          <span>{searching ? '探しています…' : '検索'}</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleSearch}
+            disabled={searching}
+            className="flex-1 py-3 rounded-xl bg-[#5B21B6] hover:bg-[#4C1D95] disabled:opacity-60 text-white font-bold text-sm flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <Search className="w-4 h-4" />
+            <span>{searching ? '探しています…' : '検索'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setSheetOpen(true)}
+            className="relative shrink-0 py-3 px-3.5 rounded-xl bg-[#F4F3F8] hover:bg-[#EFE8FA] text-[#5B21B6] font-bold text-sm flex items-center gap-1.5 cursor-pointer"
+            aria-label="絞り込み"
+          >
+            <SlidersHorizontal className="w-4 h-4" />
+            <span>絞り込み</span>
+            {changed > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-[#5B21B6] text-white text-[9px] font-black flex items-center justify-center">
+                {changed}
+              </span>
+            )}
+          </button>
+        </div>
       </div>
 
       {message && <div className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">{message}</div>}
@@ -174,74 +271,93 @@ export const RouteSearch: React.FC = () => {
         </div>
       )}
 
-      {results && results.length === 0 && (
-        <div className="bg-white border border-[#E6E2EE] rounded-2xl p-5 text-center text-xs text-[#6B6380]">
-          この時刻以降に、乗れる列車が見つかりませんでした。
-          <br />
-          （出発の時刻を早めてお試しください）
-        </div>
-      )}
-
-      {results &&
-        results.map((r, i) => (
-          <div key={`${r.depSec}-${r.arrSec}`} className="bg-white border border-[#E6E2EE] rounded-2xl shadow-xs overflow-hidden">
-            <div className="px-3.5 pt-3 pb-2 flex items-end justify-between gap-2">
-              <div>
-                <div className="text-[10px] font-bold text-[#857D99]">候補 {i + 1}</div>
-                <div className="text-2xl font-black text-[#221C35] font-mono leading-tight">
-                  {timeLabel(r.depSec)} <span className="text-[#B4ADC4]">→</span> {timeLabel(r.arrSec)}
-                  {r.arrSec >= DAY && <span className="ml-1 text-[10px] font-bold text-[#857D99]">翌</span>}
-                </div>
-              </div>
-              <div className="text-right shrink-0">
-                <div className="text-sm font-black text-[#5B21B6]">{r.minutes}分</div>
-                <div className="text-[10px] text-[#857D99]">乗換 {r.transfers}回</div>
-              </div>
-            </div>
-
-            <div className="px-3.5 pb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[#6B6380]">
-              <span>
-                運賃 <span className="font-bold text-[#221C35]">¥{r.fare.toLocaleString()}</span>
+      {results && (
+        <div key={resultKey} className="space-y-3 animate-fadeIn">
+          <div className="flex items-center justify-between gap-2 px-1 text-[11px] text-[#6B6380]">
+            <span className="truncate">
+              <span className="font-bold text-[#221C35]">
+                {lastSession?.from} → {lastSession?.to}
               </span>
-              <span>営業キロ {r.km.toFixed(1)}km</span>
-              {r.hasPaid && <span className="font-bold text-amber-600">特急券が別に必要</span>}
-            </div>
+              　{lastSession?.timeText}以降に出発
+            </span>
+            <span className="shrink-0 text-right">
+              {usedRealtime && <span className="font-bold text-emerald-700 mr-1.5">リアルタイム</span>}
+              検索 {searchedAt}
+            </span>
+          </div>
 
-            <div className="border-t border-[#EFEDF5] px-3.5 py-2.5 space-y-0">
-              {r.legs.map((leg, k) => (
-                <React.Fragment key={`${leg.trainNo}-${k}`}>
-                  {k > 0 && (
-                    <div className="text-[10px] text-[#857D99] py-1.5 pl-3 border-l-2 border-dotted border-[#D8D3E6] ml-1">
-                      {leg.from}で乗換（{Math.round((leg.depSec - r.legs[k - 1].arrSec) / 60)}分）
+          {results.length === 0 && (
+            <div className="bg-white border border-[#E6E2EE] rounded-2xl p-5 text-center text-xs text-[#6B6380]">
+              この条件で、乗れる列車が見つかりませんでした。
+              <br />
+              （出発の時刻を早めるか、絞り込みを変えてお試しください）
+            </div>
+          )}
+
+          {results.map((r, i) => {
+            const first = r.legs[0];
+            return (
+              <button
+                type="button"
+                key={`${r.depSec}-${r.arrSec}`}
+                onClick={() => setDetailIdx(i)}
+                className="w-full text-left bg-white border border-[#E6E2EE] rounded-2xl shadow-xs overflow-hidden hover:border-[#C4B5FD] active:bg-[#F9F8FD] transition-colors cursor-pointer"
+              >
+                <div className="px-3.5 pt-3 pb-2 flex items-end justify-between gap-2">
+                  <div>
+                    <div className="text-[10px] font-bold text-[#857D99]">
+                      候補 {i + 1}
+                      {r.delayed && <span className="ml-1.5 text-rose-700">遅れあり</span>}
                     </div>
-                  )}
-                  <div className="flex gap-2.5">
-                    <div className="w-1.5 rounded-full shrink-0" style={{ backgroundColor: lineColor(leg.lineCode) }} />
-                    <div className="min-w-0 flex-1 py-0.5">
-                      <div className="text-[11px] font-bold text-[#221C35]">
-                        {leg.lineName}
-                        <span className={`ml-1.5 ${leg.paid ? 'text-amber-600' : 'text-[#857D99]'}`}>
-                          {leg.typeAbbr} {leg.destLabel}
-                        </span>
-                      </div>
-                      <div className="text-xs text-[#221C35] mt-0.5">
-                        <span className="font-bold">{leg.from}</span> <span className="font-mono">{timeLabel(leg.depSec)}</span>
-                        <span className="text-[#B4ADC4] mx-1">→</span>
-                        <span className="font-bold">{leg.to}</span> <span className="font-mono">{timeLabel(leg.arrSec)}</span>
-                      </div>
+                    <div className={`text-2xl font-black font-mono leading-tight ${r.delayed ? 'text-rose-600' : 'text-[#221C35]'}`}>
+                      {timeLabel(r.depSec)} <span className="text-[#B4ADC4]">→</span> {timeLabel(r.arrSec)}
+                      {r.arrSec >= DAY && <span className="ml-1 text-[10px] font-bold text-[#857D99]">翌</span>}
                     </div>
                   </div>
-                </React.Fragment>
-              ))}
-            </div>
-          </div>
-        ))}
+                  <div className="text-right shrink-0">
+                    <div className="text-sm font-black text-[#5B21B6]">{r.minutes}分</div>
+                    <div className="text-[10px] text-[#857D99]">乗換 {r.transfers}回</div>
+                  </div>
+                </div>
 
-      {results && results.length > 0 && (
-        <div className="text-[10px] text-[#857D99] leading-relaxed px-1">
-          乗換は、4分以上で乗り継げる列車を探しています。運賃は、全区間の営業キロを合わせて計算した普通運賃です。表示は予定の時刻で、遅れは反映されません。
+                <div className="px-3.5 pb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[#6B6380]">
+                  <span>
+                    運賃 <span className="font-bold text-[#221C35]">¥{r.fare.toLocaleString()}</span>
+                  </span>
+                  <span>営業キロ {r.km.toFixed(1)}km</span>
+                  {r.hasPaid && <span className="font-bold text-amber-600">特急券が別に必要</span>}
+                </div>
+
+                <div className="border-t border-[#EFEDF5] px-3.5 py-2.5 flex items-center gap-2">
+                  <div className="flex-1 min-w-0 space-y-1">
+                    {r.legs.map((leg, k) => (
+                      <div key={`${leg.trainNo}-${k}`} className="flex items-center gap-2 text-[11px] text-[#221C35]">
+                        <span className="w-1.5 h-4 rounded-full shrink-0" style={{ backgroundColor: lineColor(leg.lineCode) }} />
+                        <span className="font-bold truncate">{leg.lineName}</span>
+                        <span className={`shrink-0 ${leg.paid ? 'text-amber-600 font-bold' : 'text-[#857D99]'}`}>{leg.typeAbbr}</span>
+                        <span className="text-[#857D99] truncate">
+                          {leg.from} {timeLabel(leg.depSec)} → {leg.to} {timeLabel(leg.arrSec)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-[#B4ADC4] shrink-0" />
+                </div>
+                <span className="sr-only">{first.from}から詳細を見る</span>
+              </button>
+            );
+          })}
+
+          {results.length > 0 && (
+            <div className="text-[10px] text-[#857D99] leading-relaxed px-1">
+              タップすると、詳細(停車駅・運賃の内訳)が見られます。乗換は{options.relaxedTransfer ? '8' : '4'}分以上で乗り継げる列車を探しています。運賃は、全区間の営業キロを合わせて計算した普通運賃です。
+              {usedRealtime ? '遅れは、検索した時点のものです。' : '表示は予定の時刻で、遅れは反映されていません。'}
+            </div>
+          )}
         </div>
       )}
+
+      <RouteFilterSheet isOpen={sheetOpen} options={options} onChange={handleOptionsChange} onClose={closeSheet} />
     </div>
   );
 };
