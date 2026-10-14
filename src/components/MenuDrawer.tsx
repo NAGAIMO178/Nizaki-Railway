@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { X, Settings, User, QrCode, Map, LogIn, ChevronRight } from 'lucide-react';
+import { X, Settings, User, QrCode, Map, LogIn, ChevronRight, Sparkles } from 'lucide-react';
 import { UserProfile } from '../types';
 
 interface MenuDrawerProps {
@@ -12,6 +12,7 @@ interface MenuDrawerProps {
   onOpenNPoint: () => void;
   onOpenRouteMap: () => void;
   onOpenLogin: () => void;
+  onOpenGuide?: () => void; // NIZAKI 2.0 のご案内を、もう一度見る(公開後だけ渡される)
 }
 
 export const MenuDrawer: React.FC<MenuDrawerProps> = ({
@@ -24,6 +25,7 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
   onOpenNPoint,
   onOpenRouteMap,
   onOpenLogin,
+  onOpenGuide,
 }) => {
   useEffect(() => {
     if (!isOpen) return;
@@ -93,6 +95,7 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
 
         <SectionTitle>案内</SectionTitle>
         <Row icon={<Map className="w-5 h-5" />} label="路線図" onClick={onOpenRouteMap} />
+        {onOpenGuide && <Row icon={<Sparkles className="w-5 h-5" />} label="NIZAKI 2.0 のご案内" note="新しい機能を、もう一度見る" onClick={onOpenGuide} />}
 
         <SectionTitle>設定</SectionTitle>
         <Row icon={<Settings className="w-5 h-5" />} label="設定" note="通知・マイ駅・規約" onClick={onOpenSettings} />
