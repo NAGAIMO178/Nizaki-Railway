@@ -9,6 +9,8 @@ const LINE_CODES = ['Y', 'NI', 'SC', 'TC'];
 export const TRANSFER_SEC = 4 * 60;
 export const RELAXED_TRANSFER_SEC = 8 * 60;
 const MAX_LEGS = 5;
+// 経由駅を指定したときは、回り道をすることがあるので、乗る列車の本数の上限を増やす
+const MAX_LEGS_WITH_VIAS = 7;
 // 乗換を1回増やすなら、これだけ(秒)早く着かないと選ばない(わずかな差のために、乗換を増やさないため)
 const TRANSFER_PENALTY_SEC = 8 * 60;
 // 駅で待ってもよい最大の時間。これより先の列車は、その駅からの乗車候補にしない
@@ -32,6 +34,8 @@ interface Net {
   // "路線|駅番号" → その駅を発車する列車(発車の早い順)
   deps: Map<string, Dep[]>;
   stationNames: string[];
+  // 停車駅と次の停車駅のあいだにある(通過する)駅の番号の、計算ずみの値
+  between: Map<string, number[]>;
 }
 
 let netPromise: Promise<Net> | null = null;
@@ -65,7 +69,7 @@ const buildNet = async (): Promise<Net> => {
     });
   });
   deps.forEach((list) => list.sort((a, b) => a.dep - b.dep));
-  return { lines, stationLines, deps, stationNames };
+  return { lines, stationLines, deps, stationNames, between: new Map() };
 };
 
 const getNet = (): Promise<Net> => {
@@ -106,6 +110,8 @@ export interface RouteLeg {
   km: number;
   // 乗ってから降りるまでに停まる駅(最後が降りる駅)
   stops: RouteStop[];
+  // この列車で通った、経由駅(停車したか、通過したか)
+  passedVias: { name: string; stopped: boolean }[];
 }
 
 export interface RouteResult {
@@ -131,6 +137,9 @@ interface Pred {
 }
 interface Rec {
   arr: number;
+  station: string;
+  // 通った経由駅の記録(経由駅の番号ごとのビット)
+  mask: number;
   pred?: Pred;
 }
 
@@ -141,7 +150,29 @@ interface Ctx {
   realtime: boolean;
   dayStartMs: number;
   delayCache: Map<string, { min: number; suspended: boolean }>;
+  // 経由駅(駅名の一覧)と、「路線|駅番号」ごとの、その駅のビット
+  vias: string[];
+  viaBits: Map<string, number>;
 }
+
+// 列車が、駅番号 s1 の次に、駅番号 s2 に停まるとき、そのあいだで通過する駅の番号(走る向きの順)
+const passedBetween = (net: Net, line: string, dirIdx: 0 | 1, s1: number, s2: number): number[] => {
+  const key = `${line}|${dirIdx}|${s1}|${s2}`;
+  const hit = net.between.get(key);
+  if (hit) return hit;
+  const master = net.lines[line].master;
+  const n = master.stations.length;
+  const step = dirIdx === 0 ? 1 : -1;
+  const out: number[] = [];
+  if (master.loop) {
+    // 環状線は、最後の駅の次が最初の駅(東京)にもどる
+    for (let i = (s1 + step + n) % n; i !== s2 && out.length < n; i = (i + step + n) % n) out.push(i);
+  } else {
+    for (let i = s1 + step; i !== s2 && i >= 0 && i < n; i += step) out.push(i);
+  }
+  net.between.set(key, out);
+  return out;
+};
 
 const lowerBound = (list: Dep[], sec: number): number => {
   let lo = 0;
@@ -170,16 +201,21 @@ const delayFor = (ctx: Ctx, net: Net, line: string, trainIdx: number, station: s
 };
 
 // 1回ぶんの探索: readySec(0時からの秒数。24時以降は86400以上)以降に出発駅を出る、いちばん早く着く乗り方
+// 経由駅があるときは、「どの駅に・どの経由駅を通った状態で」着けるかを区別して探し、すべての経由駅を通って到着駅に着くものだけを答えにする
 const searchOnce = (net: Net, ctx: Ctx, from: string, to: string, readySec: number): RouteResult | null => {
-  const best = new Map<string, Rec>([[from, { arr: readySec }]]);
-  let marked = new Map<string, Rec>([[from, { arr: readySec }]]);
+  const fullMask = (1 << ctx.vias.length) - 1;
+  const keyOf = (station: string, mask: number) => `${station}#${mask}`;
+  const startRec: Rec = { arr: readySec, station: from, mask: 0 };
+  const best = new Map<string, Rec>([[keyOf(from, 0), startRec]]);
+  let marked = new Map<string, Rec>([[keyOf(from, 0), startRec]]);
   // 本数(乗った列車の数)ごとの、到着駅に着く最良の乗り方
   let goal: Rec | undefined;
   let goalScore = Infinity;
 
   for (let round = 1; round <= ctx.maxLegs && marked.size > 0; round++) {
     const improved = new Map<string, Rec>();
-    marked.forEach((rec, station) => {
+    marked.forEach((rec) => {
+      const station = rec.station;
       const ready = rec.arr + (round > 1 ? ctx.transferSec : 0);
       (net.stationLines.get(station) || []).forEach(({ line, idx }) => {
         const list = net.deps.get(`${line}|${idx}`) || [];
@@ -198,21 +234,34 @@ const searchOnce = (net: Net, ctx: Ctx, from: string, to: string, readySec: numb
           taken++;
 
           const stops = train[5];
+          const dirIdx = (data.master.dirs.indexOf(train[2]) === 1 ? 1 : 0) as 0 | 1;
+          let mask = rec.mask;
           for (let j = pos + 3; j < stops.length; j += 3) {
+            if (ctx.vias.length > 0) {
+              // 通過する駅と、停まる駅で、経由駅を通ったかを調べる
+              for (const passed of passedBetween(net, line, dirIdx, stops[j - 3], stops[j])) mask |= ctx.viaBits.get(`${line}|${passed}`) ?? 0;
+              mask |= ctx.viaBits.get(`${line}|${stops[j]}`) ?? 0;
+            }
             const name = normalizeStationName(data.master.stations[stops[j]][0]);
             const arr = train[4] + (stops[j + 1] !== -1 ? stops[j + 1] : stops[j + 2]) + delaySec;
-            const known = Math.min(best.get(name)?.arr ?? Infinity, improved.get(name)?.arr ?? Infinity);
+            const key = keyOf(name, mask);
+            const known = Math.min(best.get(key)?.arr ?? Infinity, improved.get(key)?.arr ?? Infinity);
             if (arr < known) {
-              improved.set(name, { arr, pred: { prev: rec, line, trainIdx, boardPos: pos, alightPos: j, boardStation: station, delaySec } });
+              improved.set(key, {
+                arr,
+                station: name,
+                mask,
+                pred: { prev: rec, line, trainIdx, boardPos: pos, alightPos: j, boardStation: station, delaySec },
+              });
             }
           }
         }
       });
     });
-    improved.forEach((rec, name) => best.set(name, rec));
+    improved.forEach((rec, key) => best.set(key, rec));
     marked = improved;
 
-    const reached = improved.get(to);
+    const reached = improved.get(keyOf(to, fullMask));
     if (reached) {
       const score = reached.arr + (round - 1) * TRANSFER_PENALTY_SEC;
       if (score < goalScore) {
@@ -236,7 +285,16 @@ const searchOnce = (net: Net, ctx: Ctx, from: string, to: string, readySec: numb
     const dirIdx = (master.dirs.indexOf(train[2]) === 1 ? 1 : 0) as 0 | 1;
     const arrAt = (k: number) => train[4] + (stops[k + 1] !== -1 ? stops[k + 1] : stops[k + 2]);
     const legStops: RouteStop[] = [];
+    const passedVias: { name: string; stopped: boolean }[] = [];
+    const noteVia = (stationIdx: number, stopped: boolean) => {
+      if (ctx.viaBits.has(`${p.line}|${stationIdx}`)) {
+        const name = normalizeStationName(master.stations[stationIdx][0]);
+        if (!passedVias.some((v) => v.name === name)) passedVias.push({ name, stopped });
+      }
+    };
     for (let k = p.boardPos + 3; k <= p.alightPos; k += 3) {
+      if (ctx.vias.length > 0) passedBetween(net, p.line, dirIdx, stops[k - 3], stops[k]).forEach((i) => noteVia(i, false));
+      noteVia(stops[k], true);
       legStops.push({
         name: normalizeStationName(master.stations[stops[k]][0]),
         arrSec: arrAt(k) + p.delaySec,
@@ -263,6 +321,7 @@ const searchOnce = (net: Net, ctx: Ctx, from: string, to: string, readySec: numb
       delayMin: Math.round(p.delaySec / 60),
       km: tripDistance(master, stops[p.boardPos], stops[p.alightPos], dirIdx),
       stops: legStops,
+      passedVias,
     };
   });
 
@@ -293,20 +352,32 @@ export const searchRoutes = async (
   to: string,
   readySec: number,
   options: RouteOptions = DEFAULT_ROUTE_OPTIONS,
-  count = 3
+  count = 3,
+  viaStations: string[] = []
 ): Promise<RouteResult[]> => {
   const net = await getNet();
   const a = normalizeStationName(from);
   const b = normalizeStationName(to);
   if (!net.stationLines.has(a) || !net.stationLines.has(b) || a === b) return [];
 
+  // 経由駅: 駅の一覧にある駅だけ。出発駅・到着駅と同じ駅、重複は、指定されなかったものとして扱う
+  const vias: string[] = [];
+  viaStations.forEach((v) => {
+    const name = normalizeStationName(v);
+    if (net.stationLines.has(name) && name !== a && name !== b && !vias.includes(name)) vias.push(name);
+  });
+  const viaBits = new Map<string, number>();
+  vias.forEach((name, i) => (net.stationLines.get(name) || []).forEach(({ line, idx }) => viaBits.set(`${line}|${idx}`, 1 << i)));
+
   const ctx: Ctx = {
     transferSec: options.relaxedTransfer ? RELAXED_TRANSFER_SEC : TRANSFER_SEC,
-    maxLegs: Math.min(MAX_LEGS, options.maxTransfers + 1),
+    maxLegs: Math.min(vias.length > 0 ? MAX_LEGS_WITH_VIAS : MAX_LEGS, options.maxTransfers + 1),
     allowPaid: options.allowPaid,
     realtime: options.realtime,
     dayStartMs: serviceDayStartMs(readySec),
     delayCache: new Map(),
+    vias,
+    viaBits,
   };
 
   const results: RouteResult[] = [];

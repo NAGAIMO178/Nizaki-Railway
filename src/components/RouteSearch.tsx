@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowUpDown, Search, RefreshCw, SlidersHorizontal, ChevronRight } from 'lucide-react';
+import { ArrowUpDown, Search, RefreshCw, SlidersHorizontal, ChevronRight, Plus, X } from 'lucide-react';
 import { REGISTERABLE_LINES } from './MyStationRegisterCard';
 import { RouteFilterSheet } from './RouteFilterSheet';
 import { RouteDetail } from './RouteDetail';
@@ -12,6 +12,7 @@ import {
   countChangedOptions,
   loadLastQuery,
   saveLastQuery,
+  MAX_VIAS,
 } from '../utils/routeOptions';
 
 const DAY = 86400;
@@ -39,6 +40,7 @@ const timeLabel = (sec: number): string => formatDiaTime(sec);
 interface Session {
   from: string;
   to: string;
+  vias: string[];
   timeText: string;
   options: RouteOptions;
   results: RouteResult[];
@@ -55,6 +57,8 @@ export const RouteSearch: React.FC = () => {
   const restored = lastSession;
   const [from, setFrom] = useState(() => restored?.from ?? loadLastQuery()?.from ?? '東京');
   const [to, setTo] = useState(() => restored?.to ?? loadLastQuery()?.to ?? '大宮');
+  // 経由駅(通ってほしい駅)。空の行は、まだ駅を選んでいないもの
+  const [vias, setVias] = useState<string[]>(() => restored?.vias ?? loadLastQuery()?.vias ?? []);
   const [timeText, setTimeText] = useState(() => restored?.timeText ?? nowText());
   const [options, setOptions] = useState<RouteOptions>(() => loadRouteOptions());
   const [results, setResults] = useState<RouteResult[] | null>(restored?.results ?? null);
@@ -79,6 +83,7 @@ export const RouteSearch: React.FC = () => {
         // 駅の名前が変わっていたときは、覚えていた駅を使わない
         setFrom((v) => (s.includes(v) ? v : '東京'));
         setTo((v) => (s.includes(v) ? v : '大宮'));
+        setVias((vs) => vs.filter((v) => v === '' || s.includes(v)));
       })
       .catch(() => {
         if (alive) setStationsError(true);
@@ -88,12 +93,23 @@ export const RouteSearch: React.FC = () => {
     };
   }, [retry]);
 
-  const runSearch = async (fromV: string, toV: string, timeV: string, optsV: RouteOptions) => {
+  const runSearch = async (fromV: string, toV: string, timeV: string, optsV: RouteOptions, viasV: string[]) => {
     setMessage(null);
     setSearchError(false);
     if (fromV === toV) {
       setResults(null);
       setMessage('出発駅と到着駅が同じです。');
+      return;
+    }
+    const chosen = viasV.filter((v) => v !== '');
+    if (chosen.some((v) => v === fromV || v === toV)) {
+      setResults(null);
+      setMessage('経由駅に、出発駅・到着駅と同じ駅は指定できません。');
+      return;
+    }
+    if (new Set(chosen).size !== chosen.length) {
+      setResults(null);
+      setMessage('同じ駅を、経由駅に2回は指定できません。');
       return;
     }
     const sec = toServiceSec(timeV);
@@ -103,7 +119,7 @@ export const RouteSearch: React.FC = () => {
     }
     setSearching(true);
     try {
-      const found = await searchRoutes(fromV, toV, sec, optsV);
+      const found = await searchRoutes(fromV, toV, sec, optsV, 3, chosen);
       const at = nowText();
       const day = dayLabelOf();
       setResults(found);
@@ -112,8 +128,8 @@ export const RouteSearch: React.FC = () => {
       setUsedRealtime(optsV.realtime);
       setResultKey((n) => n + 1); // 結果が前回と同じでも、検索したことが見えるように、表示をやり直す
       setDetailIdx(null);
-      saveLastQuery(fromV, toV);
-      lastSession = { from: fromV, to: toV, timeText: timeV, options: optsV, results: found, searchedAt: at, dayLabel: day };
+      saveLastQuery(fromV, toV, chosen);
+      lastSession = { from: fromV, to: toV, vias: chosen, timeText: timeV, options: optsV, results: found, searchedAt: at, dayLabel: day };
     } catch {
       setResults(null);
       setSearchError(true);
@@ -122,7 +138,7 @@ export const RouteSearch: React.FC = () => {
     }
   };
 
-  const handleSearch = () => runSearch(from, to, timeText, options);
+  const handleSearch = () => runSearch(from, to, timeText, options, vias);
 
   const handleOptionsChange = (next: RouteOptions) => {
     setOptions(next);
@@ -135,7 +151,7 @@ export const RouteSearch: React.FC = () => {
     // 条件を変えたときは、結果が出ていれば、そのまま探し直す
     if (optionsChanged.current) {
       optionsChanged.current = false;
-      if (results !== null) runSearch(from, to, timeText, options);
+      if (results !== null) runSearch(from, to, timeText, options, vias);
     }
   };
 
@@ -172,6 +188,7 @@ export const RouteSearch: React.FC = () => {
         result={results[detailIdx]}
         from={lastSession?.from ?? from}
         to={lastSession?.to ?? to}
+        vias={lastSession?.vias ?? []}
         dayLabel={dayLabel}
         searchedAt={searchedAt}
         realtime={usedRealtime}
@@ -218,6 +235,50 @@ export const RouteSearch: React.FC = () => {
             <ArrowUpDown className="w-4 h-4" />
           </button>
         </div>
+
+        {/* 経由駅(通ってほしい駅)。降りる駅としては扱わず、通る(停まる・通過する)だけでよい */}
+        {vias.length > 0 && (
+          <div className="space-y-1.5">
+            {vias.map((v, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <span className="shrink-0 w-10 text-center text-[10px] font-black text-[#6B6380] bg-[#E6E2EE] rounded py-1">経由</span>
+                <select
+                  className="flex-1 min-w-0 border border-[#E6E2EE] rounded-lg px-2 py-1.5 bg-transparent text-sm font-bold text-[#221C35] cursor-pointer"
+                  value={v}
+                  onChange={(e) => setVias((vs) => vs.map((x, k) => (k === i ? e.target.value : x)))}
+                  aria-label={`経由駅${i + 1}`}
+                >
+                  <option value="">駅を選んでください</option>
+                  {stations
+                    .filter((s) => s === v || (s !== from && s !== to && !vias.includes(s)))
+                    .map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setVias((vs) => vs.filter((_, k) => k !== i))}
+                  className="shrink-0 p-1.5 rounded-full text-[#6B6380] hover:bg-[#F4F3F8] cursor-pointer"
+                  aria-label={`経由駅${i + 1}を外す`}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        {vias.length < MAX_VIAS && (
+          <button
+            type="button"
+            onClick={() => setVias((vs) => [...vs, ''])}
+            className="inline-flex items-center gap-1 text-xs font-bold text-[#5B21B6] hover:text-[#4C1D95] cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>経由駅を追加（あと{MAX_VIAS - vias.length}つ）</span>
+          </button>
+        )}
 
         <div className="flex items-center gap-2">
           <span className="text-xs font-bold text-[#6B6380] shrink-0">出発の時刻</span>
@@ -279,6 +340,7 @@ export const RouteSearch: React.FC = () => {
                 {lastSession?.from} → {lastSession?.to}
               </span>
               　{lastSession?.timeText}以降に出発
+              {lastSession && lastSession.vias.length > 0 && <span className="ml-1.5 text-[#5B21B6] font-bold">経由: {lastSession.vias.join('・')}</span>}
             </span>
             <span className="shrink-0 text-right">
               {usedRealtime && <span className="font-bold text-emerald-700 mr-1.5">リアルタイム</span>}
@@ -290,7 +352,7 @@ export const RouteSearch: React.FC = () => {
             <div className="bg-white border border-[#E6E2EE] rounded-2xl p-5 text-center text-xs text-[#6B6380]">
               この条件で、乗れる列車が見つかりませんでした。
               <br />
-              （出発の時刻を早めるか、絞り込みを変えてお試しください）
+              （{lastSession && lastSession.vias.length > 0 ? '経由駅を減らすか、' : ''}出発の時刻を早めるか、絞り込みを変えてお試しください）
             </div>
           )}
 

@@ -53,19 +53,25 @@ export const countChangedOptions = (o: RouteOptions): number =>
   (o.maxTransfers !== DEFAULT_ROUTE_OPTIONS.maxTransfers ? 1 : 0) +
   (o.realtime !== DEFAULT_ROUTE_OPTIONS.realtime ? 1 : 0);
 
-export const loadLastQuery = (): { from: string; to: string } | null => {
+// 経由駅(通ってほしい駅)の上限
+export const MAX_VIAS = 3;
+
+export const loadLastQuery = (): { from: string; to: string; vias: string[] } | null => {
   try {
     const p = JSON.parse(localStorage.getItem(QUERY_KEY) || 'null');
-    if (p && typeof p.from === 'string' && typeof p.to === 'string') return { from: p.from, to: p.to };
+    if (p && typeof p.from === 'string' && typeof p.to === 'string') {
+      const vias = Array.isArray(p.vias) ? p.vias.filter((v: unknown): v is string => typeof v === 'string').slice(0, MAX_VIAS) : [];
+      return { from: p.from, to: p.to, vias };
+    }
   } catch {
     // 読めなければ、なし
   }
   return null;
 };
 
-export const saveLastQuery = (from: string, to: string) => {
+export const saveLastQuery = (from: string, to: string, vias: string[] = []) => {
   try {
-    localStorage.setItem(QUERY_KEY, JSON.stringify({ from, to }));
+    localStorage.setItem(QUERY_KEY, JSON.stringify({ from, to, vias }));
   } catch {
     // 保存できなくても、そのまま使える
   }

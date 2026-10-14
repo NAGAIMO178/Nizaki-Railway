@@ -52,6 +52,11 @@ const LegBlock: React.FC<{ leg: RouteLeg }> = ({ leg }) => {
             </div>
           )}
           {leg.paid && <div className="mt-1.5 text-[10px] font-bold text-amber-700">有料の列車です(特急券が別に必要)</div>}
+          {leg.passedVias.map((v) => (
+            <div key={v.name} className="mt-1.5 text-[10px] font-bold text-[#5B21B6]">
+              経由駅の{v.name}に{v.stopped ? '停車します' : '停まらずに通過します'}
+            </div>
+          ))}
           <button
             type="button"
             onClick={() => setOpen((v) => !v)}
@@ -91,13 +96,14 @@ interface RouteDetailProps {
   result: RouteResult;
   from: string;
   to: string;
+  vias: string[];
   dayLabel: string;
   searchedAt: string;
   realtime: boolean;
   onBack: () => void;
 }
 
-export const RouteDetail: React.FC<RouteDetailProps> = ({ result: r, from, to, dayLabel, searchedAt, realtime, onBack }) => {
+export const RouteDetail: React.FC<RouteDetailProps> = ({ result: r, from, to, vias, dayLabel, searchedAt, realtime, onBack }) => {
   const [feeOpen, setFeeOpen] = useState(false);
 
   return (
@@ -123,6 +129,7 @@ export const RouteDetail: React.FC<RouteDetailProps> = ({ result: r, from, to, d
         </div>
         <div className="mt-2 text-xs text-[#6B6380]">
           {from} → {to}
+          {vias.length > 0 && <span className="ml-1.5 font-bold text-[#5B21B6]">経由: {vias.join('・')}</span>}
         </div>
       </div>
 
