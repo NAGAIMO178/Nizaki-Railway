@@ -448,6 +448,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = () => {
         onClick={(e) => {
           e.stopPropagation();
           setSelectedTrain(isSelected ? null : train);
+          setSelectedStation(null); // 駅のシートが開いていたら閉じる(2枚が重ならないように)
         }}
         style={{ left: `${centerPos}px` }}
         className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-20 flex flex-col items-center cursor-pointer transition-all ${
@@ -514,6 +515,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = () => {
         onClick={(e) => {
           e.stopPropagation();
           setSelectedTrain(isSelected ? null : train);
+          setSelectedStation(null); // 駅のシートが開いていたら閉じる(2枚が重ならないように)
         }}
         className={`flex flex-col items-center group cursor-pointer transition-transform ${
           isSelected ? 'scale-105 z-20 ring-2 ring-[#5B21B6] rounded-lg' : 'hover:scale-102 z-10'
