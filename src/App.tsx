@@ -7,6 +7,7 @@ import { MyStationCard } from './components/MyStationCard';
 import { MyStationRegisterCard, RegisterableStation, REGISTERABLE_LINES } from './components/MyStationRegisterCard';
 import { FooterNav } from './components/FooterNav';
 import { TrainLocationTab } from './components/TrainLocationTab';
+import { TimetableTab } from './components/TimetableTab';
 import { ReservationTab } from './components/ReservationTab';
 import { EquipTab } from './components/EquipTab';
 import { EventsTab } from './components/EventsTab';
@@ -631,7 +632,10 @@ export default function App() {
           </div>
         )}
 
-        {/* Tab 3: 予約(特急券・座席 / デリバリー) */}
+        {/* Tab 3: 時刻表 */}
+        {activeTab === 'timetable' && <TimetableTab />}
+
+        {/* Tab 4: 予約(特急券・座席 / デリバリー) */}
         {activeTab === 'reservation' && (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-28 md:pb-12">
             <div className="max-w-md mx-auto px-4">
@@ -716,7 +720,7 @@ export default function App() {
         )}
       </main>
 
-      {/* 5. フッターナビゲーション（タブバー: ホーム, 列車位置, 予約, イベント） */}
+      {/* 5. フッターナビゲーション（タブバー: ホーム, 列車位置, 時刻表, 予約, イベント） */}
       <FooterNav
         activeTab={activeTab}
         onChangeTab={setActiveTab}
