@@ -17,6 +17,7 @@ import { RouteMapModal } from './components/RouteMapModal';
 import { QRCodeModal } from './components/QRCodeModal';
 import { LoginModal } from './components/LoginModal';
 import { MyPageModal } from './components/MyPageModal';
+import { MenuDrawer } from './components/MenuDrawer';
 import { MOCK_LINES, MOCK_EQUIP_ITEMS } from './data/mockData';
 import { POINT_CODES, normalizePointCode } from './data/pointCodes';
 import { getLocalDateString, isOrderExpired } from './utils/orderExpiry';
@@ -78,6 +79,9 @@ const readStoredOrder = (email?: string | null): { order: ActiveOrder | null; ex
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>('home');
+  // 予約タブの中の切り替え(特急券・座席 / デリバリー)と、ヘッダーのメニュー
+  const [reservationView, setReservationView] = useState<'ticket' | 'delivery'>('ticket');
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [headerStationName, setHeaderStationName] = useState<string>('松戸');
   const [headerPlatform, setHeaderPlatform] = useState<1 | 2>(1);
 
@@ -559,6 +563,7 @@ export default function App() {
         onOpenRouteMapModal={() => setIsRouteMapModalOpen(true)}
         onOpenQRCodeModal={() => setIsQRCodeModalOpen(true)}
         onOpenMyPage={() => setIsMyPageOpen(true)}
+        onOpenMenu={() => setIsMenuOpen(true)}
         activeTab={activeTab}
         onChangeTab={setActiveTab}
         currentStationName={headerStationName}
@@ -626,39 +631,58 @@ export default function App() {
           </div>
         )}
 
-        {/* Tab 3: 予約 */}
+        {/* Tab 3: 予約(特急券・座席 / デリバリー) */}
         {activeTab === 'reservation' && (
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-28 md:pb-12">
-            <ReservationTab
-              activeOrder={activeOrder}
-              onOpenEDeliveryModal={() => setIsEDeliveryModalOpen(true)}
-              onConfirmOrder={handleConfirmOrder}
-              onCancelOrder={handleCancelOrder}
-              isLoggedIn={isLoggedIn}
-              onRequireLogin={handleRequireLogin}
-            />
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-28 md:pb-12">
+            <div className="max-w-md mx-auto px-4">
+              <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[#E6E2EE]" role="tablist" aria-label="予約の種類">
+                {([
+                  ['ticket', '特急券・座席'],
+                  ['delivery', 'デリバリー'],
+                ] as const).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    role="tab"
+                    aria-selected={reservationView === id}
+                    onClick={() => setReservationView(id)}
+                    className={`py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      reservationView === id ? 'bg-white text-[#5B21B6] shadow-xs' : 'text-[#6B6380] hover:text-[#221C35]'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {reservationView === 'ticket' ? (
+              <ReservationTab
+                activeOrder={activeOrder}
+                onOpenEDeliveryModal={() => setIsEDeliveryModalOpen(true)}
+                onConfirmOrder={handleConfirmOrder}
+                onCancelOrder={handleCancelOrder}
+                isLoggedIn={isLoggedIn}
+                onRequireLogin={handleRequireLogin}
+              />
+            ) : (
+              <EquipTab
+                items={MOCK_EQUIP_ITEMS}
+                cart={selectedCart}
+                onUpdateCart={setSelectedCart}
+                activeOrder={activeOrder}
+                isLoggedIn={isLoggedIn}
+                onRequireLogin={handleRequireLogin}
+                onOpenBookingModal={(initialCart) => {
+                  if (initialCart) setSelectedCart(initialCart);
+                  setIsEDeliveryModalOpen(true);
+                }}
+              />
+            )}
           </div>
         )}
 
-        {/* Tab 4: エキップ (E-DELIVERY) */}
-        {activeTab === 'equip' && (
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-28 md:pb-12">
-            <EquipTab
-              items={MOCK_EQUIP_ITEMS}
-              cart={selectedCart}
-              onUpdateCart={setSelectedCart}
-              activeOrder={activeOrder}
-              isLoggedIn={isLoggedIn}
-              onRequireLogin={handleRequireLogin}
-              onOpenBookingModal={(initialCart) => {
-                if (initialCart) setSelectedCart(initialCart);
-                setIsEDeliveryModalOpen(true);
-              }}
-            />
-          </div>
-        )}
-
-        {/* Tab 5: イベント */}
+        {/* イベント */}
         {activeTab === 'events' && (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-28 md:pb-12">
             <EventsTab
@@ -669,7 +693,7 @@ export default function App() {
           </div>
         )}
 
-        {/* Tab 6: 設定 */}
+        {/* 設定(下のタブには出さず、ヘッダーのメニューから開く) */}
         {activeTab === 'settings' && (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-28 md:pb-12">
             <SettingsTab
@@ -692,11 +716,27 @@ export default function App() {
         )}
       </main>
 
-      {/* 5. フッターナビゲーション（タブバー: ホーム, 列車位置, 予約, エキップ, 設定） */}
+      {/* 5. フッターナビゲーション（タブバー: ホーム, 列車位置, 予約, イベント） */}
       <FooterNav
         activeTab={activeTab}
         onChangeTab={setActiveTab}
         hasActiveOrder={!!activeOrder}
+      />
+
+      <MenuDrawer
+        isOpen={isMenuOpen}
+        onClose={() => setIsMenuOpen(false)}
+        isLoggedIn={isLoggedIn}
+        currentUser={currentUser}
+        onOpenSettings={() => setActiveTab('settings')}
+        onOpenMyPage={() => setIsMyPageOpen(true)}
+        onOpenNPoint={() => setIsNPointModalOpen(true)}
+        onOpenRouteMap={() => setIsRouteMapModalOpen(true)}
+        onOpenLogin={() => {
+          setLoginReason('神埼IDでログインまたは新規会員登録を行います。');
+          setPendingAction(null);
+          setIsLoginModalOpen(true);
+        }}
       />
 
       {/* Interactive Modals */}
