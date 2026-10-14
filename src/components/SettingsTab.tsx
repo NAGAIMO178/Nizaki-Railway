@@ -34,6 +34,8 @@ import {
 } from '../utils/pushNotification';
 
 import { ActiveOrder, UserProfile } from '../types';
+import { isLaunched } from '../utils/launch';
+import { useDelayNotifyMode, DelayNotifyMode } from '../utils/delayNotifySettings';
 
 interface SettingsTabProps {
   nPointBalance: number;
@@ -64,6 +66,9 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   const [notifyService, setNotifyService] = useState(true);
   const [permissionState, setPermissionState] = useState<string>('default');
   const [lastSentTime, setLastSentTime] = useState<string | null>(null);
+  // 遅れの知らせ(NIZAKI 2.0。公開後だけ出す)
+  const [delayMode, setDelayMode] = useDelayNotifyMode();
+  const showDelaySetting = isLaunched();
 
   // 4. Admin Console Modal State
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
@@ -334,6 +339,36 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#5B21B6]"></div>
             </label>
           </div>
+
+          {/* 遅れの知らせ(公開後): 見張る範囲を選ぶ */}
+          {showDelaySetting && (
+            <div className="space-y-1.5 border-b border-[#F0EEF6] pb-3">
+              <div className="text-xs font-bold text-[#221C35]">列車の遅れの知らせ</div>
+              <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-[#E6E2EE]" role="radiogroup" aria-label="列車の遅れの知らせ">
+                {([
+                  ['all', 'すべて'],
+                  ['mystation', 'マイ駅だけ'],
+                  ['off', 'オフ'],
+                ] as [DelayNotifyMode, string][]).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    role="radio"
+                    aria-checked={delayMode === value}
+                    onClick={() => setDelayMode(value)}
+                    className={`py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      delayMode === value ? 'bg-white text-[#5B21B6] shadow-xs' : 'text-[#6B6380] hover:text-[#221C35]'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[10px] text-[#857D99] leading-relaxed">
+                アプリを開いているあいだ、どの画面を見ていても、遅れを知らせます。「マイ駅だけ」は、登録したマイ駅に、これから停まる列車の遅れだけです。アプリを閉じているあいだは、知らせられません。
+              </p>
+            </div>
+          )}
 
           {/* iOS Safari Guidance Box */}
           {isIOSBrowser() && !isStandaloneMode() && (
