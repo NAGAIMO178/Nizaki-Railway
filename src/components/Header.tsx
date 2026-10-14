@@ -1,5 +1,5 @@
 import React from 'react';
-import { QrCode } from 'lucide-react';
+import { QrCode, Menu } from 'lucide-react';
 import { TabType, UserProfile } from '../types';
 import { UserAvatar } from './UserAvatar';
 
@@ -10,6 +10,7 @@ interface HeaderProps {
   onOpenRouteMapModal?: () => void;
   onOpenNotificationModal?: () => void;
   onOpenMyPage?: () => void;
+  onOpenMenu?: () => void;
   activeTab?: TabType;
   onChangeTab?: (tab: TabType) => void;
   currentStationName?: string;
@@ -24,6 +25,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenNPointModal,
   onOpenQRCodeModal,
   onOpenMyPage,
+  onOpenMenu,
   isLoggedIn = false,
   currentUser = null,
   onOpenLoginModal,
@@ -35,6 +37,17 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center justify-between gap-3">
           {/* Left: App Logo & Header Title */}
           <div className="flex items-center gap-2.5 min-w-0">
+            {/* メニュー(設定・マイページ・路線図) */}
+            <button
+              type="button"
+              onClick={onOpenMenu}
+              className="p-1.5 -ml-1.5 rounded-lg text-[#221C35] hover:bg-[#F4F3F8] active:bg-[#EFE8FA] transition-colors cursor-pointer shrink-0"
+              aria-label="メニューを開く"
+              title="メニュー"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+
             {/* Custom Brand Logo Icon */}
             <div className="w-8 h-8 shrink-0 relative">
               <img src="./icon.png" alt="神埼線アプリ" className="w-full h-full rounded-xl shadow-xs" />

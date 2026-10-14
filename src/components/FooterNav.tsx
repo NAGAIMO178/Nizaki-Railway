@@ -1,5 +1,5 @@
 import React from 'react';
-import { Home, MapPin, Ticket, UtensilsCrossed, Flag, Settings, Sparkles } from 'lucide-react';
+import { Home, MapPin, Ticket, Flag } from 'lucide-react';
 import { TabType } from '../types';
 
 interface FooterNavProps {
@@ -28,22 +28,12 @@ export const FooterNav: React.FC<FooterNavProps> = ({
       id: 'reservation',
       label: '予約',
       icon: <Ticket className="w-5 h-5" />,
-    },
-    {
-      id: 'equip',
-      label: 'デリバリー',
-      icon: <UtensilsCrossed className="w-5 h-5" />,
       badge: hasActiveOrder,
     },
     {
       id: 'events',
       label: 'イベント',
       icon: <Flag className="w-5 h-5" />,
-    },
-    {
-      id: 'settings',
-      label: '設定',
-      icon: <Settings className="w-5 h-5" />,
     },
   ];
 
