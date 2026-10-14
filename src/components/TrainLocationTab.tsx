@@ -4,6 +4,7 @@ import { computeLiveTrains as computeDiaLiveTrains, getCachedLineData, loadLineD
 import { LocationStationDetailCard, LocationStationInfo } from './LocationStationDetailCard';
 import { sendLocalPushNotification } from '../utils/pushNotification';
 import { disruptionManager } from '../utils/disruptionManager';
+import { useDragToDismiss } from '../utils/useDragToDismiss';
 
 export interface StationNode {
   id: string;
@@ -230,6 +231,9 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = () => {
   const [now, setNow] = useState<number>(Date.now());
 
   const detailCardRef = useRef<HTMLDivElement>(null);
+  // 駅・列車のシートは、つまみを下に引いて(ちょんと押しても)閉じられる
+  const stationSheetDrag = useDragToDismiss(() => setSelectedStation(null));
+  const trainSheetDrag = useDragToDismiss(() => setSelectedTrain(null));
 
   // 列車詳細プルダウン（アコーディオン）状態
   const [isAccordionOpen, setIsAccordionOpen] = useState<boolean>(true);
@@ -811,16 +815,23 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = () => {
 
       {/* Station Transfer Guide Sheet (駅の乗り換え情報カード - 列車詳細と同等のボトムシート表示) */}
       {selectedStation && (
-        <div ref={detailCardRef} className="fixed bottom-14 left-0 right-0 max-w-md mx-auto z-40 bg-white border-t border-[#E6E2EE] rounded-t-2xl shadow-xl p-3 space-y-2 animate-slideUp max-h-[45vh] overflow-y-auto">
-          {/* Pull Handle Bar (プルダウンで閉じるハンドルバー - テキスト非表示のシンプルデザイン) */}
-          <button
-            type="button"
-            onClick={() => setSelectedStation(null)}
-            className="w-full py-1.5 flex items-center justify-center cursor-pointer group hover:bg-[#F4F3F8] rounded-t-xl transition-colors"
-            title="閉じる"
+        <div
+          ref={(el) => {
+            detailCardRef.current = el;
+            stationSheetDrag.contentRef(el);
+          }}
+          style={stationSheetDrag.style}
+          className="fixed bottom-14 left-0 right-0 max-w-md mx-auto z-40 bg-white border-t border-[#E6E2EE] rounded-t-2xl shadow-xl p-3 space-y-2 animate-slideUp max-h-[45vh] overflow-y-auto overscroll-contain"
+        >
+          {/* つまみ: 下に引く(または押す)と閉じる */}
+          <div
+            {...stationSheetDrag.handleProps}
+            className="w-full py-3 -my-1 flex items-center justify-center cursor-grab active:cursor-grabbing group rounded-t-xl select-none"
+            role="button"
+            aria-label="閉じる"
           >
             <div className="w-12 h-1.5 bg-[#D1C9E3] group-hover:bg-[#5B21B6] rounded-full transition-colors" />
-          </button>
+          </div>
 
           <LocationStationDetailCard
             stationInfo={selectedStation}
@@ -830,16 +841,20 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = () => {
 
       {/* Bottom Sheet / Active Selected Train Details Panel */}
       {selectedTrain && (
-        <div ref={detailCardRef} className="fixed bottom-14 left-0 right-0 max-w-md mx-auto z-40 bg-white border-t border-[#E6E2EE] rounded-t-2xl shadow-lg p-4 space-y-3 animate-slideUp">
-          {/* Pull Handle Bar (プルダウンで閉じるハンドルバー - テキスト非表示のシンプルデザイン) */}
-          <button
-            type="button"
-            onClick={() => setSelectedTrain(null)}
-            className="w-full py-1.5 -mt-1 flex items-center justify-center cursor-pointer group hover:bg-[#F4F3F8] rounded-t-xl transition-colors"
-            title="閉じる"
+        <div
+          ref={detailCardRef}
+          style={trainSheetDrag.style}
+          className="fixed bottom-14 left-0 right-0 max-w-md mx-auto z-40 bg-white border-t border-[#E6E2EE] rounded-t-2xl shadow-lg p-4 space-y-3 animate-slideUp"
+        >
+          {/* つまみ: 下に引く(または押す)と閉じる */}
+          <div
+            {...trainSheetDrag.handleProps}
+            className="w-full py-3 -mt-3 flex items-center justify-center cursor-grab active:cursor-grabbing group rounded-t-xl select-none"
+            role="button"
+            aria-label="閉じる"
           >
             <div className="w-12 h-1.5 bg-[#D1C9E3] group-hover:bg-[#5B21B6] rounded-full transition-colors" />
-          </button>
+          </div>
 
           {/* Train Top Info Line */}
           <div className="flex items-center justify-between pt-0.5">
