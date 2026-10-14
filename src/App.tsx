@@ -26,6 +26,8 @@ import { callGas } from './utils/accountApi';
 import { isLaunched } from './utils/launch';
 import { useCloudAccount } from './utils/useCloudAccount';
 import { rewardIdFromTitle } from './utils/cloudAccount';
+import { useDelayNotifyMode } from './utils/delayNotifySettings';
+import { useDelayWatcher } from './utils/useDelayWatcher';
 import { TabType, ActiveOrder, EquipItem, PointHistoryItem, UserProfile, OrderHistoryItem } from './types';
 
 // Helper to sanitize email for storage key
@@ -474,6 +476,14 @@ export default function App() {
     } catch {}
   }, [registeredStations]);
 
+  // NIZAKI 2.0(公開後): どのタブを見ていても、全路線の列車の遅れを見張って、知らせる(設定で、マイ駅だけ・オフにも変えられる)
+  const [delayMode] = useDelayNotifyMode();
+  const delayWatch = useDelayWatcher({
+    enabled: isLaunched() && delayMode !== 'off',
+    mode: delayMode,
+    myStationNames: registeredStations.map((s) => s.name),
+  });
+
   // Modals state
   const [isEDeliveryModalOpen, setIsEDeliveryModalOpen] = useState(false);
   const [isNPointModalOpen, setIsNPointModalOpen] = useState(false);
@@ -638,6 +648,25 @@ export default function App() {
           setIsLoginModalOpen(true);
         }}
       />
+
+      {/* 遅れの知らせ(公開後。どのタブでも出る) */}
+      {delayWatch.notice && (
+        <div
+          key={delayWatch.notice.key}
+          className="bg-amber-500 text-white text-xs font-bold px-3 py-2 flex items-center justify-between gap-2 shadow-sm animate-fadeIn"
+          role="status"
+        >
+          <span className="min-w-0">{delayWatch.notice.text}</span>
+          <button
+            type="button"
+            onClick={delayWatch.dismiss}
+            className="shrink-0 px-1.5 py-0.5 hover:bg-amber-600 rounded text-white cursor-pointer"
+            aria-label="遅れの知らせを閉じる"
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {/* Main Responsive View Container */}
       <main className="flex-1 w-full bg-[#F4F3F8] text-[#221C35] overflow-y-auto">

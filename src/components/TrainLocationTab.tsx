@@ -5,6 +5,7 @@ import { LocationStationDetailCard, LocationStationInfo } from './LocationStatio
 import { sendLocalPushNotification } from '../utils/pushNotification';
 import { disruptionManager } from '../utils/disruptionManager';
 import { useDragToDismiss } from '../utils/useDragToDismiss';
+import { isLaunched } from '../utils/launch';
 
 export interface StationNode {
   id: string;
@@ -250,6 +251,8 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = () => {
 
   // 列車遅延が判定された際、同一列車につき1回のみ、かつクールダウン(5分)を挟んで即座に遅延通知を発信
   useEffect(() => {
+    // 公開後は、アプリ全体の見張り(useDelayWatcher)が知らせるので、ここでは出さない(二重に出ないように)
+    if (isLaunched()) return;
     if (liveTrains.length === 0) return;
 
     const nowTime = Date.now();
