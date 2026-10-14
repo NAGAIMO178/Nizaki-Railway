@@ -492,6 +492,7 @@ export default function App() {
   const [isRouteMapModalOpen, setIsRouteMapModalOpen] = useState(false);
   const [isQRCodeModalOpen, setIsQRCodeModalOpen] = useState(false);
   const [isMyPageOpen, setIsMyPageOpen] = useState(false);
+  const [welcomeReplayKey, setWelcomeReplayKey] = useState(0); // NIZAKI 2.0 のご案内を、メニューからもう一度見る
 
   // 公開日の案内が、説明している場所を、実際に開く(マイレージ・ポイントは、クラウドの会員だけ。ほかは、ホームのまま)
   const handleWelcomeStep = (step: WelcomeStep) => {
@@ -875,6 +876,13 @@ export default function App() {
         isLoggedIn={isLoggedIn}
         onClaim={() => cloud.earnEvent(LAUNCH_BONUS_ID)}
         onStep={handleWelcomeStep}
+        onLogin={() => {
+          setLoginReason('神埼IDでログインまたは新規会員登録を行います。');
+          setPendingAction(null);
+          setIsLoginModalOpen(true);
+        }}
+        loginOpen={isLoginModalOpen}
+        replayKey={welcomeReplayKey}
       />
 
       <MenuDrawer
@@ -891,6 +899,7 @@ export default function App() {
           setPendingAction(null);
           setIsLoginModalOpen(true);
         }}
+        onOpenGuide={isLaunched() ? () => setWelcomeReplayKey((k) => k + 1) : undefined}
       />
 
       {/* Interactive Modals */}

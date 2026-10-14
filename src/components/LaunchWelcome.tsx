@@ -98,6 +98,7 @@ const writeBonusLater = () => {
 // どの画面を出すか(出さないときは、画面の数が0)
 export const planWelcome = (o: {
   tourSeen: boolean;
+  replay?: boolean; // メニューから、案内をもう一度見る
   bonusLater: boolean;
   bonusOpen: boolean; // 記念ボーナスを渡す期間か
   cloudOn: boolean; // 公開後で、ログイン証のある会員か
@@ -106,7 +107,7 @@ export const planWelcome = (o: {
   claimed: boolean; // この会員は、受け取り済みか
 }): { slides: number; bonus: boolean } => {
   const bonus = o.bonusOpen && o.cloudOn && o.ready && !o.error && !o.claimed && !o.bonusLater;
-  return { slides: o.tourSeen ? 0 : SLIDES.length, bonus };
+  return { slides: o.tourSeen && !o.replay ? 0 : SLIDES.length, bonus };
 };
 
 interface LaunchWelcomeProps {
@@ -117,22 +118,27 @@ interface LaunchWelcomeProps {
   isLoggedIn: boolean;
   onClaim: () => Promise<{ added: boolean; points: number } | null>;
   onStep: (step: WelcomeStep) => void; // 案内が説明している場所を、後ろで開く
+  onLogin: () => void; // 案内の途中から、ログインの画面を開く
+  loginOpen: boolean; // ログインの画面が開いているあいだは、案内のカードを隠す(案内の途中の状態は、そのまま)
+  replayKey: number; // 増えるたびに、案内を、最初から見せる(メニューの「NIZAKI 2.0 のご案内」)
 }
 
 type Result = { kind: 'got'; points: number } | { kind: 'already' } | { kind: 'fail' };
 
-export const LaunchWelcome: React.FC<LaunchWelcomeProps> = ({ cloudOn, ready, error, claimedEvents, isLoggedIn, onClaim, onStep }) => {
+export const LaunchWelcome: React.FC<LaunchWelcomeProps> = ({ cloudOn, ready, error, claimedEvents, isLoggedIn, onClaim, onStep, onLogin, loginOpen, replayKey }) => {
   const [tourSeen, setTourSeen] = useState(readTourSeen);
   const [bonusLater, setBonusLater] = useState(readBonusLater);
   const [index, setIndex] = useState(0);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
+  const [replaying, setReplaying] = useState(false); // 見終わった案内を、メニューからもう一度見ている
   const [claimedHere, setClaimedHere] = useState(false); // 受け取れた(または受け取り済みと分かった)あとは、同期の反映を待たずに、出さない
 
   const launched = isLaunched();
   const bonusOpen = isLaunchBonusOpen();
   const plan = planWelcome({
     tourSeen,
+    replay: replaying,
     bonusLater,
     bonusOpen,
     cloudOn,
@@ -147,6 +153,14 @@ export const LaunchWelcome: React.FC<LaunchWelcomeProps> = ({ cloudOn, ready, er
   onStepRef.current = onStep;
   const openedPlaceRef = useRef(false); // 案内で、後ろの画面を動かした(終わったら、ホームへ戻す)
 
+  // メニューから「ご案内」を押されたら、最初から見せる
+  useEffect(() => {
+    if (replayKey <= 0) return;
+    setReplaying(true);
+    setIndex(0);
+    setResult(null);
+  }, [replayKey]);
+
   // 受け取りの画面は、うしろを暗くして、スクロールさせない。案内のカードのあいだは、後ろの画面を見せる
   useEffect(() => {
     if (!open || !onBonusPage) return;
@@ -159,12 +173,12 @@ export const LaunchWelcome: React.FC<LaunchWelcomeProps> = ({ cloudOn, ready, er
 
   // 案内のカードが出ているあいだ、マイページなどが、カードに重ならないようにする(index.css)
   useEffect(() => {
-    if (!open || onBonusPage) return;
+    if (!open || onBonusPage || loginOpen) return;
     document.body.dataset.welcomeTour = '1';
     return () => {
       delete document.body.dataset.welcomeTour;
     };
-  }, [open, onBonusPage]);
+  }, [open, onBonusPage, loginOpen]);
 
   // 枚が変わるたびに、説明している場所を、後ろで開く。受け取りの画面へ進むときは、ホームへ戻す
   useEffect(() => {
@@ -176,9 +190,11 @@ export const LaunchWelcome: React.FC<LaunchWelcomeProps> = ({ cloudOn, ready, er
       openedPlaceRef.current = false;
       onStepRef.current('home');
     }
-  }, [open, onBonusPage, index]);
+  }, [open, onBonusPage, index, cloudOn]);
 
   if (!open) return null;
+  // ログインの画面が開いているあいだは、案内を隠す(ログインが済んだら、同じ枚から続ける)
+  if (loginOpen) return null;
 
   const closeTour = () => {
     if (openedPlaceRef.current) {
@@ -187,6 +203,7 @@ export const LaunchWelcome: React.FC<LaunchWelcomeProps> = ({ cloudOn, ready, er
     }
     writeTourSeen();
     setTourSeen(true);
+    setReplaying(false);
     setIndex(0);
   };
   const close = () => {
@@ -200,6 +217,7 @@ export const LaunchWelcome: React.FC<LaunchWelcomeProps> = ({ cloudOn, ready, er
       writeBonusLater();
       setBonusLater(true);
     }
+    setReplaying(false);
     setResult(null);
   };
   const next = () => {
@@ -246,7 +264,16 @@ export const LaunchWelcome: React.FC<LaunchWelcomeProps> = ({ cloudOn, ready, er
             {slide.lines.map((l) => (
               <p key={l}>{l}</p>
             ))}
-            {guestNote && <p className="rounded-lg bg-[#F4F1FA] p-2 text-xs text-[#5B21B6]">ログインすると、この画面を見られます。</p>}
+            {guestNote && (
+              <div className="flex items-center justify-between gap-2 rounded-lg bg-[#F4F1FA] p-2 text-xs text-[#5B21B6]">
+                <span>ログインすると、この画面を見られます。</span>
+                {!isLoggedIn && (
+                  <button type="button" onClick={onLogin} className="shrink-0 cursor-pointer rounded-lg bg-[#5B21B6] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#4C1D95]">
+                    ログインして続ける
+                  </button>
+                )}
+              </div>
+            )}
             {bonusHint && (
               <p className="rounded-lg bg-[#F4F1FA] p-2 text-xs text-[#5B21B6]">
                 ログインすると、公開記念のポイント({LAUNCH_BONUS_POINTS} pt)を受け取れます。
