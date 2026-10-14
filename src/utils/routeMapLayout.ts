@@ -105,7 +105,7 @@ const placeAlong = (
   path: Step[],
   names: string[],
   sideOf: (pt: Pt) => 'left' | 'right'
-): { points: Pt[]; at: Map<number, { pt: Pt; mode: LabelMode }> } => {
+): { points: Pt[]; fixed: boolean[]; at: Map<number, { pt: Pt; mode: LabelMode }> } => {
   const resolved: { pt: Pt; hub?: string }[] = path.map((st) => (typeof st === 'string' ? { pt: PINS[st], hub: st } : { pt: st }));
   const at = new Map<number, { pt: Pt; mode: LabelMode }>();
 
@@ -157,7 +157,8 @@ const placeAlong = (
       at.set(a.idx + j, { pt, mode });
     }
   }
-  return { points: resolved.map((r) => r.pt), at };
+  // fixed: 駅の位置が決まっている点(角を丸めない)
+  return { points: resolved.map((r) => r.pt), fixed: resolved.map((r) => !!r.hub), at };
 };
 
 export const buildNetworkMap = (master: Record<string, MapMaster>): NetworkMap => {
@@ -210,15 +211,35 @@ export const buildNetworkMap = (master: Record<string, MapMaster>): NetworkMap =
     if (st.isHub && (mode === 'above' || mode === 'leftUp')) st.label = { ...st.label, dy: st.label.dy - 20 };
   });
 
-  const toD = (pts: Pt[], close = false) => pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${round(p.x)} ${round(p.y)}`).join(' ') + (close ? ' Z' : '');
+  // 線の曲がり角を丸くする(駅の位置が決まっている点は、そのまま通る)
+  const CORNER_RADIUS = 22;
+  const toD = (pts: Pt[], fixed: boolean[]) => {
+    let d = `M${round(pts[0].x)} ${round(pts[0].y)}`;
+    for (let i = 1; i < pts.length; i++) {
+      const cur = pts[i];
+      if (i === pts.length - 1 || fixed[i]) {
+        d += ` L${round(cur.x)} ${round(cur.y)}`;
+        continue;
+      }
+      const prev = pts[i - 1];
+      const next = pts[i + 1];
+      const lenA = dist(prev, cur);
+      const lenB = dist(cur, next);
+      const r = Math.min(CORNER_RADIUS, lenA / 2, lenB / 2);
+      const a = { x: cur.x + ((prev.x - cur.x) / lenA) * r, y: cur.y + ((prev.y - cur.y) / lenA) * r };
+      const b = { x: cur.x + ((next.x - cur.x) / lenB) * r, y: cur.y + ((next.y - cur.y) / lenB) * r };
+      d += ` L${round(a.x)} ${round(a.y)} Q${round(cur.x)} ${round(cur.y)} ${round(b.x)} ${round(b.y)}`;
+    }
+    return d;
+  };
   return {
     width: W,
     height: H,
     legend: { x: 790, y: 1230 },
     lines: [
-      { code: 'SC', name: master.SC.name, color: LINE_COLORS.SC, d: toD(scPlaced.points) },
-      { code: 'Y', name: master.Y.name, color: LINE_COLORS.Y, d: toD(yPlaced.points) },
-      { code: 'NI', name: master.NI.name, color: LINE_COLORS.NI, d: toD(niPlaced.points) },
+      { code: 'SC', name: master.SC.name, color: LINE_COLORS.SC, d: toD(scPlaced.points, scPlaced.fixed) },
+      { code: 'Y', name: master.Y.name, color: LINE_COLORS.Y, d: toD(yPlaced.points, yPlaced.fixed) },
+      { code: 'NI', name: master.NI.name, color: LINE_COLORS.NI, d: toD(niPlaced.points, niPlaced.fixed) },
     ],
     stations: Array.from(stations.values()),
   };

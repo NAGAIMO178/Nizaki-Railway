@@ -18,7 +18,7 @@ export const NetworkMapSvg: React.FC<{ map: NetworkMap; names: Record<string, st
     width="100%"
     role="img"
     aria-label="神埼線・神埼高速線・埼千環状線の路線図"
-    style={{ display: 'block', background: '#FFFFFF', fontFamily: 'system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif' }}
+    style={{ display: 'block', background: '#FFFFFF', fontFamily: 'inherit', textRendering: 'optimizeLegibility' }}
   >
     {/* 路線 */}
     {map.lines.map((l) => (
@@ -37,12 +37,9 @@ export const NetworkMapSvg: React.FC<{ map: NetworkMap; names: Record<string, st
           x={st.x + st.label.dx}
           y={st.y + st.label.dy}
           textAnchor={st.label.anchor}
-          fontSize={st.isHub ? 25 : 19}
-          fontWeight={st.isHub ? 800 : 600}
+          fontSize={st.isHub ? 24 : 18}
+          fontWeight={st.isHub ? 700 : 500}
           fill={INK}
-          stroke="#FFFFFF"
-          strokeWidth={5}
-          paintOrder="stroke"
         >
           {st.name}
         </text>
@@ -52,11 +49,9 @@ export const NetworkMapSvg: React.FC<{ map: NetworkMap; names: Record<string, st
             y={st.y + st.label.dy + 16}
             textAnchor={st.label.anchor}
             fontSize={12}
-            fontWeight={600}
+            fontWeight={500}
             fill={SUB}
-            stroke="#FFFFFF"
-            strokeWidth={4}
-            paintOrder="stroke"
+            style={{ fontVariantNumeric: 'tabular-nums' }}
           >
             {codeText(st)}
           </text>
