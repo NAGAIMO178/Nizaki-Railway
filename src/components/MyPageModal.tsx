@@ -22,6 +22,8 @@ import {
 import { UserAvatar } from './UserAvatar';
 import { UserProfile, ActiveOrder, PointHistoryItem, AccountActivityItem, OrderHistoryItem } from '../types';
 import { deleteAccount } from '../utils/accountApi';
+import { MileageCard } from './MileageCard';
+import type { Mileage } from '../utils/mileage';
 import { getSeatClassLabel } from '../utils/seatUtils';
 import { PrivacyPolicyModal } from './PrivacyPolicyModal';
 
@@ -40,6 +42,8 @@ interface MyPageModalProps {
   hideDeleteAccount?: boolean;
   // 公開後で、ログイン証のある会員(記録はサーバーが持つ)
   cloudMode?: boolean;
+  // マイレージと乗車記録(公開後のクラウドの会員だけ)
+  mileage?: Mileage | null;
 }
 
 export const MyPageModal: React.FC<MyPageModalProps> = ({
@@ -55,6 +59,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
   onOpenQRCodeModal,
   hideDeleteAccount = false,
   cloudMode = false,
+  mileage = null,
 }) => {
   const [activeHistoryTab, setActiveHistoryTab] = useState<'all' | 'ticket' | 'delivery' | 'event' | 'point'>('all');
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -294,6 +299,9 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
               </div>
             </button>
           </div>
+
+          {/* マイレージ・乗車記録(公開後) */}
+          {mileage && <MileageCard mileage={mileage} />}
 
           {/* Active Order Quick Banner if available */}
           {activeOrder && (

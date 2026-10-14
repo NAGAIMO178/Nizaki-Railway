@@ -1123,6 +1123,7 @@ const RESERVATION_POINT_RATE = 0.03;
 const RESERVATION_POINT_MIN = 50;
 const HISTORY_LIMIT = 30;
 const ORDER_HISTORY_LIMIT = 30;
+const RIDE_LOG_LIMIT = 500; // マイレージ・乗車記録に使う、乗車済みの予約の上限(新しい順)
 // ポイントの付与コード(アプリのソースには置かず、ここだけに持つ)
 const POINT_CODE_TABLE = {
   GIVE300: { points: 300, title: '【ミステリー制覇特典】消えた試運転列車の謎' }
@@ -1408,6 +1409,37 @@ function readMemberOrders(memberId) {
   return orders.slice(0, ORDER_HISTORY_LIMIT).map(function (o) { delete o.sortKey; return o; });
 }
 
+// 乗車記録・マイレージ用: 乗車済み(到着時刻をすぎた、キャンセルでない)の予約を、新しい順に、必要な項目だけ返す
+function readMemberRides(memberId) {
+  const sheet = getDataSpreadsheet().getSheetByName(SHEET_RESERVATIONS);
+  if (!sheet) return [];
+  const data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return [];
+  const headers = data[0];
+  const col = {};
+  headers.forEach(function (h, i) { col[h] = i; });
+  const rides = [];
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    if (String(row[col['会員ID']]) !== memberId) continue;
+    if (String(row[col['ステータス']]) === 'キャンセル') continue;
+    if (!isReservationRowExpired(headers, row)) continue;
+    rides.push({
+      orderId: String(row[col['予約番号']]),
+      trainName: String(row[col['列車名']]),
+      boardingStation: String(row[col['乗車駅']]),
+      destinationStation: String(row[col['降車駅']]),
+      reservedDate: cellText(row[col['予約日']], 'yyyy-MM-dd'),
+      departureTime: cellText(row[col['出発時刻']], 'HH:mm'),
+      seatType: String(row[col['席種']]),
+      totalPrice: Number(row[col['合計金額']]) || 0,
+      sortKey: cellText(row[col['予約日時']])
+    });
+  }
+  rides.sort(function (a, b) { return a.sortKey < b.sortKey ? 1 : a.sortKey > b.sortKey ? -1 : 0; });
+  return rides.slice(0, RIDE_LOG_LIMIT).map(function (r) { delete r.sortKey; return r; });
+}
+
 function buildAccountData(memberId, ledger, coupons, mystery) {
   return {
     initialized: true,
@@ -1418,7 +1450,8 @@ function buildAccountData(memberId, ledger, coupons, mystery) {
     }),
     usedCoupons: coupons.codes.slice(),
     mystery: { stage: mystery.stage, stamps: mystery.stamps, cleared: mystery.cleared },
-    orders: readMemberOrders(memberId)
+    orders: readMemberOrders(memberId),
+    rides: readMemberRides(memberId)
   };
 }
 
