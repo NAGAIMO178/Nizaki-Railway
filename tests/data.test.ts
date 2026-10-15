@@ -1,5 +1,5 @@
 // 公開後のダイヤ(public/data/dia-2)と、混雑のデータ(public/data/crowd-2)の、つじつまが合っているかを調べる。
-// ダイヤを差し替えたときに、列車番号の抜け・重なり、時刻の逆転、混雑データの作り直し忘れに、すぐ気づくためのテスト。
+// ダイヤを差し替えたときに、列車番号の抜け・重なり、時刻の逆転、直通のつながり、混雑データの作り直し忘れに、すぐ気づくためのテスト。
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -16,7 +16,8 @@ interface MasterLine {
 }
 type TrainRow = [string, number, string, string, number, number[], string];
 type StationFile = Record<string, [number, number, number][]>;
-type Unyo = Record<string, Record<string, [string, number, number, number, number][]>>;
+// 運用: [列車番号, 発駅名, 発秒, 着駅名, 着秒]。路線をまたぐ編成は、駅名で持つ
+type Unyo = Record<string, Record<string, [string, string, number, string, number][]>>;
 
 const master = read<Record<string, MasterLine>>('dia-2/master.json');
 const lines = Object.keys(master);
@@ -31,17 +32,27 @@ const stops = (t: TrainRow) => {
   return out;
 };
 
+// 同じ列車番号が、いくつの路線に入っているか(直通の列車は、通る路線それぞれに、その路線を走る部分だけ入る)
+const portions = new Map<string, { line: string; row: TrainRow }[]>();
+lines.forEach((l) =>
+  trains[l].forEach((t) => {
+    if (!portions.has(t[0])) portions.set(t[0], []);
+    portions.get(t[0])!.push({ line: l, row: t });
+  })
+);
+const through = [...portions.entries()].filter(([, v]) => v.length > 1);
+
 describe('列車のデータ', () => {
-  it('列車番号は、6桁の数字で、全路線で重ならない', () => {
-    const seen = new Set<string>();
-    lines.forEach((l) =>
+  it('列車番号は、6桁の数字で、同じ路線の中では重ならない', () => {
+    lines.forEach((l) => {
+      const seen = new Set<string>();
       trains[l].forEach((t) => {
         expect(t[0], `${l} ${t[0]}`).toMatch(/^\d{6}$/);
-        expect(seen.has(t[0]), `重複: ${t[0]}`).toBe(false);
+        expect(seen.has(t[0]), `${l} の重複: ${t[0]}`).toBe(false);
         seen.add(t[0]);
-      })
-    );
-    expect(seen.size).toBeGreaterThan(1000);
+      });
+    });
+    expect(portions.size).toBeGreaterThan(1000);
   });
 
   it('種別・方向・駅の番号が、路線の定義の範囲に入っている', () => {
@@ -77,13 +88,46 @@ describe('列車のデータ', () => {
     );
   });
 
-  it('運行番号は、「2桁+K」で、運用番号の表と合っている', () => {
+  it('運行番号は、「2桁+K」で、運用番号の表と合っている(編成が所属する路線の表)', () => {
     lines.forEach((l) =>
       trains[l].forEach((t) => {
         expect(t[6], `${t[0]} の運行番号`).toMatch(/^\d{2}K$/);
-        expect(runNos[l][t[3]], `${t[0]} の運用番号 ${t[3]}`).toBe(t[6]);
+        const owners = lines.filter((x) => runNos[x]?.[t[3]] !== undefined);
+        expect(owners.length, `${t[0]} の運用番号 ${t[3]} が入っている表の数`).toBe(1);
+        expect(runNos[owners[0]][t[3]], `${t[0]} の運行番号`).toBe(t[6]);
       })
     );
+  });
+});
+
+describe('直通の列車(路線をまたぐ列車)', () => {
+  it('直通がある', () => {
+    expect(through.length).toBeGreaterThan(0);
+  });
+
+  it('同じ番号は、ちょうど2つの路線にあり、前の路線の終着と、次の路線の始発が、同じ駅でつながる', () => {
+    through.forEach(([code, v]) => {
+      expect(v.length, `${code} が入っている路線の数`).toBe(2);
+      const [a, b] = [...v].sort((x, y) => x.row[4] - y.row[4]);
+      expect(a.line, `${code} の路線`).not.toBe(b.line);
+      const sa = stops(a.row);
+      const sb = stops(b.row);
+      const last = sa[sa.length - 1];
+      const first = sb[0];
+      expect(master[b.line].stations[first.st][0], `${code}: ${a.line} の終着と ${b.line} の始発の駅`).toBe(master[a.line].stations[last.st][0]);
+      const dwell = b.row[4] + first.dep - (a.row[4] + last.arr);
+      expect(dwell, `${code} の乗継の停車時間(秒)`).toBeGreaterThanOrEqual(0);
+      expect(dwell, `${code} の乗継の停車時間(秒)`).toBeLessThanOrEqual(15 * 60);
+    });
+  });
+
+  it('同じ番号の2つの部分は、同じ編成(運用番号・運行番号)で、同じ種別の名前', () => {
+    through.forEach(([code, v]) => {
+      const [x, y] = v;
+      expect(y.row[3], `${code} の運用番号`).toBe(x.row[3]);
+      expect(y.row[6], `${code} の運行番号`).toBe(x.row[6]);
+      expect(master[y.line].types[y.row[1]][0], `${code} の種別`).toBe(master[x.line].types[x.row[1]][0]);
+    });
   });
 });
 
@@ -112,7 +156,7 @@ describe('駅ごとの発車のデータ', () => {
 });
 
 describe('運用(編成の1日)', () => {
-  it('営業の列車は、ちょうど1つの運用に入っていて、運用の中でつながっている', () => {
+  it('営業の列車は、全路線を通して、ちょうど1つの運用に入っていて、運用の中でつながっている', () => {
     const used = new Map<string, number>();
     lines.forEach((l) =>
       Object.entries(unyo[l]).forEach(([run, rows]) => {
@@ -128,9 +172,8 @@ describe('運用(編成の1日)', () => {
         });
       })
     );
-    lines.forEach((l) =>
-      trains[l].forEach((t) => expect(used.get(t[0]), `${t[0]} が入っている運用の数`).toBe(1))
-    );
+    portions.forEach((_, code) => expect(used.get(code), `${code} が入っている運用の数`).toBe(1));
+    used.forEach((_, code) => expect(portions.has(code), `運用の ${code} が、ダイヤに無い`).toBe(true));
   });
 });
 
