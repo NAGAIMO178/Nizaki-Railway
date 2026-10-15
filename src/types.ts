@@ -47,6 +47,7 @@ export interface ActiveOrder {
   ownerEmail?: string; // この予約をしたアカウント(端末を共有しても、ほかのアカウントには見せない)
   itemDiscount?: number; // デリバリーのクーポン割引の合計(totalPrice にはすでに引いてある)
   earnedPoints?: number; // この予約で付与済みのN-POINT(取消のときに取り消す)
+  pointsUsed?: number; // この予約の支払いに使ったN-POINT(1pt=1円。totalPrice にはすでに引いてある。取消でも戻らない)
 }
 
 // 終了した予約(乗車済み・キャンセル)の記録。アカウント利用履歴の「特急券」「デリバリー」に表示する

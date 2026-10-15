@@ -180,6 +180,7 @@ const HISTORY_TYPE: Record<string, PointHistoryItem['type']> = {
   reservation: 'reservation',
   delivery: 'reservation',
   cancel: 'reservation',
+  spend: 'reservation',
 };
 
 const toAccount = (raw: RawAccount): CloudAccount => ({
@@ -241,6 +242,22 @@ export const redeemPointCode = async (sessionToken: string, code: string): Promi
 export const useCoupon = async (sessionToken: string, code: string): Promise<{ ok: boolean; alreadyUsed: boolean }> => {
   const res = await post('useCoupon', { sessionToken, code });
   return { ok: res.status === 'success', alreadyUsed: !!res.alreadyUsed };
+};
+
+// 予約の支払いに N-POINT を使う(1pt=1円)。使えたか(ok)と、残りの残高。通信できなかったときは、例外
+export const spendPointsApi = async (
+  sessionToken: string,
+  orderId: string,
+  points: number,
+  title: string
+): Promise<{ ok: boolean; insufficient: boolean; balance: number; message: string }> => {
+  const res = await post('spendPoints', { sessionToken, orderId, points, title });
+  return {
+    ok: res.status === 'success',
+    insufficient: !!(res as { insufficient?: boolean }).insufficient,
+    balance: res.balance ?? 0,
+    message: res.message || '',
+  };
 };
 
 export const saveMysteryProgress = async (sessionToken: string, progress: MysteryProgress): Promise<MysteryProgress | null> => {
