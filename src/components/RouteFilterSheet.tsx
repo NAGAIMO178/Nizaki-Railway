@@ -128,6 +128,24 @@ export const RouteFilterSheet: React.FC<RouteFilterSheetProps> = ({ isOpen, opti
               />
             </div>
 
+            <div className="space-y-1.5">
+              <div className="text-sm font-bold text-[#221C35]">結果の並べ方</div>
+              <Segment
+                label="結果の並べ方"
+                value={options.sortBy}
+                items={[
+                  { value: 'time' as const, label: '早く着く順' },
+                  { value: 'crowd' as const, label: '空いている順' },
+                ]}
+                onSelect={(v) => onChange({ ...options, sortBy: v })}
+              />
+              {options.sortBy === 'crowd' && (
+                <div className="text-[11px] text-[#857D99] leading-relaxed">
+                  早く着く便から45分以内の候補のなかで、混雑の目安が低い順に並べます(模擬の混雑です)。
+                </div>
+              )}
+            </div>
+
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="text-sm font-bold text-[#221C35]">リアルタイム検索</div>

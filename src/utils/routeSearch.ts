@@ -3,6 +3,8 @@
 import { loadLineData, LineData, normalizeStationName, tripDistance, resolveTrainDelay } from './diaTimetable';
 import { calculateFare } from './fare';
 import { RouteOptions, DEFAULT_ROUTE_OPTIONS } from './routeOptions';
+import { bumpForDelay, dayTypeOf, loadAllCrowdTrains, trainSegmentLevel } from './crowd';
+import { isLaunched } from './launch';
 
 const LINE_CODES = ['Y', 'NI', 'SC', 'TC'];
 // 乗換に必要な最短の時間(秒)。模擬の値で、駅による違いは付けていない
@@ -20,6 +22,9 @@ const MIN_BOARDINGS = 6;
 // 遅れを加味するとき、時刻表より前に出る列車でも、遅れて間に合うことがあるので、この時間だけさかのぼって調べる
 const DELAY_LOOKBACK_SEC = 60 * 60;
 const DAY = 86400;
+// 「空いている順」: 探す候補の数と、いちばん早く着く便から、どれだけ遅れて着く候補まで入れるか(秒)
+const CROWD_CANDIDATES = 8;
+const CROWD_WINDOW_SEC = 45 * 60;
 
 interface Dep {
   dep: number;
@@ -112,6 +117,9 @@ export interface RouteLeg {
   stops: RouteStop[];
   // この列車で通った、経由駅(停車したか、通過したか)
   passedVias: { name: string; stopped: boolean }[];
+  // 乗っている区間の混雑(1〜6。いちばん混む区間。遅れて3分以上なら1つ上げる)と、区間の平均。混雑予報のデータが無いときは、なし
+  crowd?: number;
+  crowdAvg?: number;
 }
 
 export interface RouteResult {
@@ -124,6 +132,9 @@ export interface RouteResult {
   fare: number;
   hasPaid: boolean;
   delayed: boolean;
+  // いちばん混む列車の混雑と、「乗っている時間で重みをつけた」混雑の平均(並べ替えに使う)。データが無いときは、なし
+  crowd?: number;
+  crowdScore?: number;
 }
 
 interface Pred {
@@ -149,6 +160,7 @@ interface Ctx {
   allowPaid: boolean;
   realtime: boolean;
   dayStartMs: number;
+  crowd: boolean; // 混雑のデータを使う(公開後で、読み込めたとき)
   delayCache: Map<string, { min: number; suspended: boolean }>;
   // 経由駅(駅名の一覧)と、「路線|駅番号」ごとの、その駅のビット
   vias: string[];
@@ -302,6 +314,22 @@ const searchOnce = (net: Net, ctx: Ctx, from: string, to: string, readySec: numb
       });
     }
     const schedDep = train[4] + stops[p.boardPos + 2];
+    // 乗っている区間の混雑: 乗る駅から、降りる駅の1つ前の駅までの、駅を出たあとの区間
+    let crowd: number | undefined;
+    let crowdAvg: number | undefined;
+    if (ctx.crowd) {
+      const day = dayTypeOf(ctx.dayStartMs);
+      const delayMin = Math.round(p.delaySec / 60);
+      const levels: number[] = [];
+      for (let k = p.boardPos / 3; k < p.alightPos / 3; k++) {
+        const lv = trainSegmentLevel(day, p.line, train[0], k);
+        if (lv !== undefined) levels.push(bumpForDelay(lv, delayMin));
+      }
+      if (levels.length > 0) {
+        crowd = Math.max(...levels);
+        crowdAvg = levels.reduce((a, b) => a + b, 0) / levels.length;
+      }
+    }
     return {
       lineCode: p.line,
       lineName: master.name,
@@ -322,10 +350,18 @@ const searchOnce = (net: Net, ctx: Ctx, from: string, to: string, readySec: numb
       km: tripDistance(master, stops[p.boardPos], stops[p.alightPos], dirIdx),
       stops: legStops,
       passedVias,
+      crowd,
+      crowdAvg,
     };
   });
 
   const km = Math.round(legs.reduce((sum, l) => sum + l.km, 0) * 10) / 10;
+  // 混雑の点数: 乗っている時間で重みをつけた、混雑レベルの平均(低いほど空いている)
+  const crowdLegs = legs.filter((l) => l.crowdAvg !== undefined);
+  const crowdScore =
+    crowdLegs.length > 0
+      ? crowdLegs.reduce((s, l) => s + l.crowdAvg! * (l.arrSec - l.depSec), 0) / crowdLegs.reduce((s, l) => s + (l.arrSec - l.depSec), 0)
+      : undefined;
   return {
     legs,
     depSec: legs[0].depSec,
@@ -336,6 +372,8 @@ const searchOnce = (net: Net, ctx: Ctx, from: string, to: string, readySec: numb
     fare: calculateFare(km),
     hasPaid: legs.some((l) => l.paid),
     delayed: legs.some((l) => l.delayMin > 0),
+    crowd: crowdLegs.length > 0 ? Math.max(...crowdLegs.map((l) => l.crowd!)) : undefined,
+    crowdScore,
   };
 };
 
@@ -369,24 +407,45 @@ export const searchRoutes = async (
   const viaBits = new Map<string, number>();
   vias.forEach((name, i) => (net.stationLines.get(name) || []).forEach(({ line, idx }) => viaBits.set(`${line}|${idx}`, 1 << i)));
 
+  // 混雑予報のデータ(公開後だけ)。読み込めなければ、混雑なしで探す
+  let crowd = false;
+  if (isLaunched()) {
+    try {
+      await loadAllCrowdTrains();
+      crowd = true;
+    } catch {
+      crowd = false;
+    }
+  }
+
   const ctx: Ctx = {
     transferSec: options.relaxedTransfer ? RELAXED_TRANSFER_SEC : TRANSFER_SEC,
     maxLegs: Math.min(vias.length > 0 ? MAX_LEGS_WITH_VIAS : MAX_LEGS, options.maxTransfers + 1),
     allowPaid: options.allowPaid,
     realtime: options.realtime,
     dayStartMs: serviceDayStartMs(readySec),
+    crowd,
     delayCache: new Map(),
     vias,
     viaBits,
   };
 
+  // 空いている順のときは、早く着く便を多めに探して、そのなかから、混雑の低い順に選ぶ
+  const byCrowd = crowd && options.sortBy === 'crowd';
+  const want = byCrowd ? CROWD_CANDIDATES : count;
   const results: RouteResult[] = [];
   let ready = readySec;
-  for (let i = 0; i < count && ready < 2 * DAY; i++) {
+  for (let i = 0; i < want && ready < 2 * DAY; i++) {
     const r = searchOnce(net, ctx, a, b, ready);
     if (!r) break;
     if (!results.some((x) => x.depSec === r.depSec && x.arrSec === r.arrSec)) results.push(r);
     ready = r.depSec + 60;
   }
-  return results;
+  if (!byCrowd || results.length === 0) return results.slice(0, count);
+  // いちばん早く着く便から、CROWD_WINDOW_SEC 以内に着くものだけを、混雑の点数の低い順(同じなら、早く着く順)に並べる
+  const earliest = Math.min(...results.map((r) => r.arrSec));
+  return results
+    .filter((r) => r.arrSec <= earliest + CROWD_WINDOW_SEC)
+    .sort((x, y) => (x.crowdScore ?? 99) - (y.crowdScore ?? 99) || x.arrSec - y.arrSec)
+    .slice(0, count);
 };
