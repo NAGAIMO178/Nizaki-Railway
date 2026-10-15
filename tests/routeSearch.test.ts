@@ -199,7 +199,15 @@ describe('直通運転', () => {
     res.forEach((r) => {
       checkRoute(r, '土浦', '東京');
       expect(r.legs.map((l) => l.lineCode)).toEqual(['TC', 'SC']);
+      // 行先は、列車全体の行先(土浦線の部分の終点は松戸だが、列車は東京行き)
+      expect(r.legs[0].destLabel).toBe('東京行');
     });
+  });
+
+  it('東京→日立: 前の区間(埼千環状線の部分の終点は松戸)も、日立行きと出る', async () => {
+    const res = await searchRoutes('東京', '日立', hm(6), opts({ maxTransfers: 0 }), 3);
+    expect(res.length).toBeGreaterThan(0);
+    res.forEach((r) => expect(r.legs[0].destLabel).toBe('日立行'));
   });
 
   it('直通の部分は、リアルタイム検索でなくても、遅れは同じ(同じ列車)', async () => {

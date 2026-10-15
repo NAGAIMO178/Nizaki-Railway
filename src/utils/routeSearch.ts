@@ -1,6 +1,6 @@
 // 経路検索: 全駅ダイヤから、出発駅から到着駅までの乗り方(乗換あり)を、早く着く順に探す。
 // 乗り換えは、同じ駅名で乗り継ぐ(別路線でも、同じ路線の別の列車でもよい)。最大5本の列車まで。
-import { loadLineData, LineData, normalizeStationName, tripDistance, resolveTrainDelay } from './diaTimetable';
+import { loadLineData, LineData, normalizeStationName, tripDistance, resolveTrainDelay, trainDestName } from './diaTimetable';
 import { calculateFare } from './fare';
 import { RouteOptions, DEFAULT_ROUTE_OPTIONS } from './routeOptions';
 import { bumpForDelay, crowdDelayRate, dayTypeOf, loadAllCrowdTrains, trainMaxLevel, trainSegmentLevel } from './crowd';
@@ -421,6 +421,7 @@ const searchOnce = (net: Net, ctx: Ctx, from: string, to: string, readySec: numb
         schedArrSec: arrAt(k),
       });
     }
+    const destName = normalizeStationName(trainDestName(master, train));
     const schedDep = train[4] + stops[p.boardPos + 2];
     // 乗っている区間の混雑: 乗る駅から、降りる駅の1つ前の駅までの、駅を出たあとの区間
     let crowd: number | undefined;
@@ -445,9 +446,10 @@ const searchOnce = (net: Net, ctx: Ctx, from: string, to: string, readySec: numb
       typeAbbr: type[1],
       typeName: type[0],
       paid: type[2] === 1,
-      destLabel: master.loop
+      // 行先は、列車全体の行先(直通の列車は、この路線の最後の駅の先)。環状線で、この路線の中で終わる列車は、「外回り・内回り」
+      destLabel: master.loop && destName === normalizeStationName(master.stations[stops[stops.length - 3]][0])
         ? dirIdx === 0 ? '外回り' : '内回り'
-        : `${normalizeStationName(master.stations[stops[stops.length - 3]][0])}行`,
+        : `${destName}行`,
       from: p.boardStation,
       to: legStops[legStops.length - 1].name,
       depSec: schedDep + p.delaySec,

@@ -17,7 +17,8 @@ type MasterLine = {
 type Master = Record<string, MasterLine>;
 // [列車番号(6桁), 種別番号, 方向, 運用番号, 始発の発車秒, [駅番号, 着, 発, ...3つずつ(始発秒からの差。-1は無し)], 運行番号(例: 61K)]
 // 公開前のダイヤ(data/dia/)には、運行番号が無い
-type TrainRow = [string, number, string, string, number, number[], string?];
+// 7つ目の次に、列車全体の「行先の駅名」「始発の駅名」が入る(直通の列車は、路線をまたいだ全体。公開前のダイヤには無い)
+type TrainRow = [string, number, string, string, number, number[], string?, string?, string?];
 // {方向: [[発車秒, 種別番号, 列車の添字], ...]}
 type StationFile = Record<string, [number, number, number][]>;
 
@@ -203,6 +204,11 @@ export interface BoardResult {
   untilFirstSec?: number;
 }
 
+// 列車全体の行先・始発の駅名。「○○行き」「当駅始発」の表示は、これを使う(直通の列車は、この路線の最後・最初の駅ではなく、路線をまたいだ全体の行先・始発)。
+// データに無いとき(公開前のダイヤ)は、この路線の最後・最初の駅
+export const trainDestName = (master: MasterLine, t: TrainRow): string => t[7] ?? master.stations[t[5][t[5].length - 3]]?.[0] ?? '';
+export const trainOriginName = (master: MasterLine, t: TrainRow): string => t[8] ?? master.stations[t[5][0]]?.[0] ?? '';
+
 // 画面の種別の名前: 各停は「各停」。直通の種別の「(越谷経由)」などは、はずす(「急行」「特別快速」と同じ色・同じ名前で見せる)
 const displayType = (typeName: string): string =>
   typeName.startsWith('各停') ? '各停' : typeName.replace(/\((越谷経由|柏経由|東京直通)\)$/, '');
@@ -265,8 +271,6 @@ export const computeBoard = (data: BoardData, platform: 1 | 2, nowMs: number, li
   const departures: DynamicDeparture[] = upcoming.map((c) => {
     const train = c.line.trains[c.ti];
     const stops = train[5];
-    const originIdx = stops[0];
-    const destIdx = stops[stops.length - 3];
     const depTs = base + c.eff * 1000;
     const eff = resolveDelay(LINE_IDS[c.line.code] || 'kanzaki', c.line.code, train[0], c.dayMs, depTs, platform, {
       stationName: data.stationName,
@@ -277,12 +281,12 @@ export const computeBoard = (data: BoardData, platform: 1 | 2, nowMs: number, li
       id: `dia-${c.line.code}-${train[0]}-${depTs}`,
       lineName: c.line.master.name,
       trainType: displayType(c.line.master.types[train[1]]?.[0] ?? '各停'),
-      destination: c.line.master.stations[destIdx]?.[0] ?? '',
+      destination: trainDestName(c.line.master, train),
       departureTime: `${hh}:${mm}`,
       departureTimestamp: depTs,
       isFirstTrain: c.first,
       isLastTrain: c.last,
-      isOrigin: originIdx === c.line.stationIdx,
+      isOrigin: normalizeName(trainOriginName(c.line.master, train)) === normalizeName(c.line.master.stations[c.line.stationIdx]?.[0] ?? ''),
       delayMinutes: eff.delayMinutes,
       isSuspended: eff.isSuspended,
     };
@@ -560,7 +564,7 @@ export const computeLiveTrains = (data: LineData, lineId: string, direction: 1 |
       id: `dia-${data.code}-${t[0]}`,
       direction,
       trainType: displayType(typeName),
-      destination: master.stations[idxOfPos(stops[stops.length - 1].pos)][0],
+      destination: trainDestName(master, t),
       carCount: typeName.includes('特急') || typeName.startsWith('特別快速') ? 10 : 8,
       stationName,
       isBetween,
@@ -883,14 +887,13 @@ export const loadStationTimetable = async (lineCode: string, stationIdx: number)
       ? i === 0 ? '外回り' : '内回り'
       : `${cfg.stations[i === 0 ? cfg.stations.length - 1 : 0][0]}方面`;
     const departures: TimetableDeparture[] = (file[dirCode] || []).map(([sec, typeIdx, trainIdx]) => {
-      const stops = trains[trainIdx][5];
       const type = cfg.types[typeIdx];
       return {
         sec,
         typeAbbr: type[1],
         typeName: type[0],
         paid: type[2] === 1,
-        dest: cfg.stations[stops[stops.length - 3]][0],
+        dest: trainDestName(cfg, trains[trainIdx]),
       };
     });
 
