@@ -4,6 +4,7 @@
 //    (一番上でないときは、ふつうにスクロールする)
 //  - style を、シート本体に付ける。
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
 
 const CLOSE_DISTANCE_PX = 90; // これ以上引いたら閉じる
 const CLOSE_VELOCITY_PX_PER_MS = 0.6; // これより速く引いたら、短くても閉じる
@@ -71,7 +72,7 @@ export function useDragToDismiss(onDismiss: () => void) {
   };
 
   const handleProps = {
-    onPointerDown: (e: React.PointerEvent) => {
+    onPointerDown: (e: ReactPointerEvent) => {
       begin(e.clientY);
       try {
         e.currentTarget.setPointerCapture(e.pointerId);
@@ -79,12 +80,12 @@ export function useDragToDismiss(onDismiss: () => void) {
         // 取れない環境でも、動きは追える
       }
     },
-    onPointerMove: (e: React.PointerEvent) => move(e.clientY),
+    onPointerMove: (e: ReactPointerEvent) => move(e.clientY),
     onPointerUp: () => finish(true),
     onPointerCancel: () => finish(false),
     // キーボードでも閉じられるように
     tabIndex: 0,
-    onKeyDown: (e: React.KeyboardEvent) => {
+    onKeyDown: (e: ReactKeyboardEvent) => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
         slideOut();
