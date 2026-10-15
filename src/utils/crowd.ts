@@ -1,5 +1,5 @@
 // 混雑予報(NIZAKI 2.0。公開後だけ)の、データの読み込みと、混雑レベルの決まり。
-// データは tools/crowd-sim/sim.py が作った public/data/crowd-2/(仮想の住民による、模擬の混雑)。設計は docs/NIZAKI-2.0-crowd.md。
+// データは tools/crowd-sim/sim.py が作った public/data/crowd-2/(仮想の住民による、模擬の混雑)。
 
 export type CrowdDay = 'wd' | 'we'; // 平日 / 土休日
 

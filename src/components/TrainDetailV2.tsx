@@ -5,7 +5,6 @@ import { CROWD_LEVELS, CROWD_MAX_LEVEL, crowdInfo } from '../utils/crowd';
 
 // 列車の詳細(公開後の新しい画面。列車位置で列車を押すと出るシートの中身)。
 // 上に答え(遅れ・混雑)、下に詳細(これから通る駅)の順。見出しの色は神埼の紫に統一し、路線は小さな丸で見分ける。
-// 設計は docs/NIZAKI-2.0-crowd.md。
 
 const TrainIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} viewBox="0 0 24 28" aria-hidden="true">

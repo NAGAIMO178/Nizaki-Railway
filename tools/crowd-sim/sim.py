@@ -1,6 +1,6 @@
 # 混雑予報(仮)のシミュレーター。仮想の住民を、実際のダイヤ(public/data/dia-2)の上で動かして、
 # 列車ごと(区間ごと)の混雑レベル(1〜6)を、public/data/crowd-2/ に書き出す。
-# 設計は docs/NIZAKI-2.0-crowd.md。計算はこの Mac で1回だけ(アプリは、できた JSON を読むだけ)。
+# 計算はこの Mac で1回だけ(アプリは、できた JSON を読むだけ)。
 #   使い方:  python3 tools/crowd-sim/sim.py        (標準ライブラリだけ。数分)
 import bisect, csv, collections, json, math, os, random, sys, time
 
