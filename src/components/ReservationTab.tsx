@@ -38,7 +38,17 @@ import {
 } from '../utils/diaTimetable';
 import { calculateFare } from '../utils/fare';
 
+// 列車位置の特急の詳細から、予約画面を、その列車を選んだ状態で開くための指定(公開後だけ。key が変わるたびに適用する)
+export interface ReservationPreset {
+  key: number;
+  expressType: 'ayami' | 'nliner' | 'meguri';
+  boarding?: string; // 駅名(「駅」なし)
+  destination?: string;
+  trainCode: string;
+}
+
 interface ReservationTabProps {
+  preset?: ReservationPreset | null;
   activeOrder: ActiveOrder | null;
   onOpenEDeliveryModal: () => void;
   onConfirmOrder: (order: ActiveOrder) => void;
@@ -50,6 +60,7 @@ interface ReservationTabProps {
 }
 
 export const ReservationTab: React.FC<ReservationTabProps> = ({
+  preset,
   activeOrder,
   onOpenEDeliveryModal,
   onConfirmOrder,
@@ -94,6 +105,18 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
   const [boardingStation, setBoardingStation] = useState('東京駅');
   const [destinationStation, setDestinationStation] = useState('大宮駅');
   const [selectedTrainCode, setSelectedTrainCode] = useState<string>('');
+
+  // 特急の詳細から開かれたとき: 特急の種類・乗る駅・降りる駅・列車を、その列車に合わせる
+  React.useEffect(() => {
+    if (!preset) return;
+    setExpressType(preset.expressType);
+    setSeatType(preset.expressType === 'meguri' ? 'megu' : 'reserved');
+    if (preset.boarding && preset.destination) {
+      setBoardingStation(`${preset.boarding}駅`);
+      setDestinationStation(`${preset.destination}駅`);
+    }
+    setSelectedTrainCode(preset.trainCode);
+  }, [preset?.key]);
 
   // 駅の選択肢(ダイヤの読み込み前は、いまの選択だけ)
   const currentStationList: string[] = lineData

@@ -8,7 +8,7 @@ import { MyStationRegisterCard, RegisterableStation, REGISTERABLE_LINES } from '
 import { FooterNav } from './components/FooterNav';
 import { TrainLocationTab } from './components/TrainLocationTab';
 import { TimetableTab, presetTimetableMode } from './components/TimetableTab';
-import { ReservationTab } from './components/ReservationTab';
+import { ReservationTab, ReservationPreset } from './components/ReservationTab';
 import { EquipTab } from './components/EquipTab';
 import { EventsTab } from './components/EventsTab';
 import { SettingsTab } from './components/SettingsTab';
@@ -492,6 +492,7 @@ export default function App() {
   const [isRouteMapModalOpen, setIsRouteMapModalOpen] = useState(false);
   const [isQRCodeModalOpen, setIsQRCodeModalOpen] = useState(false);
   const [isMyPageOpen, setIsMyPageOpen] = useState(false);
+  const [reservationPreset, setReservationPreset] = useState<ReservationPreset | null>(null); // 特急の詳細から、予約画面を開くときの指定
   const [welcomeReplayKey, setWelcomeReplayKey] = useState(0); // NIZAKI 2.0 のご案内を、メニューからもう一度見る
 
   // 公開日の案内が、説明している場所を、実際に開く(マイレージ・ポイントは、クラウドの会員だけ。ほかは、ホームのまま)
@@ -762,7 +763,13 @@ export default function App() {
         {/* Tab 2: 列車位置 */}
         {activeTab === 'location' && (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-28 md:pb-12">
-            <TrainLocationTab />
+            <TrainLocationTab
+              onOpenReservation={(preset) => {
+                setReservationPreset(preset);
+                setReservationView('ticket');
+                setActiveTab('reservation');
+              }}
+            />
           </div>
         )}
 
@@ -796,6 +803,7 @@ export default function App() {
 
             {reservationView === 'ticket' ? (
               <ReservationTab
+                preset={reservationPreset}
                 activeOrder={activeOrder}
                 onOpenEDeliveryModal={() => setIsEDeliveryModalOpen(true)}
                 onConfirmOrder={handleConfirmOrder}
