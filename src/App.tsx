@@ -549,6 +549,7 @@ export default function App() {
                 ...base,
                 items: (activeOrder.items || []).map((ci) => ({ id: ci.item.id, name: ci.item.name, quantity: ci.quantity, price: ci.item.price })),
                 itemDiscount: activeOrder.itemDiscount || 0,
+                pointsUsed: activeOrder.pointsUsed || 0,
               },
               awardPoints: true,
             }
@@ -576,7 +577,9 @@ export default function App() {
   const handleConfirmOrder = (order: ActiveOrder) => {
     // 特急券・注文金額に応じた N-POINT 還元 (合計金額の3% 還元、最低50pt)
     const owner = normEmail(currentUserRef.current?.email) || undefined;
-    const earnedPoints = owner ? Math.max(50, Math.floor((order.totalPrice || 2000) * 0.03)) : 0;
+    // (N-POINTで払った分は、含まない。ぜんぶポイントで払ったときは、付けない)
+    const paidAllByPoints = (order.pointsUsed ?? 0) > 0 && order.totalPrice <= 0;
+    const earnedPoints = owner && !paidAllByPoints ? Math.max(50, Math.floor((order.totalPrice || 2000) * 0.03)) : 0;
 
     setActiveOrder((prevOrder) => {
       if (!prevOrder) {
@@ -841,6 +844,8 @@ export default function App() {
                 isLoggedIn={isLoggedIn}
                 onRequireLogin={handleRequireLogin}
                 onCouponUsed={cloudOn ? cloud.markCouponUsed : undefined}
+                pointBalance={cloudOn && cloud.ready && !cloud.error ? shownBalance : undefined}
+                onSpendPoints={cloudOn && cloud.ready && !cloud.error ? cloud.spendPoints : undefined}
               />
             ) : (
               <EquipTab

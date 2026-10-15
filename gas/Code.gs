@@ -69,6 +69,9 @@ function doPost(e) {
     if (json.action === 'useCoupon') {
       return handleUseCoupon(json.sessionToken, json.code);
     }
+    if (json.action === 'spendPoints') {
+      return handleSpendPoints(json.sessionToken, json.orderId, json.points, json.title);
+    }
     if (json.action === 'saveMysteryProgress') {
       return handleSaveMysteryProgress(json.sessionToken, json.progress);
     }
@@ -1509,6 +1512,35 @@ function handleRedeemPointCode(sessionToken, rawCode) {
   });
 }
 
+// 予約の支払いに、N-POINT を使う(1pt=1円)。予約を確定する前に呼ぶ。同じ予約番号は1回だけ(二重に引かれない)。
+// 使ったポイントは、予約を取り消しても戻らない(取消で取り消すのは、予約で付いたポイントだけ)
+function handleSpendPoints(sessionToken, orderId, rawPoints, rawTitle) {
+  const a = authMember(sessionToken);
+  if (a.error) return a.error;
+  const id = String(orderId === undefined || orderId === null ? '' : orderId);
+  if (!/^[A-Za-z0-9-]{3,40}$/.test(id)) {
+    return createJsonResponse({ status: 'error', message: '予約内容が正しくありません。' });
+  }
+  const points = Math.floor(Number(rawPoints));
+  if (!(points >= 1) || points > 1000000) {
+    return createJsonResponse({ status: 'error', message: '使うポイントが正しくありません。' });
+  }
+  return withScriptLock(function () {
+    const ledger = readMemberPoints(a.memberId);
+    if (!ledger.keys['welcome'] && !ledger.keys['migration']) return notSyncedYetResponse();
+    const key = 'use:' + id;
+    if (ledger.keys[key]) {
+      // 通信のやり直し。すでに引いてあるので、何もしない
+      return createJsonResponse({ status: 'success', spent: -ledger.keys[key].points, balance: ledgerBalance(ledger), added: false });
+    }
+    if (ledgerBalance(ledger) < points) {
+      return createJsonResponse({ status: 'error', insufficient: true, balance: ledgerBalance(ledger), message: 'N-POINTの残高が足りません。' });
+    }
+    addPointEntry(ledger, a.memberId, 'spend', key, -points, limitText(rawTitle, 60) || '特急券・座席のお支払い(N-POINT)');
+    return createJsonResponse({ status: 'success', spent: points, balance: ledgerBalance(ledger), added: true });
+  });
+}
+
 function handleUseCoupon(sessionToken, rawCode) {
   const a = authMember(sessionToken);
   if (a.error) return a.error;
@@ -1548,7 +1580,11 @@ function saveReservationDetail(sheet, row, order) {
   const items = (Array.isArray(order.items) ? order.items : []).slice(0, 20).map(function (it) {
     return { name: limitText(it && it.name, 60), quantity: Math.floor(Number(it && it.quantity)) || 0, price: Math.floor(Number(it && it.price)) || 0 };
   });
-  const detail = { items: items, itemDiscount: Math.max(0, Math.floor(Number(order.itemDiscount)) || 0) };
+  const detail = {
+    items: items,
+    itemDiscount: Math.max(0, Math.floor(Number(order.itemDiscount)) || 0),
+    pointsUsed: Math.max(0, Math.floor(Number(order.pointsUsed)) || 0)
+  };
   sheet.getRange(row, col).setValue(JSON.stringify(detail));
 }
 
@@ -1557,7 +1593,8 @@ function awardReservationPoints(memberId, orderId, total, previousTotal, trainNa
   // 最初の同期(端末のポイントの引き継ぎ)が済む前は、付けない。先に初期化すると、端末のポイントが引き継げなくなる
   if (!ledger.keys['welcome'] && !ledger.keys['migration']) return;
   if (previousTotal === null) {
-    // 新しい予約: 合計金額の3%(最低50pt)
+    // 新しい予約: 合計金額(N-POINTで払った分は、含まない)の3%(最低50pt)。ぜんぶポイントで払ったときは、付けない
+    if (total <= 0) return;
     const points = Math.max(RESERVATION_POINT_MIN, Math.floor(total * RESERVATION_POINT_RATE));
     addPointEntry(ledger, memberId, 'reservation', 'reservation:' + orderId, points, (trainName || '特急列車予約') + ' 乗車・デリバリー利用');
     return;

@@ -57,6 +57,9 @@ interface ReservationTabProps {
   onRequireLogin?: (reason: string, onLoggedIn?: () => void) => void;
   // クーポンを使ったとき(公開後、クラウドが基準の会員が、使用済みをサーバーへ送るため)
   onCouponUsed?: (code: string) => void;
+  // N-POINT で払う(1pt=1円。公開後で、クラウドが基準の会員だけ。渡されなければ、使う欄を出さない)
+  pointBalance?: number;
+  onSpendPoints?: (orderId: string, points: number, title: string) => Promise<{ ok: boolean; message: string }>;
 }
 
 export const ReservationTab: React.FC<ReservationTabProps> = ({
@@ -68,8 +71,15 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
   isLoggedIn = false,
   onRequireLogin,
   onCouponUsed,
+  pointBalance,
+  onSpendPoints,
 }) => {
   const [copiedCode, setCopiedCode] = useState(false);
+  // N-POINT で払うか / ポイントを引いているあいだ / うまくいかなかったときの理由
+  const [usePoints, setUsePoints] = useState(false);
+  const [spending, setSpending] = useState(false);
+  const [spendError, setSpendError] = useState<string | null>(null);
+  const canUsePoints = !!onSpendPoints && (pointBalance ?? 0) > 0;
   // Express Train Selection in E-Quick Service
   const [expressType, setExpressType] = useState<'ayami' | 'nliner' | 'meguri'>('ayami');
 
@@ -388,7 +398,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
   };
 
   // Confirm Seat Selection Handler
-  const handleConfirmSeatSelection = ({
+  const handleConfirmSeatSelection = async ({
     carNo,
     seatNo,
     isSpecialCar,
@@ -399,7 +409,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
     isSpecialCar: boolean;
     specialCarFee: number;
   }) => {
-    if (isCurrentTrainEnded || isAllTrainsEnded || !currentTrainInfo) {
+    if (isCurrentTrainEnded || isAllTrainsEnded || !currentTrainInfo || spending) {
       return;
     }
 
@@ -409,9 +419,23 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
     const trainName = currentTrainInfo.trainName;
 
     const finalTotalPrice = prices.fare + prices.expressFee + (isSpecialCar ? specialCarFee : 0);
+    const orderId = `EQ-${Math.floor(10000 + Math.random() * 90000)}`;
+
+    // N-POINT で払うときは、予約を確定する前に、サーバーでポイントを引く(引けなければ、予約しない)
+    const pointsUsed = usePoints && canUsePoints && onSpendPoints ? Math.min(pointBalance ?? 0, finalTotalPrice) : 0;
+    if (pointsUsed > 0 && onSpendPoints) {
+      setSpending(true);
+      setSpendError(null);
+      const r = await onSpendPoints(orderId, pointsUsed, `${trainName} 特急券・座席のお支払い`);
+      setSpending(false);
+      if (!r.ok) {
+        setSpendError(r.message || 'N-POINTを使えませんでした。もう一度お試しください。');
+        return;
+      }
+    }
 
     const newOrder: ActiveOrder = {
-      orderId: `EQ-${Math.floor(10000 + Math.random() * 90000)}`,
+      orderId,
       trainName,
       carNo,
       seatNo,
@@ -422,7 +446,8 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
       arrivalTime,
       reservedDate: getLocalDateString(),
       items,
-      totalPrice: finalTotalPrice,
+      totalPrice: finalTotalPrice - pointsUsed,
+      ...(pointsUsed > 0 ? { pointsUsed } : {}),
       status: 'confirmed',
       estimatedDeliveryTime: `${boardingStation.replace('駅', '')}駅発車後 5分頃`,
       deliveryStation: boardingStation,
@@ -436,6 +461,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
       setAppliedCoupon(null);
     }
 
+    setUsePoints(false);
     onConfirmOrder(newOrder);
     setShowBookingSuccessModal(true);
   };
@@ -913,8 +939,29 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
             {/* Price Breakdown & Total Price */}
             {(() => {
               const priceInfo = calculateTicketPrice();
+              const pointsToUse = usePoints && canUsePoints ? Math.min(pointBalance ?? 0, priceInfo.total) : 0;
               return (
                 <div className="pt-2 border-t border-[#E6E2EE] space-y-1">
+                  {canUsePoints && (
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={usePoints}
+                      onClick={() => {
+                        setUsePoints((v) => !v);
+                        setSpendError(null);
+                      }}
+                      className="w-full flex items-center justify-between gap-3 px-3 py-2 mb-1 rounded-xl border border-[#DDD6FE] bg-[#F9F8FD] cursor-pointer text-left"
+                    >
+                      <span className="min-w-0">
+                        <span className="block text-xs font-bold text-[#221C35]">N-POINTを使う</span>
+                        <span className="block text-[10px] text-[#6B6380]">残高 {(pointBalance ?? 0).toLocaleString()}pt ・ 1pt=1円</span>
+                      </span>
+                      <span className={`shrink-0 w-10 h-6 rounded-full p-0.5 transition-colors ${usePoints ? 'bg-[#5B21B6]' : 'bg-[#C4BCD8]'}`}>
+                        <span className={`block w-5 h-5 rounded-full bg-white shadow-xs transition-transform ${usePoints ? 'translate-x-4' : ''}`} />
+                      </span>
+                    </button>
+                  )}
                   <div className="flex items-center justify-between text-[11px] text-[#6B6380]">
                     <div className="flex items-center gap-1">
                       <span>乗車運賃 ({priceInfo.dist}km)</span>
@@ -959,10 +1006,16 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
                       )}
                     </div>
                   </div>
+                  {pointsToUse > 0 && (
+                    <div className="flex items-center justify-between text-[11px] text-[#6B6380]">
+                      <span>N-POINT利用</span>
+                      <span className="font-mono font-bold text-emerald-600">-¥{pointsToUse.toLocaleString()}</span>
+                    </div>
+                  )}
                   <div className="pt-1.5 border-t border-[#E6E2EE] flex items-center justify-between">
                     <span className="text-xs text-[#221C35] font-extrabold">お支払い合計</span>
                     <span className="text-xl font-black text-[#5B21B6] font-mono">
-                      ¥{priceInfo.total.toLocaleString()}
+                      ¥{(priceInfo.total - pointsToUse).toLocaleString()}
                     </span>
                   </div>
                 </div>
@@ -985,6 +1038,11 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
             {!diaError && lineData && availableTrains.length === 0 && (
               <div className="p-2.5 rounded-xl bg-amber-50 text-amber-800 text-xs text-center font-bold">
                 この区間を走る特急は、ありません
+              </div>
+            )}
+            {spendError && (
+              <div className="p-2.5 rounded-xl bg-rose-50 text-rose-700 text-xs text-center font-bold" role="alert">
+                {spendError}
               </div>
             )}
             {isCurrentTrainEnded && availableTrains.length > 0 && (
@@ -1012,7 +1070,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
             <button
               type="button"
               onClick={handleBookingClick}
-              disabled={isCurrentTrainEnded}
+              disabled={isCurrentTrainEnded || spending}
               className={`w-full font-bold text-xs py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-all ${
                 isCurrentTrainEnded
                   ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
@@ -1087,8 +1145,14 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
               <div className="space-y-1.5 text-[#221C35]">
                 <div className="flex justify-between items-center text-[11px]">
                   <span className="text-[#6B6380]">ご予約列車・商品小計:</span>
-                  <span className="font-bold">¥{activeOrder.totalPrice.toLocaleString()}</span>
+                  <span className="font-bold">¥{(activeOrder.totalPrice + (activeOrder.pointsUsed ?? 0)).toLocaleString()}</span>
                 </div>
+                {(activeOrder.pointsUsed ?? 0) > 0 && (
+                  <div className="flex justify-between items-center text-[11px]">
+                    <span className="text-[#6B6380]">うち N-POINT利用 (戻りません):</span>
+                    <span className="font-bold">{(activeOrder.pointsUsed ?? 0).toLocaleString()}pt</span>
+                  </div>
+                )}
 
                 <div className="flex justify-between items-center pt-1 border-t border-rose-200/80 text-rose-900 font-bold text-[11px]">
                   <span>お客様への返金額:</span>
@@ -1100,7 +1164,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
                     <span>追加徴収違約金 (1.5倍 + 手数料500円):</span>
                   </span>
                   <span className="font-black text-rose-600 text-sm">
-                    +¥{(Math.round(activeOrder.totalPrice * 1.5) + 500).toLocaleString()}
+                    +¥{(Math.round((activeOrder.totalPrice + (activeOrder.pointsUsed ?? 0)) * 1.5) + 500).toLocaleString()}
                   </span>
                 </div>
               </div>
@@ -1121,7 +1185,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
                 <AlertTriangle className="w-4 h-4 text-white shrink-0" />
                 <span>
                   違約金を了解してキャンセル (計 ¥
-                  {(Math.round(activeOrder.totalPrice * 1.5) + 500).toLocaleString()} 請求)
+                  {(Math.round((activeOrder.totalPrice + (activeOrder.pointsUsed ?? 0)) * 1.5) + 500).toLocaleString()} 請求)
                 </span>
               </button>
 
@@ -1160,7 +1224,11 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
 
             <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-2.5 text-center text-[11px] font-bold flex items-center justify-center gap-1.5">
               <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
-              <span>特急予約により N-POINT を獲得しました！</span>
+              <span>
+                {(activeOrder?.pointsUsed ?? 0) > 0 && (activeOrder?.totalPrice ?? 1) <= 0
+                  ? `N-POINT ${(activeOrder?.pointsUsed ?? 0).toLocaleString()}pt でお支払いしました`
+                  : '特急予約により N-POINT を獲得しました！'}
+              </span>
             </div>
 
             <div className="bg-[#F9F8FD] border border-[#E0D7F3] rounded-2xl p-3.5 space-y-2 text-left text-xs">

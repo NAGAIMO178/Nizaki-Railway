@@ -15,6 +15,7 @@ import {
   readLocalMystery,
   redeemPointCode,
   saveMysteryProgress,
+  spendPointsApi,
   syncAccount,
   useCoupon,
   writeDeviceOwner,
@@ -31,6 +32,8 @@ export interface CloudApi {
   // 受け取れたか(added)と、付いたポイント。通信できなかったときは null
   earnEvent: (rewardId: string) => Promise<{ added: boolean; points: number } | null>;
   redeemCode: (code: string) => Promise<{ ok: boolean; message: string }>;
+  // 予約の支払いに使う(予約を確定する前に呼ぶ)。使えなかったときは、ok: false と、理由
+  spendPoints: (orderId: string, points: number, title: string) => Promise<{ ok: boolean; message: string }>;
   markCouponUsed: (code: string) => void;
   // ミステリーの進行を、端末の保存先から読んで、サーバーへ送る(幕を解いたあとなどに呼ぶ)
   pushMystery: () => void;
@@ -191,6 +194,31 @@ export function useCloudAccount(user: UserProfile | null): CloudApi {
     [refresh]
   );
 
+  const spendPoints = useCallback(
+    async (orderId: string, points: number, title: string) => {
+      const failed = { ok: false, message: '通信できませんでした。しばらくしてからもう一度お試しください。' };
+      if (!(await firstSyncRef.current)) return failed;
+      const t = tokenRef.current;
+      if (!t) return { ok: false, message: 'ログインしてください。' };
+      try {
+        const r = await spendPointsApi(t, orderId, points, title);
+        if (!r.ok) return { ok: false, message: r.message || 'ポイントを使えませんでした。' };
+        // 残高をすぐ画面に反映して、全体の同期は裏で行う
+        setAccount((prev) => {
+          if (!prev) return prev;
+          const next = { ...prev, balance: r.balance };
+          if (memberRef.current) writeCache(memberRef.current, next);
+          return next;
+        });
+        void refresh();
+        return { ok: true, message: '' };
+      } catch {
+        return failed;
+      }
+    },
+    [refresh]
+  );
+
   const markCouponUsed = useCallback((code: string) => {
     const c = code.replace(/\s+/g, '').toUpperCase();
     // 画面にすぐ反映して(使用済み)、サーバーへ送る
@@ -230,5 +258,5 @@ export function useCloudAccount(user: UserProfile | null): CloudApi {
     }, 600);
   }, []);
 
-  return { active, ready, error, account, refresh, earnEvent, redeemCode, markCouponUsed, pushMystery };
+  return { active, ready, error, account, refresh, earnEvent, redeemCode, spendPoints, markCouponUsed, pushMystery };
 }
