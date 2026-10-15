@@ -12,6 +12,7 @@ interface SeatSelectionModalProps {
   destinationStation: string;
   initialSeatType?: 'standard' | 'reserved' | 'green' | 'premium' | 'megu';
   basePrice: number;
+  pointsUsed?: number; // N-POINT で払う額(あれば、お支払い額から引いて見せる)
   onConfirmSeat: (selection: {
     carNo: number;
     seatNo: string;
@@ -30,6 +31,7 @@ export const SeatSelectionModal: React.FC<SeatSelectionModalProps> = ({
   destinationStation,
   initialSeatType = 'reserved',
   basePrice,
+  pointsUsed = 0,
   onConfirmSeat,
 }) => {
   const isSpecialSeatType =
@@ -327,8 +329,11 @@ export const SeatSelectionModal: React.FC<SeatSelectionModalProps> = ({
             <span className="text-gray-500">
               指定席: <strong className="text-gray-900">{selectedCarNo}号車 {selectedSeatId}</strong>
             </span>
-            <span className="font-bold text-gray-900 text-sm">
-              ¥{basePrice.toLocaleString()}
+            <span className="text-right">
+              <span className="block font-bold text-gray-900 text-sm">¥{(basePrice - pointsUsed).toLocaleString()}</span>
+              {pointsUsed > 0 && (
+                <span className="block text-[10px] font-bold text-emerald-600">N-POINT利用 -¥{pointsUsed.toLocaleString()}</span>
+              )}
             </span>
           </div>
 
