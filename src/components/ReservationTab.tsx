@@ -1105,6 +1105,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
         destinationStation={destinationStation}
         initialSeatType={seatType}
         basePrice={calculateTicketPrice().total}
+        pointsUsed={usePoints && canUsePoints ? Math.min(pointsAmount, pointBalance ?? 0, calculateTicketPrice().total) : 0}
         onConfirmSeat={handleConfirmSeatSelection}
       />
 
