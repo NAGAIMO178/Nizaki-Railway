@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
 import { REGISTERABLE_LINES } from './MyStationRegisterCard';
 import { RouteSearch } from './RouteSearch';
-import { CrowdForecast } from './CrowdForecast';
 import { isLaunched } from '../utils/launch';
 import {
   loadTimetableLines,
@@ -36,10 +35,10 @@ const StationBadge: React.FC<{ lineCode: string; idx: number }> = ({ lineCode, i
 );
 
 // 別のタブへ移って戻ったときに、時刻表と経路検索のどちらを見ていたかを、アプリを開いているあいだは覚えておく
-let lastMode: 'timetable' | 'route' | 'crowd' = 'timetable';
+let lastMode: 'timetable' | 'route' = 'timetable';
 
 // 公開日の案内から、経路検索の画面を開くために、開く前に切り替えを決めておく
-export const presetTimetableMode = (m: 'timetable' | 'route' | 'crowd') => {
+export const presetTimetableMode = (m: 'timetable' | 'route') => {
   lastMode = m;
 };
 
@@ -57,8 +56,8 @@ export const TimetableTab: React.FC = () => {
   const [nowSec, setNowSec] = useState(() => nowAsServiceSec(new Date()));
   // 経路検索は、公開日まで隠す(公開前に確かめるときは、URLの末尾に ?preview=1)
   const showRoute = isLaunched();
-  const [mode, setModeState] = useState<'timetable' | 'route' | 'crowd'>(lastMode);
-  const setMode = (m: 'timetable' | 'route' | 'crowd') => {
+  const [mode, setModeState] = useState<'timetable' | 'route'>(lastMode);
+  const setMode = (m: 'timetable' | 'route') => {
     lastMode = m;
     setModeState(m);
   };
@@ -126,11 +125,10 @@ export const TimetableTab: React.FC = () => {
   const currentLine = lines?.find((l) => l.code === lineCode);
 
   const modeToggle = showRoute ? (
-    <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-[#E6E2EE]" role="tablist" aria-label="時刻表・経路検索・混雑">
+    <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[#E6E2EE]" role="tablist" aria-label="時刻表と経路検索">
       {([
         ['timetable', '時刻表'],
         ['route', '経路検索'],
-        ['crowd', '混雑'],
       ] as const).map(([id, label]) => (
         <button
           key={id}
@@ -265,17 +263,6 @@ export const TimetableTab: React.FC = () => {
         <h2 className="text-base font-black text-[#221C35]">経路検索</h2>
         {modeToggle}
         <RouteSearch />
-      </div>
-    );
-  }
-
-  // 混雑予報(公開後だけ)
-  if (showRoute && mode === 'crowd') {
-    return (
-      <div className="max-w-md mx-auto px-4 py-4 pb-28 space-y-3 animate-fadeIn">
-        <h2 className="text-base font-black text-[#221C35]">混雑予報</h2>
-        {modeToggle}
-        <CrowdForecast />
       </div>
     );
   }

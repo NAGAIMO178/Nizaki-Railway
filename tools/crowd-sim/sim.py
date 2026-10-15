@@ -1,5 +1,5 @@
 # 混雑予報(仮)のシミュレーター。仮想の住民を、実際のダイヤ(public/data/dia-2)の上で動かして、
-# 駅 × 時間帯 と 列車ごと の混雑レベル(1〜6)を、public/data/crowd-2/ に書き出す。
+# 列車ごと(区間ごと)の混雑レベル(1〜6)を、public/data/crowd-2/ に書き出す。
 # 設計は docs/NIZAKI-2.0-crowd.md。計算はこの Mac で1回だけ(アプリは、できた JSON を読むだけ)。
 #   使い方:  python3 tools/crowd-sim/sim.py        (標準ライブラリだけ。数分)
 import bisect, csv, collections, json, math, os, random, sys, time
@@ -280,27 +280,6 @@ def write_outputs(master, T, names, scale, res):
             ratios[ti] = rs
             trainfile.setdefault(t["line"], {})[t["no"]] = "".join(str(level(r)) for r in rs)
         json.dump(trainfile, open(os.path.join(OUT, f"train_{label}.json"), "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
-        # 駅 × 30分枠(5:00〜翌1:00)。その駅を出る列車の、乗車率の平均
-        SLOTS = 40
-        acc = {}
-        for ti, t in enumerate(T):
-            m = master[t["line"]]
-            dirs = m["dirs"]
-            for k in range(len(t["stops"]) - 1):
-                if t["dep"][k] is None:
-                    continue
-                slot = (t["dep"][k] - 5 * 3600) // 1800
-                if not (0 <= slot < SLOTS):
-                    continue
-                acc.setdefault((t["line"], t["stops"][k], T[ti]["no"][len(t["line"]):len(t["line"]) + 1], slot), []).append(ratios[ti][k])
-        slotfile = {}
-        for (line, s, dch, slot), rs in acc.items():
-            slotfile.setdefault(line, {}).setdefault(dch, {}).setdefault(names[s], ["0"] * SLOTS)[slot] = str(level(sum(rs) / len(rs)))
-        for line in slotfile:
-            for dch in slotfile[line]:
-                for n in slotfile[line][dch]:
-                    slotfile[line][dch][n] = "".join(slotfile[line][dch][n])
-        json.dump(slotfile, open(os.path.join(OUT, f"slot_{label}.json"), "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
         # 報告: レベルの分布と、いちばん混む区間
         cnt = collections.Counter()
         worst = []

@@ -24,32 +24,12 @@ export const CROWD_LEVELS: CrowdLevelInfo[] = [
 
 export const crowdInfo = (level: number): CrowdLevelInfo | undefined => CROWD_LEVELS[level - 1];
 
-// 表の列: 5:00から30分ごと、40枠(翌1:00まで)
-export const SLOT_COUNT = 40;
-export const SLOT_START_SEC = 5 * 3600;
-export const SLOT_SEC = 1800;
-
-export const slotLabel = (slot: number): string => {
-  const sec = SLOT_START_SEC + slot * SLOT_SEC;
-  return `${String(Math.floor(sec / 3600) % 24).padStart(2, '0')}:${String(Math.floor((sec % 3600) / 60)).padStart(2, '0')}`;
-};
-
-// いまの時刻が、どの枠か(範囲外は null)
-export const currentSlot = (now: Date): number | null => {
-  let sec = now.getHours() * 3600 + now.getMinutes() * 60;
-  if (sec < SLOT_START_SEC) sec += 86400; // 0時台は、前の日の続き
-  const slot = Math.floor((sec - SLOT_START_SEC) / SLOT_SEC);
-  return slot >= 0 && slot < SLOT_COUNT ? slot : null;
-};
-
 // 土曜・日曜は「土休日」、それ以外は「平日」(祝日は、いまは見ない)
 export const dayTypeOf = (ms: number): CrowdDay => {
   const d = new Date(ms).getDay();
   return d === 0 || d === 6 ? 'we' : 'wd';
 };
 
-// 路線 → 方向コード → 駅名 → 40文字(0=列車なし、1〜6=レベル)
-export type CrowdSlots = Record<string, Record<string, Record<string, string>>>;
 // 路線 → 列車番号 → 区間ごとのレベル(1文字1区間。その駅を出たあとの区間)
 export type CrowdTrains = Record<string, Record<string, string>>;
 
@@ -71,8 +51,6 @@ const loadOnce = <T>(file: string): Promise<T> => {
   }
   return p;
 };
-
-export const loadCrowdSlots = (day: CrowdDay): Promise<CrowdSlots> => loadOnce<CrowdSlots>(`slot_${day}.json`);
 
 const trainCache = new Map<CrowdDay, CrowdTrains>();
 export const loadCrowdTrains = async (day: CrowdDay): Promise<CrowdTrains> => {
