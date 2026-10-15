@@ -202,7 +202,9 @@ export interface BoardResult {
   untilFirstSec?: number;
 }
 
-const displayType = (typeName: string): string => (typeName.startsWith('各停') ? '各停' : typeName);
+// 画面の種別の名前: 各停は「各停」。直通の種別の「(越谷経由)」などは、はずす(「急行」「特別快速」と同じ色・同じ名前で見せる)
+const displayType = (typeName: string): string =>
+  typeName.startsWith('各停') ? '各停' : typeName.replace(/\((越谷経由|柏経由|東京直通)\)$/, '');
 
 // platform: 1=下り(各路線の1つ目の方向 / 環状線は外回り) 2=上り(内回り)
 export const computeBoard = (data: BoardData, platform: 1 | 2, nowMs: number, limit = 3): BoardResult => {
@@ -532,7 +534,7 @@ export const computeLiveTrains = (data: LineData, lineId: string, direction: 1 |
       direction,
       trainType: displayType(typeName),
       destination: master.stations[idxOfPos(stops[stops.length - 1].pos)][0],
-      carCount: typeName.includes('特急') || typeName === '特別快速' ? 10 : 8,
+      carCount: typeName.includes('特急') || typeName.startsWith('特別快速') ? 10 : 8,
       stationName,
       isBetween,
       isStopStation,
