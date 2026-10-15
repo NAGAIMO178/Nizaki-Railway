@@ -4,6 +4,8 @@ import { RegisterableStation } from './MyStationRegisterCard';
 import { findNearestStation } from '../utils/nearestStation';
 import { disruptionManager } from '../utils/disruptionManager';
 import { computeBoard, formatDiaTime, getCachedBoardData, loadBoardData } from '../utils/diaTimetable';
+import { crowdInfo, loadAllCrowdTrains } from '../utils/crowd';
+import { isLaunched } from '../utils/launch';
 import type { BoardData, BoardResult } from '../utils/diaTimetable';
 
 interface MyStationCardProps {
@@ -25,6 +27,7 @@ export interface DynamicDeparture {
   delayMinutes?: number;  // 遅延分数
   isSuspended?: boolean;  // 運休・見合わせフラグ
   carCount?: number;      // 両数
+  crowdLevel?: number;    // 混雑レベル(1〜6。公開後だけ)
 }
 
 // 種別ごとの指定カラーを取得する関数 (浮かない洗練されたトーン＆マナー)
@@ -195,7 +198,7 @@ export const MyStationCard: React.FC<MyStationCardProps> = ({
   const currentStation = displayStations[safeIndex];
 
   // 全駅ダイヤ(小分けJSON)の読み込み。駅ごとに必要な分だけ読み、2回目以降は読み込み済みのものを使う
-  const [, setLoadTick] = useState(0);
+  const [loadTick, setLoadTick] = useState(0);
   const [boardError, setBoardError] = useState(false);
   const [boardRetry, setBoardRetry] = useState(0);
   const boardData: BoardData | undefined = getCachedBoardData(currentStation.name);
@@ -219,11 +222,25 @@ export const MyStationCard: React.FC<MyStationCardProps> = ({
     };
   }, [currentStation.name, boardRetry]);
 
+  // 混雑予報のデータ(公開後だけ)。読み込めたら、発車案内に、混雑の印が付く
+  useEffect(() => {
+    if (!isLaunched()) return;
+    let alive = true;
+    loadAllCrowdTrains()
+      .then(() => {
+        if (alive) setLoadTick((t) => t + 1);
+      })
+      .catch(() => undefined); // 読めなくても、印が付かないだけ
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   // 現在時刻(now)・駅・ホーム(platform)に基づく発車リスト(常に3本)
   // 描画と同時に計算する(読み込み前は null にして、運行終了のバナーを誤って出さない)
   const board: BoardResult | null = React.useMemo(
     () => (boardData ? computeBoard(boardData, platform, now, 3) : null),
-    [boardData, platform, now]
+    [boardData, platform, now, loadTick]
   );
   const departures: DynamicDeparture[] = board?.departures ?? [];
 
@@ -615,7 +632,17 @@ export const MyStationCard: React.FC<MyStationCardProps> = ({
                       )
                     )}
                   </div>
-                  <Users className={`w-3.5 h-3.5 ${isImminent ? 'text-white/80' : 'text-[#857D99]'}`} />
+                  {dep.crowdLevel && crowdInfo(dep.crowdLevel) ? (
+                    <span
+                      className="shrink-0 min-w-[3.1rem] text-center text-[9px] font-black px-1.5 py-1 rounded-md border border-black/10 whitespace-nowrap"
+                      style={{ background: crowdInfo(dep.crowdLevel)!.color, color: crowdInfo(dep.crowdLevel)!.text }}
+                      title={`混雑の目安: ${crowdInfo(dep.crowdLevel)!.label}`}
+                    >
+                      {crowdInfo(dep.crowdLevel)!.short}
+                    </span>
+                  ) : (
+                    <Users className={`w-3.5 h-3.5 ${isImminent ? 'text-white/80' : 'text-[#857D99]'}`} />
+                  )}
                 </div>
               </div>
             );

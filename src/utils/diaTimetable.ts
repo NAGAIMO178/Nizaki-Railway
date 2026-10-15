@@ -3,6 +3,7 @@
 // 時刻は「0時0分0秒からの経過秒」で、86400以上は翌日(24時以降)。
 import { disruptionManager } from './disruptionManager';
 import { isLaunched } from './launch';
+import { bumpForDelay, dayTypeOf, trainSegmentLevel } from './crowd';
 import type { DynamicDeparture } from '../components/MyStationCard';
 
 type MasterLine = {
@@ -191,6 +192,19 @@ export interface BoardResult {
 const displayType = (typeName: string): string => (typeName.startsWith('各停') ? '各停' : typeName);
 
 // platform: 1=下り(各路線の1つ目の方向 / 環状線は外回り) 2=上り(内回り)
+// 発車案内: その列車が、この駅を出たあとの区間の混雑レベル(公開後で、データを読み込み済みのときだけ。遅れていれば1つ上げる)
+const boardCrowdLevel = (lineCode: string, train: TrainRow, stationIdx: number, depSec: number, dayMs: number, delayMinutes: number): number | undefined => {
+  if (!isLaunched()) return undefined;
+  const a = train[5];
+  for (let k = 0; k * 3 < a.length; k++) {
+    if (a[k * 3] === stationIdx && a[k * 3 + 2] >= 0 && train[4] + a[k * 3 + 2] === depSec) {
+      const base = trainSegmentLevel(dayTypeOf(dayMs), lineCode, train[0], k);
+      return base === undefined ? undefined : bumpForDelay(base, delayMinutes);
+    }
+  }
+  return undefined;
+};
+
 export const computeBoard = (data: BoardData, platform: 1 | 2, nowMs: number, limit = 3): BoardResult => {
   const dirIdx = platform === 1 ? 0 : 1;
 
@@ -268,6 +282,7 @@ export const computeBoard = (data: BoardData, platform: 1 | 2, nowMs: number, li
       isOrigin: originIdx === c.line.stationIdx,
       delayMinutes: eff.delayMinutes,
       isSuspended: eff.isSuspended,
+      crowdLevel: eff.isSuspended ? undefined : boardCrowdLevel(c.line.code, train, c.line.stationIdx, c.dep, c.dayMs, eff.delayMinutes),
     };
   });
 
