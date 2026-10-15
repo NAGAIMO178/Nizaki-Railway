@@ -5,7 +5,7 @@
 //  - 同じ予約の同じ知らせは、1回だけ(再読み込みしても重ねない)。アプリを閉じているあいだは、知らせられない。
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ActiveOrder } from '../types';
-import { EXPRESS_TYPES, findExpressTrips, loadLineData, resolveTrainDelay } from './diaTimetable';
+import { EXPRESS_TYPES, findExpressTrips, loadExpressData, resolveTrainDelay } from './diaTimetable';
 import { getNotificationPermissionState, sendLocalPushNotification } from './pushNotification';
 
 const SCAN_INTERVAL_MS = 30 * 1000;
@@ -64,7 +64,7 @@ const resolveOrder = async (order: ActiveOrder): Promise<Resolved | null> => {
   const key = (Object.keys(EXPRESS_TYPES) as (keyof typeof EXPRESS_TYPES)[]).find((k) => order.trainName.startsWith(EXPRESS_TYPES[k].label));
   if (!key || !order.boardingStation || !order.destinationStation) return null;
   const cfg = EXPRESS_TYPES[key];
-  const data = await loadLineData(cfg.lineCode);
+  const data = await loadExpressData(key); // 直通の特急(めぐり)は、2つの路線をつないだデータ
   const boarding = stripEki(order.boardingStation);
   const trip = findExpressTrips(data, cfg.typeName, boarding, stripEki(order.destinationStation)).find((t) => t.trainName === order.trainName);
   if (!trip) return null;
@@ -80,7 +80,7 @@ const resolveOrder = async (order: ActiveOrder): Promise<Resolved | null> => {
   }
   return {
     orderId: order.orderId,
-    lineCode: cfg.lineCode,
+    lineCode: trip.boardLine ?? cfg.lineCode,
     code: trip.code,
     dirIdx: (data.master.dirs.indexOf(train[2]) === 1 ? 1 : 0) as 0 | 1,
     trainStartSec: train[4],

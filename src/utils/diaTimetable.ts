@@ -307,6 +307,8 @@ export interface LineData {
   code: string;
   master: MasterLine;
   trains: TrainRow[];
+  // 直通の特急を、1本の路線として扱うために、2つの路線をつないだ仮のデータのとき: 駅ごとの、もとの路線(接続の駅は、前の路線)
+  stationLines?: string[];
 }
 
 const lineCache = new Map<string, LineData>();
@@ -323,8 +325,18 @@ const loopEndKm = (master: MasterLine): number => {
 
 export const getCachedLineData = (code: string): LineData | undefined => lineCache.get(code);
 
+// 直通の特急(公開後の特急めぐり)は、前後の2つの路線にまたがるので、片方を読むときは、もう片方もいっしょに読む
+// (つないだ時刻・号数に、両方の路線が要るため)。公開前は、これまでどおり、1路線だけ
+const JOINED_PARTNER: Record<string, string> = { SC: 'TC', TC: 'SC' };
+
 // 1路線ぶんの全列車を読み込む(列車位置の表示用)
 export const loadLineData = async (code: string): Promise<LineData> => {
+  const partner = isLaunched() ? JOINED_PARTNER[code] : undefined;
+  const [data] = await Promise.all([loadOneLine(code), partner ? loadOneLine(partner) : undefined]);
+  return data;
+};
+
+const loadOneLine = async (code: string): Promise<LineData> => {
   const cached = lineCache.get(code);
   if (cached) return cached;
   const master = await loadOnce<Master>('master.json');
@@ -366,6 +378,20 @@ export interface DiaLiveTrain {
 
 // 有料の特急の、見出しの名前と、号つきの名前(予約の画面と、同じ番号の付け方)
 const expressNames = (data: LineData, train: TrainRow): { band: string; name: string } | undefined => {
+  // 直通の特急は、2つの路線をつないだ番号の付け方(予約の画面と同じ)。つないだデータが、まだ読めていなければ、名前なし
+  const joined = joinedKeyOf(data, train);
+  if (joined) {
+    const jd = getCachedExpressData(joined);
+    const jt = jd?.trains.find((t) => t[0] === train[0]);
+    if (!jd || !jt) return undefined;
+    const e = EXPRESS_TYPES[joined];
+    const jDir = jd.master.dirs.indexOf(jt[2]) === 1 ? 1 : 0;
+    const ofJoined = jd.trains.filter((t) => t[1] === jt[1] && t[2] === jt[2]).sort((a, b) => a[4] - b[4]);
+    const n = ofJoined.findIndex((t) => t[0] === train[0]);
+    if (n < 0) return undefined;
+    const band = e.label.replace(/^特急/, '');
+    return { band, name: `${band}${e.numberBase + n * 2 + 1 + jDir}号` };
+  }
   const key = Object.values(EXPRESS_TYPES).find((e) => e.lineCode === data.code && data.master.types[train[1]]?.[0] === e.typeName);
   if (!key) return undefined;
   const typeIdx = train[1];
@@ -568,6 +594,110 @@ export const EXPRESS_TYPES = {
 
 export type ExpressKey = keyof typeof EXPRESS_TYPES;
 
+// 直通の特急(公開後の特急めぐり: 東京〜日立)は、前の路線と後の路線にまたがる。予約では、2つの路線を、駅の並びと時刻をつないだ
+// 1本の仮の路線として扱う(号数・乗る駅・降りる駅・営業キロが、東京〜日立で通しになる)。接続の駅で、前の部分の着と、後の部分の発を、1つの駅にまとめる
+const JOINED_EXPRESS = {
+  meguri: { lines: ['SC', 'TC'] as const, junction: '松戸' },
+} as const;
+
+const joinedKeyOf = (data: LineData, train: TrainRow): keyof typeof JOINED_EXPRESS | undefined => {
+  if (!isLaunched()) return undefined;
+  return (Object.keys(JOINED_EXPRESS) as (keyof typeof JOINED_EXPRESS)[]).find(
+    (k) => (JOINED_EXPRESS[k].lines as readonly string[]).includes(data.code) && data.master.types[train[1]]?.[0] === EXPRESS_TYPES[k].typeName
+  );
+};
+
+const joinedCache = new Map<string, LineData>();
+
+const buildJoined = (key: keyof typeof JOINED_EXPRESS, a: LineData, b: LineData): LineData | undefined => {
+  const typeName = EXPRESS_TYPES[key].typeName;
+  const junction = JOINED_EXPRESS[key].junction;
+  const jA = a.master.stations.findIndex((s) => normalizeName(s[0]) === junction);
+  const jB = b.master.stations.findIndex((s) => normalizeName(s[0]) === junction);
+  if (jA < 0 || jB < 0) return undefined;
+  const kmA = a.master.stations[jA][1];
+  const kmB = b.master.stations[jB][1];
+  // 仮の路線の駅: a の起点から接続駅まで + b の接続駅の次から終点まで(営業キロは、つづけて足す)
+  const stations: [string, number][] = [
+    ...a.master.stations.slice(0, jA + 1).map(([n, km]) => [n, km] as [string, number]),
+    ...b.master.stations.slice(jB + 1).map(([n, km]) => [n, km - kmB + kmA] as [string, number]),
+  ];
+  const stationLines = [...a.master.stations.slice(0, jA + 1).map(() => a.code), ...b.master.stations.slice(jB + 1).map(() => b.code)];
+  const mapA = (i: number) => (i <= jA ? i : -1);
+  const mapB = (i: number) => (i === jB ? jA : i > jB ? jA + (i - jB) : -1);
+
+  const typeA = a.master.types.findIndex((t) => t[0] === typeName);
+  const typeB = b.master.types.findIndex((t) => t[0] === typeName);
+  const rowsB = new Map(b.trains.filter((t) => t[1] === typeB).map((t) => [t[0], t]));
+  const trains: TrainRow[] = [];
+  a.trains
+    .filter((t) => t[1] === typeA && rowsB.has(t[0]))
+    .forEach((ta) => {
+      const tb = rowsB.get(ta[0])!;
+      // 前の部分(早く始まるほう)と、後の部分
+      const aFirst = ta[4] <= tb[4];
+      const [t1, t2] = aFirst ? [ta, tb] : [tb, ta];
+      const [m1, m2] = aFirst ? [mapA, mapB] : [mapB, mapA];
+      const read = (t: TrainRow, m: (i: number) => number) => {
+        const out: { st: number; arr: number; dep: number }[] = [];
+        for (let k = 0; k < t[5].length; k += 3) out.push({ st: m(t[5][k]), arr: t[5][k + 1], dep: t[5][k + 2] });
+        return out;
+      };
+      const s1 = read(t1, m1);
+      const s2 = read(t2, m2);
+      if (s1.some((s) => s.st < 0) || s2.some((s) => s.st < 0)) return; // 路線の範囲の外の駅がある列車は、つながない
+      const off = t2[4] - t1[4];
+      const last1 = s1[s1.length - 1];
+      const first2 = s2[0];
+      if (last1.st !== first2.st) return; // 接続の駅が合わない列車は、つながない
+      const merged = [
+        ...s1.slice(0, -1),
+        { st: last1.st, arr: last1.arr, dep: first2.dep + off },
+        ...s2.slice(1).map((s) => ({ st: s.st, arr: s.arr === -1 ? -1 : s.arr + off, dep: s.dep === -1 ? -1 : s.dep + off })),
+      ];
+      // 仮の路線では、東京側から日立側へ向かうのが下り(D)
+      trains.push([ta[0], 0, aFirst ? 'D' : 'U', ta[3], t1[4], merged.flatMap((s) => [s.st, s.arr, s.dep]), ta[6]]);
+    });
+  return {
+    code: `${a.code}+${b.code}`,
+    master: { name: typeName, loop: false, stations, types: [[typeName, '特', 1]], dirs: ['D', 'U'] },
+    trains,
+    stationLines,
+  };
+};
+
+// 予約で使う路線のデータ: 直通の特急は、2つの路線をつないだもの。ほかは、その路線のまま。まだ読み込んでいなければ undefined
+export const getCachedExpressData = (key: ExpressKey): LineData | undefined => {
+  const j = JOINED_EXPRESS[key as keyof typeof JOINED_EXPRESS];
+  if (!j || !isLaunched()) return lineCache.get(EXPRESS_TYPES[key].lineCode);
+  const hit = joinedCache.get(key);
+  if (hit) return hit;
+  const a = lineCache.get(j.lines[0]);
+  const b = lineCache.get(j.lines[1]);
+  if (!a || !b) return undefined;
+  const built = buildJoined(key as keyof typeof JOINED_EXPRESS, a, b);
+  if (built) joinedCache.set(key, built);
+  return built;
+};
+
+export const loadExpressData = async (key: ExpressKey): Promise<LineData> => {
+  const j = JOINED_EXPRESS[key as keyof typeof JOINED_EXPRESS];
+  if (!j || !isLaunched()) return loadLineData(EXPRESS_TYPES[key].lineCode);
+  await Promise.all(j.lines.map((l) => loadLineData(l)));
+  const data = getCachedExpressData(key);
+  if (!data) throw new Error('特急のダイヤをつなげませんでした');
+  return data;
+};
+
+// その特急の列車の、始発駅と終着駅(直通なら、2つの路線をつないだ全体)。まだ読み込んでいなければ undefined
+export const getExpressTrainEnds = (key: ExpressKey, trainNo: string): { from: string; to: string } | undefined => {
+  const data = getCachedExpressData(key);
+  const t = data?.trains.find((x) => x[0] === trainNo);
+  if (!data || !t) return undefined;
+  const s = t[5];
+  return { from: data.master.stations[s[0]][0], to: data.master.stations[s[s.length - 3]][0] };
+};
+
 export interface ExpressTrip {
   code: string; // ダイヤ上の列車番号(例: 185051)
   trainName: string; // 例: 特急あやみ 101号
@@ -579,6 +709,7 @@ export interface ExpressTrip {
   minutes: number; // 乗車時間(分)
   destination: string; // この列車の終点
   distanceKm: number; // 乗車区間の営業キロ(運賃の計算に使う)
+  boardLine?: string; // 乗車駅の、もとの路線(直通の特急をつないだデータのときだけ)
 }
 
 const findTypeIdx = (data: LineData, typeName: string): number =>
@@ -669,6 +800,7 @@ export const findExpressTrips = (data: LineData, typeName: string, boarding: str
       minutes: Math.round((arrSec - depSec) / 60),
       destination: master.stations[stops[stops.length - 1].idx][0],
       distanceKm,
+      boardLine: data.stationLines?.[bIdx],
     });
   }
   return trips.sort((a, b) => a.depSec - b.depSec);
