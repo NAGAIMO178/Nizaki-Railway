@@ -617,7 +617,9 @@ export default function App() {
         orderId: prevOrder.orderId,
         items: mergedItems,
         itemDiscount,
-        totalPrice: Math.max(0, baseTicketFee + mergedItemTotalPrice - itemDiscount),
+        // (今回のデリバリーで使った N-POINT は、合計から引き、これまでの分に足す)
+        totalPrice: Math.max(0, baseTicketFee + mergedItemTotalPrice - itemDiscount - (order.pointsUsed ?? 0)),
+        pointsUsed: (prevOrder.pointsUsed ?? 0) + (order.pointsUsed ?? 0),
         earnedPoints: (prevOrder.earnedPoints || 0) + earnedPoints,
       };
 
@@ -958,6 +960,8 @@ export default function App() {
         onRequireLogin={handleRequireLogin}
         isCouponUsed={isDeliveryCouponUsed}
         onCouponUsed={markDeliveryCouponUsed}
+        pointBalance={cloudOn && cloud.ready && !cloud.error ? shownBalance : undefined}
+        onSpendPoints={cloudOn && cloud.ready && !cloud.error ? cloud.spendPoints : undefined}
       />
 
       <LoginModal

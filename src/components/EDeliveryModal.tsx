@@ -3,6 +3,7 @@ import { X, UtensilsCrossed, Check, ShoppingBag, AlertCircle, Tag } from 'lucide
 import { EquipItem, ActiveOrder } from '../types';
 import { getSeatClassLabel, canOrderItem, canUseDelivery, getItemRestrictionLabel } from '../utils/seatUtils';
 import { handleImageError } from '../utils/imageFallback';
+import { NPointPayRow } from './NPointPayRow';
 
 interface EDeliveryModalProps {
   isOpen: boolean;
@@ -16,6 +17,9 @@ interface EDeliveryModalProps {
   onRequireLogin?: (reason: string, onLoggedIn?: () => void) => void;
   isCouponUsed?: (code: string) => boolean;
   onCouponUsed?: (code: string) => void;
+  // N-POINT で払う(1pt=1円。公開後で、クラウドが基準の会員だけ。渡されなければ、使う欄を出さない)
+  pointBalance?: number;
+  onSpendPoints?: (orderId: string, points: number, title: string) => Promise<{ ok: boolean; message: string }>;
 }
 
 export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
@@ -30,6 +34,8 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
   onRequireLogin,
   isCouponUsed,
   onCouponUsed,
+  pointBalance,
+  onSpendPoints,
 }) => {
   const [cart, setCart] = useState<{ [key: string]: number }>(() => initialCart || {});
 
@@ -45,6 +51,15 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
   }, [isOpen, initialCart, activeOrder]);
 
   const [isSuccess, setIsSuccess] = useState(false);
+
+  // N-POINT で払うか / 使う額 / ポイントを引いているあいだ / うまくいかなかったときの理由
+  const [usePoints, setUsePoints] = useState(false);
+  const [pointsAmount, setPointsAmount] = useState(0);
+  const [spending, setSpending] = useState(false);
+  const [spendError, setSpendError] = useState<string | null>(null);
+  // ポイントを引く通信の名札。うまくいくまで同じものを使う(通信のやり直しで、二重に引かれないように)
+  const spendIdRef = React.useRef<string | null>(null);
+  const canUsePoints = !!onSpendPoints && (pointBalance ?? 0) > 0;
 
   if (!isOpen) return null;
 
@@ -82,6 +97,8 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
   }
 
   const finalTotalPrice = Math.max(0, rawTotalPrice - discountAmount);
+  const pointsMax = Math.min(pointBalance ?? 0, finalTotalPrice);
+  const pointsToUse = usePoints && canUsePoints ? Math.min(pointsAmount, pointsMax) : 0;
 
   const handleApplyCoupon = () => {
     const code = couponCodeInput.trim().toUpperCase().replace(/\s+/g, '');
@@ -106,9 +123,9 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
     setCouponCodeInput('');
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeOrder || selectedItems.length === 0 || isNotMegu || hasNoOrder || hasBlockedItems) return;
+    if (!activeOrder || selectedItems.length === 0 || isNotMegu || hasNoOrder || hasBlockedItems || spending) return;
 
     if (!isLoggedIn && onRequireLogin) {
       onRequireLogin('車内デリバリーのご注文確定には、神埼IDログインが必要です。');
@@ -121,16 +138,32 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
       setCouponError('このクーポンは既に使用済みです。');
       return;
     }
+    // N-POINT で払うときは、注文を確定する前に、サーバーでポイントを引く(引けなければ、注文しない)
+    if (pointsToUse > 0 && onSpendPoints) {
+      if (!spendIdRef.current) spendIdRef.current = `${activeOrder.orderId}-D${Date.now().toString(36)}`;
+      setSpending(true);
+      setSpendError(null);
+      const r = await onSpendPoints(spendIdRef.current, pointsToUse, 'デリバリーのお支払い');
+      setSpending(false);
+      if (!r.ok) {
+        setSpendError(r.message || 'N-POINTを使えませんでした。もう一度お試しください。');
+        return;
+      }
+      spendIdRef.current = null;
+    }
+
     if (appliedDeliveryCoupon && discountAmount > 0) {
       onCouponUsed?.(appliedDeliveryCoupon.code);
     }
 
     // 予約済みの内容に、今回追加する商品だけを載せる(アプリ側で既存の注文に合算する)
+    // (pointsUsed は、今回の分だけ。予約の特急券で使った分は、アプリ側で足し合わせる)
     const newOrder: ActiveOrder = {
       ...activeOrder,
       items: selectedItems,
-      totalPrice: finalTotalPrice,
+      totalPrice: finalTotalPrice - pointsToUse,
       itemDiscount: discountAmount,
+      pointsUsed: pointsToUse,
       status: 'confirmed',
     };
 
@@ -140,6 +173,7 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
       setIsSuccess(false);
       setCart({});
       setAppliedDeliveryCoupon(null);
+      setUsePoints(false);
       onClose();
     }, 1500);
   };
@@ -447,6 +481,30 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
                 )}
               </div>
 
+              {/* N-POINTで払う */}
+              {canUsePoints && finalTotalPrice > 0 && (
+                <NPointPayRow
+                  balance={pointBalance ?? 0}
+                  max={pointsMax}
+                  on={usePoints}
+                  amount={pointsAmount}
+                  onToggle={(on) => {
+                    setUsePoints(on);
+                    if (on) setPointsAmount(pointsMax);
+                    setSpendError(null);
+                  }}
+                  onAmountChange={(n) => {
+                    setPointsAmount(n);
+                    setSpendError(null);
+                  }}
+                />
+              )}
+              {spendError && (
+                <div className="text-[11px] font-bold text-rose-600 bg-rose-50 rounded-xl px-3 py-2" role="alert">
+                  {spendError}
+                </div>
+              )}
+
               {/* Step 3: Total & Order Submit Button */}
               <div className="pt-3 border-t border-[#E6E2EE] flex items-center justify-between gap-3 text-xs sm:text-sm">
                 <div className="shrink-0">
@@ -457,7 +515,7 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
                   </div>
                   <div className="flex items-baseline gap-1.5">
                     <span className="text-xl sm:text-2xl font-black text-[#5B21B6] font-mono whitespace-nowrap">
-                      ¥{finalTotalPrice.toLocaleString()}
+                      ¥{(finalTotalPrice - pointsToUse).toLocaleString()}
                     </span>
                     {discountAmount > 0 && (
                       <span className="text-xs text-gray-400 line-through font-mono">
@@ -465,11 +523,14 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
                       </span>
                     )}
                   </div>
+                  {pointsToUse > 0 && (
+                    <div className="text-[10px] font-bold text-emerald-600 font-mono">N-POINT利用 -¥{pointsToUse.toLocaleString()}</div>
+                  )}
                 </div>
 
                 <button
                   type="submit"
-                  disabled={selectedItems.length === 0 || isNotMegu || hasNoOrder || hasBlockedItems}
+                  disabled={selectedItems.length === 0 || isNotMegu || hasNoOrder || hasBlockedItems || spending}
                   className="bg-[#5B21B6] hover:bg-[#4C1D95] disabled:opacity-40 text-white font-extrabold text-xs sm:text-sm py-3 px-5 rounded-xl shadow-md flex items-center justify-center gap-2 cursor-pointer transition-all whitespace-nowrap shrink-0"
                 >
                   <ShoppingBag className="w-4 h-4 text-white shrink-0" />

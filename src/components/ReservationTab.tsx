@@ -26,6 +26,7 @@ import { ActiveOrder, EquipItem } from '../types';
 import { getSeatClassLabel, getSeatClassRibbon, canUseDelivery } from '../utils/seatUtils';
 import { MOCK_EQUIP_ITEMS } from '../data/mockData';
 import { SeatSelectionModal } from './SeatSelectionModal';
+import { NPointPayRow } from './NPointPayRow';
 import { getLocalDateString } from '../utils/orderExpiry';
 import {
   EXPRESS_TYPES,
@@ -77,6 +78,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
   const [copiedCode, setCopiedCode] = useState(false);
   // N-POINT で払うか / ポイントを引いているあいだ / うまくいかなかったときの理由
   const [usePoints, setUsePoints] = useState(false);
+  const [pointsAmount, setPointsAmount] = useState(0); // 使うポイント(1pt=1円)
   const [spending, setSpending] = useState(false);
   const [spendError, setSpendError] = useState<string | null>(null);
   const canUsePoints = !!onSpendPoints && (pointBalance ?? 0) > 0;
@@ -422,7 +424,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
     const orderId = `EQ-${Math.floor(10000 + Math.random() * 90000)}`;
 
     // N-POINT で払うときは、予約を確定する前に、サーバーでポイントを引く(引けなければ、予約しない)
-    const pointsUsed = usePoints && canUsePoints && onSpendPoints ? Math.min(pointBalance ?? 0, finalTotalPrice) : 0;
+    const pointsUsed = usePoints && canUsePoints && onSpendPoints ? Math.min(pointsAmount, pointBalance ?? 0, finalTotalPrice) : 0;
     if (pointsUsed > 0 && onSpendPoints) {
       setSpending(true);
       setSpendError(null);
@@ -939,28 +941,26 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
             {/* Price Breakdown & Total Price */}
             {(() => {
               const priceInfo = calculateTicketPrice();
-              const pointsToUse = usePoints && canUsePoints ? Math.min(pointBalance ?? 0, priceInfo.total) : 0;
+              const pointsMax = Math.min(pointBalance ?? 0, priceInfo.total);
+              const pointsToUse = usePoints && canUsePoints ? Math.min(pointsAmount, pointsMax) : 0;
               return (
                 <div className="pt-2 border-t border-[#E6E2EE] space-y-1">
                   {canUsePoints && (
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={usePoints}
-                      onClick={() => {
-                        setUsePoints((v) => !v);
+                    <NPointPayRow
+                      balance={pointBalance ?? 0}
+                      max={pointsMax}
+                      on={usePoints}
+                      amount={pointsAmount}
+                      onToggle={(on) => {
+                        setUsePoints(on);
+                        if (on) setPointsAmount(pointsMax);
                         setSpendError(null);
                       }}
-                      className="w-full flex items-center justify-between gap-3 px-3 py-2 mb-1 rounded-xl border border-[#DDD6FE] bg-[#F9F8FD] cursor-pointer text-left"
-                    >
-                      <span className="min-w-0">
-                        <span className="block text-xs font-bold text-[#221C35]">N-POINTを使う</span>
-                        <span className="block text-[10px] text-[#6B6380]">残高 {(pointBalance ?? 0).toLocaleString()}pt ・ 1pt=1円</span>
-                      </span>
-                      <span className={`shrink-0 w-10 h-6 rounded-full p-0.5 transition-colors ${usePoints ? 'bg-[#5B21B6]' : 'bg-[#C4BCD8]'}`}>
-                        <span className={`block w-5 h-5 rounded-full bg-white shadow-xs transition-transform ${usePoints ? 'translate-x-4' : ''}`} />
-                      </span>
-                    </button>
+                      onAmountChange={(n) => {
+                        setPointsAmount(n);
+                        setSpendError(null);
+                      }}
+                    />
                   )}
                   <div className="flex items-center justify-between text-[11px] text-[#6B6380]">
                     <div className="flex items-center gap-1">
