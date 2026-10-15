@@ -34,9 +34,10 @@ import {
   findExpressTrips,
   getExpressStations,
   getTripDistanceKm,
-  loadLineData,
-  getCachedLineData,
+  loadExpressData,
+  getCachedExpressData,
 } from '../utils/diaTimetable';
+import { isLaunched } from '../utils/launch';
 import { calculateFare } from '../utils/fare';
 
 // 列車位置の特急の詳細から、予約画面を、その列車を選んだ状態で開くための指定(公開後だけ。key が変わるたびに適用する)
@@ -90,16 +91,17 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
   const [diaTick, setDiaTick] = useState(0);
   const [diaError, setDiaError] = useState(false);
   const [diaRetry, setDiaRetry] = useState(0);
-  const lineData = getCachedLineData(expressConfig.lineCode);
+  // 直通の特急(公開後の特急めぐり)は、2つの路線をつないだデータ(東京〜日立)
+  const lineData = getCachedExpressData(expressType);
 
   React.useEffect(() => {
-    if (getCachedLineData(expressConfig.lineCode)) {
+    if (getCachedExpressData(expressType)) {
       setDiaError(false);
       return;
     }
     let alive = true;
     setDiaError(false);
-    loadLineData(expressConfig.lineCode)
+    loadExpressData(expressType)
       .then(() => {
         if (alive) setDiaTick((t) => t + 1);
       })
@@ -109,7 +111,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
     return () => {
       alive = false;
     };
-  }, [expressConfig.lineCode, diaRetry]);
+  }, [expressType, diaRetry]);
 
   const stripEki = (name: string) => name.replace(/駅$/, '');
 
@@ -223,7 +225,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
       setDestinationStation('横浜駅');
       setSeatType('reserved'); // Nライナーは普通指定席のみ
     } else {
-      setBoardingStation('松戸駅');
+      setBoardingStation(isLaunched() ? '東京駅' : '松戸駅'); // 公開後は、東京〜日立で通しの特急めぐり
       setDestinationStation('日立駅');
       setSeatType('megu');
     }
