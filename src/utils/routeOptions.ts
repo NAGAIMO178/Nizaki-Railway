@@ -9,8 +9,8 @@ export interface RouteOptions {
   maxTransfers: 0 | 2 | 99;
   // 列車の遅れ・運転見合わせを加味する
   realtime: boolean;
-  // 結果の並べ方: time=早く着く順(標準) / crowd=空いている順(混雑予報のデータがあるとき)
-  sortBy: 'time' | 'crowd';
+  // 結果の並べ方: time=早く着く順(標準) / crowd=空いている順(混雑予報のデータがあるとき) / safe=遅れに強い順(乗換に失敗しにくい順)
+  sortBy: 'time' | 'crowd' | 'safe';
 }
 
 export const DEFAULT_ROUTE_OPTIONS: RouteOptions = {
@@ -33,7 +33,7 @@ export const loadRouteOptions = (): RouteOptions => {
         relaxedTransfer: typeof p.relaxedTransfer === 'boolean' ? p.relaxedTransfer : DEFAULT_ROUTE_OPTIONS.relaxedTransfer,
         maxTransfers: p.maxTransfers === 0 || p.maxTransfers === 2 ? p.maxTransfers : 99,
         realtime: typeof p.realtime === 'boolean' ? p.realtime : DEFAULT_ROUTE_OPTIONS.realtime,
-        sortBy: p.sortBy === 'crowd' ? 'crowd' : 'time',
+        sortBy: p.sortBy === 'crowd' || p.sortBy === 'safe' ? p.sortBy : 'time',
       };
     }
   } catch {
