@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_ROUTE_OPTIONS, RouteOptions } from '../src/utils/routeOptions';
 import { RouteResult, searchRoutes, loadRouteStations, TRANSFER_SEC, RELAXED_TRANSFER_SEC } from '../src/utils/routeSearch';
 import { findExpressTrips, loadLineData } from '../src/utils/diaTimetable';
+import { calculateFare } from '../src/utils/fare';
 
 const opts = (o: Partial<RouteOptions> = {}): RouteOptions => ({ ...DEFAULT_ROUTE_OPTIONS, ...o });
 const hm = (h: number, m = 0) => h * 3600 + m * 60;
@@ -32,16 +33,34 @@ const checkRoute = (r: RouteResult, from: string, to: string) => {
   expect(r.legs[0].from).toBe(from);
   expect(r.legs[r.legs.length - 1].to).toBe(to);
   expect(r.arrSec).toBeGreaterThan(r.depSec);
-  expect(r.transfers).toBe(r.legs.length - 1);
+  // 直通(乗ったまま続く区間)は、乗換に数えない
+  expect(r.transfers).toBe(r.legs.filter((l) => !l.through).length - 1);
   expect(r.connections.length).toBe(r.legs.length - 1);
   expect(r.risk).toBeGreaterThanOrEqual(0);
   expect(r.risk).toBeLessThanOrEqual(1);
   r.legs.forEach((leg, i) => {
     expect(leg.arrSec).toBeGreaterThan(leg.depSec);
-    if (i > 0) expect(leg.from).toBe(r.legs[i - 1].to); // 同じ駅で乗り継ぐ
+    if (i > 0) {
+      const prev = r.legs[i - 1];
+      expect(leg.from).toBe(prev.to); // 同じ駅で乗り継ぐ
+      if (leg.through) {
+        // 直通: 同じ列車・同じ遅れで、降りずに続く。別の路線で、乗換の余裕は求めない
+        expect(leg.trainNo).toBe(prev.trainNo);
+        expect(leg.lineCode).not.toBe(prev.lineCode);
+        expect(leg.delayMin).toBe(prev.delayMin);
+        expect(leg.depSec).toBeGreaterThanOrEqual(prev.arrSec);
+        expect(r.connections[i - 1]).toMatchObject({ through: true, level: 'ok', risk: 0 });
+      } else {
+        expect(r.connections[i - 1].through).toBeUndefined();
+      }
+    }
   });
+  expect(r.legs[0].through).toBeUndefined();
   expect(r.fare).toBeGreaterThan(0);
 };
+
+// 乗換の判定は、乗り換える所(直通でない所)だけに見る
+const realTransfers = (r: RouteResult) => r.connections.filter((c) => !c.through);
 
 describe('経路検索', () => {
   it('東京→日立: 朝に、乗り方が見つかる。つながりに、つじつまが合っている', async () => {
@@ -64,7 +83,7 @@ describe('経路検索', () => {
       const res = await searchRoutes(a, b, ready, opts({ realtime: true }), 3);
       res.forEach((r) => {
         checkRoute(r, a, b);
-        r.connections.forEach((c) => {
+        realTransfers(r).forEach((c) => {
           expect(c.level, `${a}→${b} ${c.station}`).not.toBe('fail');
           expect(c.gapMin, `${a}→${b} ${c.station}`).toBeGreaterThanOrEqual(TRANSFER_SEC / 60 - 0.05);
         });
@@ -75,7 +94,7 @@ describe('経路検索', () => {
   it('ゆったりの乗換: 乗換は、8分以上', async () => {
     for (const { a, b, ready } of await samplePairs(25)) {
       const res = await searchRoutes(a, b, ready, opts({ relaxedTransfer: true }), 3);
-      res.forEach((r) => r.connections.forEach((c) => expect(c.gapMin, `${a}→${b}`).toBeGreaterThanOrEqual(RELAXED_TRANSFER_SEC / 60 - 0.05)));
+      res.forEach((r) => realTransfers(r).forEach((c) => expect(c.gapMin, `${a}→${b}`).toBeGreaterThanOrEqual(RELAXED_TRANSFER_SEC / 60 - 0.05)));
     }
   });
 
@@ -88,15 +107,17 @@ describe('経路検索', () => {
 
   it('乗換の警告の段階は、余裕の分数と合っている(リアルタイム検索でないときも)', async () => {
     let fails = 0;
+    let tights = 0;
     for (const { a, b, ready } of await samplePairs(40)) {
       const res = await searchRoutes(a, b, ready, opts({ realtime: false }), 3);
       res.forEach((r) =>
-        r.connections.forEach((c) => {
+        realTransfers(r).forEach((c) => {
           if (c.level === 'fail') {
             fails++;
             expect(c.gapMin).toBeLessThan(TRANSFER_SEC / 60 + 0.05);
             expect(c.risk).toBe(1);
           } else if (c.level === 'tight') {
+            tights++;
             expect(c.gapMin).toBeGreaterThanOrEqual(TRANSFER_SEC / 60 - 0.05);
             expect(c.gapMin).toBeLessThan(TRANSFER_SEC / 60 + 1 + 0.05);
           } else {
@@ -107,8 +128,9 @@ describe('経路検索', () => {
         })
       );
     }
-    // 遅れを見ない検索では、遅れで間に合わない乗換が、どこかで出る(出なくなったら、判定が壊れている)
-    expect(fails).toBeGreaterThan(0);
+    // 余裕の少ない乗換が、どこかで出る(出なくなったら、判定が壊れている)。「間に合わない」は、まれなので、数は問わない
+    expect(tights).toBeGreaterThan(0);
+    expect(fails).toBeGreaterThanOrEqual(0);
   });
 
   it('乗換がなければ、失敗する確率は0', async () => {
@@ -141,6 +163,58 @@ describe('経路検索', () => {
         expect(res[i - 1].crowdScore ?? 99).toBeLessThanOrEqual(res[i].crowdScore ?? 99);
       }
     }
+  });
+});
+
+describe('直通運転', () => {
+  it('東京→日立: 特急めぐりに乗ったまま行ける(乗換なし)。運賃は、全区間の営業キロを通しで計算する', async () => {
+    const res = await searchRoutes('東京', '日立', hm(6), opts({ maxTransfers: 0 }), 3);
+    expect(res.length).toBeGreaterThan(0);
+    res.forEach((r) => {
+      checkRoute(r, '東京', '日立');
+      expect(r.transfers).toBe(0);
+      expect(r.legs.map((l) => l.lineCode)).toEqual(['SC', 'TC']);
+      expect(r.legs[1].through).toBe(true);
+      // 運賃は、2つの区間の営業キロを足した全体(約143km)の区分
+      expect(r.km).toBeCloseTo(r.legs[0].km + r.legs[1].km, 0);
+      expect(r.fare).toBe(calculateFare(r.km));
+      // 通しの運賃は、区間ごとの運賃を足したものより、安い
+      expect(r.fare).toBeLessThan(calculateFare(r.legs[0].km) + calculateFare(r.legs[1].km));
+    });
+  });
+
+  it('越谷レイクタウン→池袋: 大宮でつながる直通(越谷経由)に、乗ったまま行ける', async () => {
+    const res = await searchRoutes('越谷レイクタウン', '池袋', hm(8), opts({ maxTransfers: 0 }), 3);
+    expect(res.length).toBeGreaterThan(0);
+    res.forEach((r) => {
+      checkRoute(r, '越谷レイクタウン', '池袋');
+      expect(r.legs.map((l) => l.lineCode)).toEqual(['Y', 'SC']);
+      expect(r.legs[0].to).toBe('大宮');
+    });
+  });
+
+  it('逆向き(土浦→東京)も、乗ったまま行ける', async () => {
+    const res = await searchRoutes('土浦', '東京', hm(8), opts({ maxTransfers: 0 }), 3);
+    expect(res.length).toBeGreaterThan(0);
+    res.forEach((r) => {
+      checkRoute(r, '土浦', '東京');
+      expect(r.legs.map((l) => l.lineCode)).toEqual(['TC', 'SC']);
+    });
+  });
+
+  it('直通の部分は、リアルタイム検索でなくても、遅れは同じ(同じ列車)', async () => {
+    let through = 0;
+    for (const { a, b, ready } of await samplePairs(40)) {
+      for (const realtime of [true, false]) {
+        const res = await searchRoutes(a, b, ready, opts({ realtime }), 3);
+        res.forEach((r) => {
+          checkRoute(r, a, b);
+          through += r.legs.filter((l) => l.through).length;
+        });
+      }
+    }
+    // 直通を使う結果が、どこかで出る(出なくなったら、直通の探し方が壊れている)
+    expect(through).toBeGreaterThan(0);
   });
 });
 

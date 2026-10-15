@@ -85,6 +85,18 @@ export const trainMaxLevel = (day: CrowdDay, lineCode: string, trainNo: string):
   return v;
 };
 
+// 直通の列車は、同じ番号が、2つの路線にあるので、路線をまたいで、いちばん混む区間のレベルを返す(遅れを、路線によらず同じにするため)
+export const trainMaxLevelAnyLine = (day: CrowdDay, trainNo: string): number | undefined => {
+  const lines = trainCache.get(day);
+  if (!lines) return undefined;
+  let best: number | undefined;
+  for (const line of Object.keys(lines)) {
+    const v = trainMaxLevel(day, line, trainNo);
+    if (v !== undefined && (best === undefined || v > best)) best = v;
+  }
+  return best;
+};
+
 // 混雑 → 遅れ: 混んでいる列車ほど、遅れやすい(乗り降りに時間がかかるため)。全体で、1日に約40本、いまの朝夕の山と同じくらいになるよう調整した
 export const CROWD_DELAY_BASE_RATE = 0.022;
 export const CROWD_DELAY_FACTOR = [0.5, 1, 2, 3.5, 5]; // レベル1〜5
