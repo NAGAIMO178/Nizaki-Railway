@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronRight, User } from 'lucide-react';
+import { ChevronRight, Clock, User, Users } from 'lucide-react';
 import type { LiveTrainPos } from './TrainLocationTab';
 import { CROWD_LEVELS, CROWD_MAX_LEVEL, crowdInfo } from '../utils/crowd';
 
@@ -50,10 +50,14 @@ export const TrainDetailV2: React.FC<TrainDetailV2Props> = ({ train, lineName, o
   const info = train.crowdNow ? crowdInfo(train.crowdNow) : undefined;
   const typeText = train.paid ? '特急' : train.trainType;
 
+  // 札・枠・見出しは、アプリのほかの画面(発車案内・列車位置)と同じ作り(角の小さい札・太い字・はっきりした縁・うす紫の見出し)
+  const cardHead = 'px-3 py-2.5 bg-[#EFE8FA]/60 border-b border-[#E6E2EE] flex items-center gap-2 text-xs font-bold text-[#5B21B6]';
+  const card = 'bg-[#F9F8FD] rounded-xl border border-[#E6E2EE] overflow-hidden';
+
   return (
     <div ref={contentRef} className="max-h-[62vh] overflow-y-auto overscroll-contain -mx-1 px-1 space-y-3">
       {/* 見出しの帯: 有料の特急は列車名、ほかは路線名(路線の色は、小さな丸) */}
-      <div className="rounded-t-xl bg-[#5B21B6] text-white px-3.5 py-2.5 text-sm font-bold flex items-center gap-2">
+      <div className="rounded-xl bg-[#5B21B6] text-white px-3.5 py-2 text-sm font-black flex items-center gap-2 shadow-xs">
         {train.paid && train.expressBand ? (
           train.expressBand
         ) : (
@@ -68,36 +72,41 @@ export const TrainDetailV2: React.FC<TrainDetailV2Props> = ({ train, lineName, o
       <div className="flex items-start justify-between gap-2 px-1">
         <div className="flex items-start gap-2.5 min-w-0">
           <TrainIcon className="w-7 h-8 shrink-0" />
-          <div className="min-w-0">
-            <span className={`inline-block text-[11px] font-bold text-white rounded px-2 ${typeBadgeBg(train.trainType)}`}>{typeText}</span>
-            {train.paid && train.expressName && <div className="text-[13px] text-[#221C35] leading-tight mt-0.5">{train.expressName}</div>}
-            <div className="text-[17px] font-bold text-[#221C35] leading-tight mt-0.5">
-              {train.destination} <span className="text-[13px] font-normal">行</span>
+          <div className="min-w-0 space-y-0.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className={`text-xs font-bold px-2.5 py-0.5 rounded-md text-white ${typeBadgeBg(train.trainType)}`}>{typeText}</span>
+              {delayed ? (
+                <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-amber-500 text-white border border-amber-600 whitespace-nowrap shadow-2xs">
+                  [+{train.delayMinutes}分遅れ]
+                </span>
+              ) : (
+                <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-emerald-600 text-white border border-emerald-700 whitespace-nowrap shadow-2xs">
+                  [定刻通り]
+                </span>
+              )}
             </div>
-            <div className="text-[11px] text-[#857D99]">列車番号: {train.trainNo}</div>
+            {train.paid && train.expressName && <div className="text-xs font-bold text-[#221C35]">{train.expressName}</div>}
+            <div className="text-base font-bold text-[#221C35]">{train.destination} 行き</div>
+            <div className="text-[10px] font-bold text-[#857D99]">列車番号 {train.trainNo}</div>
           </div>
         </div>
-        <span className="shrink-0 text-xs font-bold bg-[#F0EEF6] text-[#221C35] rounded-md px-2 py-0.5">{train.carCount}両</span>
-      </div>
-
-      {/* 遅れ */}
-      <div className="px-1">
-        <span className={`inline-block text-[13px] font-bold text-white rounded-full px-3.5 py-0.5 ${delayed ? 'bg-[#D14B5F]' : 'bg-[#2E9E6B]'}`}>
-          {delayed ? `${train.delayMinutes}分遅れ` : '定刻通り'}
-        </span>
+        <span className="shrink-0 text-xs font-bold bg-[#F4F3F8] text-[#221C35] px-2.5 py-1 rounded-xl border border-[#E6E2EE]">{train.carCount}両</span>
       </div>
 
       {/* 混雑情報 */}
-      <div className="rounded-xl border border-[#E6E2EE] overflow-hidden bg-[#F7F6FB]">
-        <div className="px-3 py-2 text-xs font-bold text-[#6B6380] bg-[#F0EEF6]">混雑情報</div>
+      <div className={card}>
+        <div className={cardHead}>
+          <Users className="w-4 h-4" />
+          <span>混雑情報</span>
+        </div>
         {train.paid ? (
-          <div className="px-3 py-3 bg-white text-center space-y-2">
-            <div className="text-sm font-bold text-[#221C35]">特急の混雑情報は提供しておりません</div>
+          <div className="p-3 text-center space-y-2">
+            <div className="text-xs font-bold text-[#221C35]">特急の混雑情報は提供しておりません</div>
             {onOpenReservation && (
               <button
                 type="button"
                 onClick={onOpenReservation}
-                className="inline-flex items-center gap-1 text-xs font-bold text-[#5B21B6] border border-[#5B21B6] rounded-full px-3.5 py-1 cursor-pointer hover:bg-[#F4F0FC]"
+                className="inline-flex items-center gap-1 text-xs font-bold text-white bg-[#5B21B6] hover:bg-[#4C1D95] rounded-md px-3 py-1.5 cursor-pointer shadow-2xs"
               >
                 空席を予約画面で見る
                 <ChevronRight className="w-3.5 h-3.5" />
@@ -105,49 +114,52 @@ export const TrainDetailV2: React.FC<TrainDetailV2Props> = ({ train, lineName, o
             )}
           </div>
         ) : info ? (
-          <div className="px-3 py-2.5 bg-white flex items-center gap-2.5">
-            <span className="shrink-0 text-[11px] font-bold px-2 py-px rounded-full bg-white border border-[#D6D2E2] text-[#6B6380] whitespace-nowrap">いまの混雑</span>
+          <div className="p-3 flex items-center gap-2.5">
+            <span className="shrink-0 text-[10px] font-black px-1.5 py-0.5 rounded bg-white text-[#5B21B6] border border-[#C4B5FD] whitespace-nowrap shadow-2xs">いまの混雑</span>
             <div className="leading-tight min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <PeopleMeter level={info.level} />
-                <span className="text-[13px] font-bold text-[#221C35]">{info.label}</span>
+                <span className="text-xs font-bold text-[#221C35]">{info.label}</span>
               </div>
-              <div className="text-[11px] text-[#857D99] mt-0.5">※模擬の混雑です</div>
+              <div className="text-[10px] font-bold text-[#857D99] mt-0.5">※模擬の混雑です</div>
             </div>
           </div>
         ) : (
-          <div className="px-3 py-3 bg-white text-center text-sm font-bold text-[#221C35]">混雑情報を提供しておりません</div>
+          <div className="p-3 text-center text-xs font-bold text-[#221C35]">混雑情報を提供しておりません</div>
         )}
       </div>
 
       {/* これから通る駅 */}
-      <div className="rounded-xl border border-[#E6E2EE] overflow-hidden bg-[#F7F6FB]">
-        <div className="px-3 py-2 text-xs font-bold text-[#6B6380] bg-[#F0EEF6]">停車駅情報</div>
+      <div className={card}>
+        <div className={cardHead}>
+          <Clock className="w-4 h-4" />
+          <span>停車駅情報</span>
+        </div>
         {rows.length === 0 ? (
-          <div className="px-3 py-3 bg-white text-center text-xs text-[#857D99]">まもなく終点に到着します</div>
+          <div className="p-3 text-center text-xs font-bold text-[#857D99]">まもなく終点に到着します</div>
         ) : (
           rows.map((row, i) => (
             <div
               key={`${row.stationName}-${i}`}
-              className={`grid grid-cols-[70px_22px_1fr] items-center bg-white border-t border-[#EFEDF5] ${row.pass ? 'min-h-[32px] text-[12px] text-[#9A93AE]' : 'min-h-[40px] text-[13px]'}`}
+              className={`grid grid-cols-[70px_22px_1fr] items-center border-b border-[#E6E2EE]/50 last:border-b-0 text-xs font-bold ${row.pass ? 'min-h-[30px] text-[#A59FB5]' : 'min-h-[40px]'}`}
             >
-              <div className="text-right pr-2 font-mono text-[12px] leading-tight">
+              <div className="text-right pr-2 font-mono leading-tight">
                 {row.pass ? (
                   '通過'
                 ) : delayed ? (
                   <>
-                    <span className="block line-through text-[#9A93AE]">{row.scheduledTime}</span>
-                    <span className="font-bold text-[#D14B5F]">{row.estimatedTime}</span>
+                    <span className="block line-through text-[#A59FB5]">{row.scheduledTime}</span>
+                    <span className="text-rose-600">{row.estimatedTime}</span>
                   </>
                 ) : (
-                  <span className="font-bold text-[#2E9E6B]">{row.scheduledTime}</span>
+                  <span className="text-emerald-600">{row.scheduledTime}</span>
                 )}
               </div>
               <div className="relative self-stretch">
                 <span className="absolute left-[9px] top-0 bottom-0 w-1 bg-[#5B21B6]" />
                 {!row.pass && <span className="absolute left-[5px] top-1/2 -mt-1.5 w-3 h-3 rounded-full bg-white border-[3px] border-[#5B21B6]" />}
               </div>
-              <div className={row.pass ? '' : 'font-bold text-[#221C35]'}>{row.stationName}</div>
+              <div className={row.pass ? '' : 'text-[#221C35]'}>{row.stationName}</div>
             </div>
           ))
         )}
