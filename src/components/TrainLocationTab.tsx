@@ -47,6 +47,7 @@ export interface LiveTrainPos {
   timetable: { stationName: string; scheduledTime: string; estimatedTime: string; crowd?: number }[];
   // 列車の詳細(公開後の新しい画面)用
   trainNo?: string;
+  runNo?: string;
   typeName?: string;
   paid?: boolean;
   expressBand?: string;
@@ -384,6 +385,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
           crowdNow: t.crowdNow,
           timetable: t.timetable,
           trainNo: t.trainNo,
+          runNo: t.runNo,
           typeName: t.typeName,
           paid: t.paid,
           expressBand: t.expressBand,

@@ -86,7 +86,7 @@ export const TrainDetailV2: React.FC<TrainDetailV2Props> = ({ train, lineName, o
             </div>
             {train.paid && train.expressName && <div className="text-xs font-bold text-[#221C35]">{train.expressName}</div>}
             <div className="text-base font-bold text-[#221C35]">{train.destination} 行き</div>
-            <div className="text-[10px] font-bold text-[#857D99]">列車番号 {train.trainNo}</div>
+            {train.runNo && <div className="text-[10px] font-bold text-[#857D99]">運行番号 {train.runNo}</div>}
           </div>
         </div>
         <span className="shrink-0 text-xs font-bold bg-[#F4F3F8] text-[#221C35] px-2.5 py-1 rounded-xl border border-[#E6E2EE]">{train.carCount}両</span>
