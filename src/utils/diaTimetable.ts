@@ -352,6 +352,7 @@ export interface DiaLiveTrain {
   timetable: { stationName: string; scheduledTime: string; estimatedTime: string; crowd?: number }[];
   // 列車の詳細(公開後の新しい画面)用
   trainNo: string;
+  runNo?: string; // 運行番号(例: 61K。電車の前面に出す番号。新しいダイヤだけ)
   typeName: string; // ダイヤ上の種別名(例: 特急(Nライナー))
   paid: boolean; // 有料の特急
   expressBand?: string; // 有料の特急の、見出しの名前(例: Nライナー)
@@ -539,6 +540,7 @@ export const computeLiveTrains = (data: LineData, lineId: string, direction: 1 |
       crowdNow: crowdAt(atStop >= 0 ? atStop : segment),
       timetable,
       trainNo: t[0],
+      runNo: t[6],
       typeName,
       paid: master.types[t[1]]?.[2] === 1,
       expressBand: names?.band,
