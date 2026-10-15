@@ -15,8 +15,9 @@ type MasterLine = {
   types: [string, string, number][];
 };
 type Master = Record<string, MasterLine>;
-// [列車番号, 種別番号, 方向, 運用番号, 始発の発車秒, [駅番号, 着, 発, ...3つずつ(始発秒からの差。-1は無し)]]
-type TrainRow = [string, number, string, string, number, number[]];
+// [列車番号(6桁), 種別番号, 方向, 運用番号, 始発の発車秒, [駅番号, 着, 発, ...3つずつ(始発秒からの差。-1は無し)], 運行番号(例: 61K)]
+// 公開前のダイヤ(data/dia/)には、運行番号が無い
+type TrainRow = [string, number, string, string, number, number[], string?];
 // {方向: [[発車秒, 種別番号, 列車の添字], ...]}
 type StationFile = Record<string, [number, number, number][]>;
 
@@ -563,7 +564,7 @@ export const EXPRESS_TYPES = {
 export type ExpressKey = keyof typeof EXPRESS_TYPES;
 
 export interface ExpressTrip {
-  code: string; // ダイヤ上の列車番号(例: SCO118)
+  code: string; // ダイヤ上の列車番号(例: 185051)
   trainName: string; // 例: 特急あやみ 101号
   directionLabel: string; // 下り / 上り / 外回り / 内回り
   depSec: number; // 乗車駅の発車(0時からの秒数)

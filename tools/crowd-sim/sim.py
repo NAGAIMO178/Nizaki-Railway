@@ -55,7 +55,7 @@ def build(master, trains, st):
     for c, tl in trains.items():
         m = master[c]
         for t in tl:
-            no, ty, d, run, t0, a = t
+            no, ty, d, run, t0, a = t[:6]   # 7つ目は運行番号(混雑には使わない)
             nm, ab, paid = m["types"][ty][0], m["types"][ty][1], m["types"][ty][2]
             cars = 10 if ("特急" in nm or nm == "特別快速") else 8
             cap = cars * (PAID_CAR_CAP if paid else CAR_CAP)
