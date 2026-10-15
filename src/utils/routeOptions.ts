@@ -9,6 +9,8 @@ export interface RouteOptions {
   maxTransfers: 0 | 2 | 99;
   // 列車の遅れ・運転見合わせを加味する
   realtime: boolean;
+  // 結果の並べ方: time=早く着く順(標準) / crowd=空いている順(混雑予報のデータがあるとき)
+  sortBy: 'time' | 'crowd';
 }
 
 export const DEFAULT_ROUTE_OPTIONS: RouteOptions = {
@@ -16,6 +18,7 @@ export const DEFAULT_ROUTE_OPTIONS: RouteOptions = {
   relaxedTransfer: false,
   maxTransfers: 99,
   realtime: true,
+  sortBy: 'time',
 };
 
 const OPTIONS_KEY = 'nizaki_route_options';
@@ -30,6 +33,7 @@ export const loadRouteOptions = (): RouteOptions => {
         relaxedTransfer: typeof p.relaxedTransfer === 'boolean' ? p.relaxedTransfer : DEFAULT_ROUTE_OPTIONS.relaxedTransfer,
         maxTransfers: p.maxTransfers === 0 || p.maxTransfers === 2 ? p.maxTransfers : 99,
         realtime: typeof p.realtime === 'boolean' ? p.realtime : DEFAULT_ROUTE_OPTIONS.realtime,
+        sortBy: p.sortBy === 'crowd' ? 'crowd' : 'time',
       };
     }
   } catch {
@@ -51,7 +55,8 @@ export const countChangedOptions = (o: RouteOptions): number =>
   (o.allowPaid !== DEFAULT_ROUTE_OPTIONS.allowPaid ? 1 : 0) +
   (o.relaxedTransfer !== DEFAULT_ROUTE_OPTIONS.relaxedTransfer ? 1 : 0) +
   (o.maxTransfers !== DEFAULT_ROUTE_OPTIONS.maxTransfers ? 1 : 0) +
-  (o.realtime !== DEFAULT_ROUTE_OPTIONS.realtime ? 1 : 0);
+  (o.realtime !== DEFAULT_ROUTE_OPTIONS.realtime ? 1 : 0) +
+  (o.sortBy !== DEFAULT_ROUTE_OPTIONS.sortBy ? 1 : 0);
 
 // 経由駅(通ってほしい駅)の上限
 export const MAX_VIAS = 3;

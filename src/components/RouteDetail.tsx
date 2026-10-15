@@ -4,6 +4,7 @@ import { REGISTERABLE_LINES } from './MyStationRegisterCard';
 import { formatDiaTime } from '../utils/diaTimetable';
 import { fareTierLabel } from '../utils/fare';
 import { RouteResult, RouteLeg } from '../utils/routeSearch';
+import { crowdInfo } from '../utils/crowd';
 
 const DAY = 86400;
 
@@ -49,6 +50,18 @@ const LegBlock: React.FC<{ leg: RouteLeg }> = ({ leg }) => {
           {leg.delayMin > 0 && (
             <div className="mt-1.5 inline-block text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded px-1.5 py-0.5">
               {leg.delayMin}分遅れ
+            </div>
+          )}
+          {leg.crowd && crowdInfo(leg.crowd) && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px] text-[#6B6380]">
+              <span className="font-bold">混雑の目安</span>
+              <span
+                className="font-black px-1.5 py-0.5 rounded border border-black/10 whitespace-nowrap"
+                style={{ background: crowdInfo(leg.crowd)!.color, color: crowdInfo(leg.crowd)!.text }}
+              >
+                {crowdInfo(leg.crowd)!.label}
+              </span>
+              <span>(いちばん混む区間・乗車率 {crowdInfo(leg.crowd)!.range})</span>
             </div>
           )}
           {leg.paid && <div className="mt-1.5 text-[10px] font-bold text-amber-700">有料の列車です(特急券が別に必要)</div>}

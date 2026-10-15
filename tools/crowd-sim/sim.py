@@ -16,7 +16,11 @@ DEMAND = float(os.environ.get("DEMAND", 2.0))   # 乗降客数の倍率(列車�
 STATIONS_FILE = os.environ.get("STATIONS", "stations.csv")   # 乗降客数の表(stations.csv=中堅級 / stations_large.csv=大手級)
 MIN_TRANSFER = 150          # 乗換に要する最小の秒数
 HORIZON = 3 * 3600 + 1800   # 1回の探索で、先を見る時間
-BUCKET = 300                # 出発時刻のまとめ(秒)。同じ駅・同じ5分は、同じ探索結果を使う
+BUCKET = 60                 # 出発時刻のまとめ(秒)。同じ駅・同じ1分は、同じ探索結果を使う
+VARIANTS = 5               # 住民の「好み」の種類。列車ごとに、種類ごとに、±NOISE_SEC の、感じ方のずれを付ける
+NOISE_SEC = 180             # 感じ方のずれ(秒)。同じような列車に、住民が分かれて乗るようにする(いちばん早い列車だけに、全員が乗らない)
+SMOOTH_SEC = 300            # 前後の列車と、混雑をならすときの、時間の幅(秒)
+SMOOTH_SELF = 0.5           # ならしたあとも、自分の値を残す割合
 PREMIUM_RATE = 0.15         # 有料特急を使ってよい住民の割合
 TAU = 40 * 60               # 行き先を選ぶときの、所要時間の「遠さ」の目安(秒)
 IPF_ROUNDS = int(os.environ.get("IPF_ROUNDS", 6))
@@ -79,15 +83,20 @@ class Router:
         self.seg = [c[5] for c in conns]
         self.paid = [T[c[4]]["paid"] for c in conns]
         self.cache = {}
+        rng = random.Random(SEED + 7)
+        self.noise = [[rng.uniform(-NOISE_SEC, NOISE_SEC) for _ in T] for _ in range(VARIANTS)]
 
-    def scan(self, origin, t0, premium):
-        key = (origin, t0, premium)
+    def scan(self, origin, t0, premium, var):
+        key = (origin, t0, premium, var)
         r = self.cache.get(key)
         if r is not None:
             return r
         INF = 10 ** 9
-        earliest = [INF] * self.nS
+        earliest = [INF] * self.nS      # 本当の到着時刻(乗換できるかの判定に使う)
         earliest[origin] = t0
+        perceived = [INF] * self.nS     # この住民が、感じている到着時刻(どの列車を選ぶかに使う)
+        perceived[origin] = t0
+        nz = self.noise[var]
         parent = [None] * self.nS
         boarded = {}
         dep, arr, frm, to, trip, paid = self.dep, self.arr, self.frm, self.to, self.trip, self.paid
@@ -105,15 +114,17 @@ class Router:
                         boarded[tr] = b = i
                 if b is not None:
                     d = to[i]
-                    if arr[i] < earliest[d]:
+                    pa = arr[i] + nz[tr]
+                    if pa < perceived[d]:
+                        perceived[d] = pa
                         earliest[d] = arr[i]
                         parent[d] = (i, b)
             i += 1
         self.cache[key] = r = (earliest, parent)
         return r
 
-    def legs(self, origin, dest, t0, premium):
-        earliest, parent = self.scan(origin, t0, premium)
+    def legs(self, origin, dest, t0, premium, var):
+        earliest, parent = self.scan(origin, t0, premium, var)
         if parent[dest] is None:
             return None
         out, s, guard = [], dest, 0
@@ -151,7 +162,7 @@ def make_agents(rng, names, st, mh, mw):
     agents = []
     for h in homes:
         kind = rng.random()
-        a = dict(home=h, premium=rng.random() < PREMIUM_RATE)
+        a = dict(home=h, premium=rng.random() < PREMIUM_RATE, var=rng.randrange(VARIANTS))
         # 勤め先・遊び先は、自宅から離れすぎないよう、自宅以外から、重みで選ぶ(近さは、探索の結果で、あとから効かせる)
         w = rng.choices(range(nS), weights=biz, k=1)[0]
         while w == h:
@@ -208,7 +219,7 @@ def run_day(rng, router, agents, weekend, T, boards, loads):
     for a in agents:
         for o, d, t in trips_for_day(rng, a, weekend):
             tb = (t // BUCKET) * BUCKET
-            legs = router.legs(o, d, tb, a["premium"])
+            legs = router.legs(o, d, tb, a["premium"], a["var"])
             if legs is None:
                 continue
             for tr, k0, k1, fs, ts in legs:
@@ -269,6 +280,32 @@ def main():
     print(f"完了 {time.time() - t_start:.0f}秒")
 
 
+def smooth_ratios(T, ratios):
+    """同じ駅を出る、同じ方向の、近い時刻の列車どうしで、混雑をならす。
+    実際の乗客は、ぴったり同じ列車にだけ乗るわけではなく、前後の列車に分かれるため。
+    (自分の値 SMOOTH_SELF 割 + 前後の列車の、時間で重みをつけた平均 残り)"""
+    groups = collections.defaultdict(list)   # (路線, 駅, 方向) -> [(発車秒, 列車の番号, 区間の番号)]
+    for ti, t in enumerate(T):
+        dch = t["no"][len(t["line"])]
+        for k in range(len(t["stops"]) - 1):
+            if t["dep"][k] is not None:
+                groups[(t["line"], t["stops"][k], dch)].append((t["dep"][k], ti, k))
+    new = {}
+    for items in groups.values():
+        items.sort()
+        n = len(items)
+        for i, (dep, ti, k) in enumerate(items):
+            num = den = 0.0
+            for j in range(max(0, i - 8), min(n, i + 9)):
+                dt = items[j][0] - dep
+                w = math.exp(-0.5 * (dt / SMOOTH_SEC) ** 2)
+                num += w * ratios[items[j][1]][items[j][2]]
+                den += w
+            new[(ti, k)] = SMOOTH_SELF * ratios[ti][k] + (1 - SMOOTH_SELF) * (num / den)
+    for (ti, k), v in new.items():
+        ratios[ti][k] = v
+
+
 def write_outputs(master, T, names, scale, res):
     os.makedirs(OUT, exist_ok=True)
     report = []
@@ -276,8 +313,10 @@ def write_outputs(master, T, names, scale, res):
         ratios = {}
         trainfile = {}
         for ti, t in enumerate(T):
-            rs = [loads[ti][k] * scale / days / t["cap"] for k in range(len(loads[ti]))]
-            ratios[ti] = rs
+            ratios[ti] = [loads[ti][k] * scale / days / t["cap"] for k in range(len(loads[ti]))]
+        smooth_ratios(T, ratios)
+        for ti, t in enumerate(T):
+            rs = ratios[ti]
             trainfile.setdefault(t["line"], {})[t["no"]] = "".join(str(level(r)) for r in rs)
         json.dump(trainfile, open(os.path.join(OUT, f"train_{label}.json"), "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
         # 報告: レベルの分布と、いちばん混む区間

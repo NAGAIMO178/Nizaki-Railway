@@ -4,6 +4,7 @@ import { REGISTERABLE_LINES } from './MyStationRegisterCard';
 import { RouteFilterSheet } from './RouteFilterSheet';
 import { RouteDetail } from './RouteDetail';
 import { formatDiaTime } from '../utils/diaTimetable';
+import { crowdInfo } from '../utils/crowd';
 import { loadRouteStations, searchRoutes, RouteResult } from '../utils/routeSearch';
 import {
   RouteOptions,
@@ -388,6 +389,17 @@ export const RouteSearch: React.FC = () => {
                   </span>
                   <span>営業キロ {r.km.toFixed(1)}km</span>
                   {r.hasPaid && <span className="font-bold text-amber-600">特急券が別に必要</span>}
+                  {r.crowd && crowdInfo(r.crowd) && (
+                    <span className="inline-flex items-center gap-1">
+                      混雑
+                      <span
+                        className="text-[10px] font-black px-1.5 py-0.5 rounded border border-black/10 whitespace-nowrap"
+                        style={{ background: crowdInfo(r.crowd)!.color, color: crowdInfo(r.crowd)!.text }}
+                      >
+                        {crowdInfo(r.crowd)!.short}
+                      </span>
+                    </span>
+                  )}
                 </div>
 
                 <div className="border-t border-[#EFEDF5] px-3.5 py-2.5 flex items-center gap-2">
@@ -397,6 +409,14 @@ export const RouteSearch: React.FC = () => {
                         <span className="w-1.5 h-4 rounded-full shrink-0" style={{ backgroundColor: lineColor(leg.lineCode) }} />
                         <span className="font-bold truncate">{leg.lineName}</span>
                         <span className={`shrink-0 ${leg.paid ? 'text-amber-600 font-bold' : 'text-[#857D99]'}`}>{leg.typeAbbr}</span>
+                        {leg.crowd && crowdInfo(leg.crowd) && (
+                          <span
+                            className="shrink-0 text-[9px] font-black px-1 py-px rounded border border-black/10 whitespace-nowrap"
+                            style={{ background: crowdInfo(leg.crowd)!.color, color: crowdInfo(leg.crowd)!.text }}
+                          >
+                            {crowdInfo(leg.crowd)!.short}
+                          </span>
+                        )}
                         <span className="text-[#857D99] truncate">
                           {leg.from} {timeLabel(leg.depSec)} → {leg.to} {timeLabel(leg.arrSec)}
                         </span>
@@ -412,6 +432,7 @@ export const RouteSearch: React.FC = () => {
 
           {results.length > 0 && (
             <div className="text-[10px] text-[#857D99] leading-relaxed px-1">
+              {results.some((x) => x.crowd) && '色つきの言葉は、混雑の目安です(模擬)。乗っている区間で、いちばん混むところを出しています。'}
               タップすると、詳細(停車駅・運賃の内訳)が見られます。乗換は{options.relaxedTransfer ? '8' : '4'}分以上で乗り継げる列車を探しています。運賃は、全区間の営業キロを合わせて計算した普通運賃です。
               {usedRealtime ? '遅れは、検索した時点のものです。' : '表示は予定の時刻で、遅れは反映されていません。'}
             </div>
