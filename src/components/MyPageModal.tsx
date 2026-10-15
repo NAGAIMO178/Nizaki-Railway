@@ -129,7 +129,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
             title: `車内デリバリー注文 (${activeOrder.items.length}商品)`,
             subtitle: `${activeOrder.items.map((i) => i.item.name).join('、')} (${activeOrder.deliveryStation}発車後にお届け)`,
             date: '本日デリバリー予定',
-            status: activeOrder.status === 'delivering' ? '配達中' : '準備中',
+            status: activeOrder.status === 'delivered' ? 'お届け済み' : activeOrder.status === 'delivering' ? '配達中' : '準備中',
             statusColor: 'purple',
             amount: `¥${Math.max(0, activeOrder.items.reduce((sum, i) => sum + i.item.price * i.quantity, 0) - (activeOrder.itemDiscount || 0)).toLocaleString()}`,
             pointsEarned: 50,
