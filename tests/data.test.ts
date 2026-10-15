@@ -14,7 +14,8 @@ interface MasterLine {
   types: [string, string, number][];
   dirs: [string, string];
 }
-type TrainRow = [string, number, string, string, number, number[], string];
+// [列車番号, 種別, 方向, 運用番号, 始発秒, 停車駅, 運行番号, 行先の駅名, 始発の駅名]
+type TrainRow = [string, number, string, string, number, number[], string, string, string];
 type StationFile = Record<string, [number, number, number][]>;
 // 運用: [列車番号, 発駅名, 発秒, 着駅名, 着秒]。路線をまたぐ編成は、駅名で持つ
 type Unyo = Record<string, Record<string, [string, string, number, string, number][]>>;
@@ -86,6 +87,25 @@ describe('列車のデータ', () => {
         });
       })
     );
+  });
+
+  it('列車全体の行先・始発の駅名が入っている(「○○行き」「当駅始発」の表示に使う)。直通は、路線をまたいだ全体', () => {
+    const nameOf = (l: string, idx: number) => master[l].stations[idx][0];
+    portions.forEach((v, code) => {
+      const sorted = [...v].sort((x, y) => x.row[4] - y.row[4]);
+      const first = sorted[0];
+      const last = sorted[sorted.length - 1];
+      const sFirst = stops(first.row);
+      const sLast = stops(last.row);
+      const origin = nameOf(first.line, sFirst[0].st); // 全体の始発 = 前の部分の始発駅
+      const dest = nameOf(last.line, sLast[sLast.length - 1].st); // 全体の行先 = 後の部分の終着駅
+      v.forEach(({ line, row }) => {
+        expect(typeof row[7], `${code} の行先`).toBe('string');
+        expect(typeof row[8], `${code} の始発`).toBe('string');
+        expect(row[7], `${code}(${line}) の行先`).toBe(dest);
+        expect(row[8], `${code}(${line}) の始発`).toBe(origin);
+      });
+    });
   });
 
   it('運行番号は、「2桁+K」で、運用番号の表と合っている(編成が所属する路線の表)', () => {
