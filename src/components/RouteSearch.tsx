@@ -359,6 +359,9 @@ export const RouteSearch: React.FC = () => {
 
           {results.map((r, i) => {
             const first = r.legs[0];
+            // 乗換の警告: 遅れで間に合わない乗換があれば、それを。無ければ、余裕が少ない乗換を
+            const failConn = r.connections.find((c) => c.level === 'fail');
+            const tightConn = failConn ? undefined : r.connections.find((c) => c.level === 'tight');
             return (
               <button
                 type="button"
@@ -389,6 +392,15 @@ export const RouteSearch: React.FC = () => {
                   </span>
                   <span>営業キロ {r.km.toFixed(1)}km</span>
                   {r.hasPaid && <span className="font-bold text-amber-600">特急券が別に必要</span>}
+                  {failConn && <span className="font-bold text-rose-600">遅れで{failConn.station}の乗換に間に合いません</span>}
+                  {tightConn && (
+                    <span className="font-bold text-amber-600">
+                      {tightConn.station}の乗換は余裕が少なめ(待ち{Math.round(tightConn.gapMin)}分)
+                    </span>
+                  )}
+                  {options.sortBy === 'safe' && !failConn && !tightConn && r.risk < 0.01 && (
+                    <span className="font-bold text-emerald-700">遅れに強い</span>
+                  )}
                   {r.crowd && crowdInfo(r.crowd) && (
                     <span className="inline-flex items-center gap-1">
                       混雑

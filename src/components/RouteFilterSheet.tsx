@@ -136,12 +136,18 @@ export const RouteFilterSheet: React.FC<RouteFilterSheetProps> = ({ isOpen, opti
                 items={[
                   { value: 'time' as const, label: '早く着く順' },
                   { value: 'crowd' as const, label: '空いている順' },
+                  { value: 'safe' as const, label: '遅れに強い順' },
                 ]}
                 onSelect={(v) => onChange({ ...options, sortBy: v })}
               />
               {options.sortBy === 'crowd' && (
                 <div className="text-[11px] text-[#857D99] leading-relaxed">
                   早く着く便から45分以内の候補のなかで、混雑の目安が低い順に並べます(模擬の混雑です)。
+                </div>
+              )}
+              {options.sortBy === 'safe' && (
+                <div className="text-[11px] text-[#857D99] leading-relaxed">
+                  早く着く便から40分以内の候補のなかで、乗換に失敗しにくい順に並べます。乗換の余裕が大きい経路や、乗換のない経路が上に来ます。混んで遅れやすい列車に乗る経路は、下がります(模擬です)。
                 </div>
               )}
             </div>
