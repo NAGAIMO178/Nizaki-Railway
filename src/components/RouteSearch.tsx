@@ -419,6 +419,7 @@ export const RouteSearch: React.FC = () => {
                     {r.legs.map((leg, k) => (
                       <div key={`${leg.trainNo}-${k}`} className="flex items-center gap-2 text-[11px] text-[#221C35]">
                         <span className="w-1.5 h-4 rounded-full shrink-0" style={{ backgroundColor: lineColor(leg.lineCode) }} />
+                        {leg.through && <span className="shrink-0 text-[9px] font-bold text-[#5B21B6] bg-[#EFE8FA] px-1 py-px rounded">直通</span>}
                         <span className="font-bold truncate">{leg.lineName}</span>
                         <span className={`shrink-0 ${leg.paid ? 'text-amber-600 font-bold' : 'text-[#857D99]'}`}>{leg.typeAbbr}</span>
                         {leg.crowd && crowdInfo(leg.crowd) && (

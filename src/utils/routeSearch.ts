@@ -50,6 +50,8 @@ interface Net {
   stationNames: string[];
   // 停車駅と次の停車駅のあいだにある(通過する)駅の番号の、計算ずみの値
   between: Map<string, number[]>;
+  // 直通: "路線|列車の添字"(前の部分) → 乗ったまま続く、次の路線の部分。同じ列車番号が、2つの路線にあるもの
+  through: Map<string, { line: string; trainIdx: number }>;
 }
 
 let netPromise: Promise<Net> | null = null;
@@ -83,7 +85,26 @@ const buildNet = async (): Promise<Net> => {
     });
   });
   deps.forEach((list) => list.sort((a, b) => a.dep - b.dep));
-  return { lines, stationLines, deps, stationNames, between: new Map() };
+
+  // 直通: 同じ列車番号が、2つの路線にある列車。前の部分の終着と、次の部分の始発が、同じ駅でつながるものだけ
+  const byCode = new Map<string, { line: string; trainIdx: number; start: number }[]>();
+  loaded.forEach((data) =>
+    data.trains.forEach((train, trainIdx) => {
+      if (!byCode.has(train[0])) byCode.set(train[0], []);
+      byCode.get(train[0])!.push({ line: data.code, trainIdx, start: train[4] });
+    })
+  );
+  const through = new Map<string, { line: string; trainIdx: number }>();
+  byCode.forEach((parts) => {
+    if (parts.length !== 2 || parts[0].line === parts[1].line) return;
+    const [a, b] = [...parts].sort((x, y) => x.start - y.start);
+    const sa = lines[a.line].trains[a.trainIdx][5];
+    const sb = lines[b.line].trains[b.trainIdx][5];
+    const lastName = normalizeStationName(lines[a.line].master.stations[sa[sa.length - 3]][0]);
+    const firstName = normalizeStationName(lines[b.line].master.stations[sb[0]][0]);
+    if (lastName === firstName) through.set(`${a.line}|${a.trainIdx}`, { line: b.line, trainIdx: b.trainIdx });
+  });
+  return { lines, stationLines, deps, stationNames, between: new Map(), through };
 };
 
 const getNet = (): Promise<Net> => {
@@ -121,6 +142,8 @@ export interface RouteLeg {
   schedDepSec: number; // 時刻表どおりの発車
   schedArrSec: number;
   delayMin: number; // 遅れ(分)。0なら時刻表どおり
+  // 前の区間から、同じ列車に乗ったまま続く(直通)。乗換に数えない
+  through?: boolean;
   km: number;
   // 乗ってから降りるまでに停まる駅(最後が降りる駅)
   stops: RouteStop[];
@@ -138,6 +161,7 @@ export interface Connection {
   level: 'ok' | 'tight' | 'fail'; // 余裕あり / 厳しい / 遅れで間に合わない
   prevDelayMin: number; // 前の列車の遅れ(分)
   risk: number; // 乗換に失敗する確率の目安(0〜1)
+  through?: boolean; // 直通(乗ったまま)。降りないので、失敗しない
 }
 
 export interface RouteResult {
@@ -166,6 +190,8 @@ interface Pred {
   alightPos: number;
   boardStation: string;
   delaySec: number;
+  // 直通の列車で、続きの部分(次の路線)まで乗るとき: 続きの路線・列車と、降りる位置。このとき alightPos は、前の部分の終着
+  cont?: { line: string; trainIdx: number; alightPos: number };
 }
 interface Rec {
   arr: number;
@@ -291,6 +317,44 @@ const searchOnce = (net: Net, ctx: Ctx, from: string, to: string, readySec: numb
               });
             }
           }
+
+          // 直通の列車なら、終着で降りずに、次の路線の部分にも、乗ったまま行ける(乗換に数えない。遅れは、同じ列車なので、同じ)
+          const cont = net.through.get(`${line}|${trainIdx}`);
+          if (cont) {
+            const cData = net.lines[cont.line];
+            const cTrain = cData.trains[cont.trainIdx];
+            if (ctx.allowPaid || cData.master.types[cTrain[1]][2] !== 1) {
+              const cStops = cTrain[5];
+              const cDir = (cData.master.dirs.indexOf(cTrain[2]) === 1 ? 1 : 0) as 0 | 1;
+              for (let j = 3; j < cStops.length; j += 3) {
+                if (ctx.vias.length > 0) {
+                  for (const passed of passedBetween(net, cont.line, cDir, cStops[j - 3], cStops[j])) mask |= ctx.viaBits.get(`${cont.line}|${passed}`) ?? 0;
+                  mask |= ctx.viaBits.get(`${cont.line}|${cStops[j]}`) ?? 0;
+                }
+                const name = normalizeStationName(cData.master.stations[cStops[j]][0]);
+                const arr = cTrain[4] + (cStops[j + 1] !== -1 ? cStops[j + 1] : cStops[j + 2]) + delaySec;
+                const key = keyOf(name, mask);
+                const known = Math.min(best.get(key)?.arr ?? Infinity, improved.get(key)?.arr ?? Infinity);
+                if (arr < known) {
+                  improved.set(key, {
+                    arr,
+                    station: name,
+                    mask,
+                    pred: {
+                      prev: rec,
+                      line,
+                      trainIdx,
+                      boardPos: pos,
+                      alightPos: stops.length - 3,
+                      boardStation: station,
+                      delaySec,
+                      cont: { line: cont.line, trainIdx: cont.trainIdx, alightPos: j },
+                    },
+                  });
+                }
+              }
+            }
+          }
         }
       });
     });
@@ -312,7 +376,27 @@ const searchOnce = (net: Net, ctx: Ctx, from: string, to: string, readySec: numb
   // 到着から、たどって、乗った列車を順に並べる
   const preds: Pred[] = [];
   for (let r: Rec | undefined = goal; r && r.pred; r = r.pred.prev) preds.unshift(r.pred);
-  const legs: RouteLeg[] = preds.map((p) => {
+  // 直通の列車に乗ったまま続くときは、路線ごとに、2つの区間に分けて表す(2つ目は、乗換でなく「直通」)
+  type LegPred = Pred & { through?: boolean };
+  const legPreds: LegPred[] = preds.flatMap((p): LegPred[] => {
+    if (!p.cont) return [p];
+    const aData = net.lines[p.line];
+    const handover = normalizeStationName(aData.master.stations[aData.trains[p.trainIdx][5][p.alightPos]][0]);
+    return [
+      { ...p, cont: undefined },
+      {
+        prev: p.prev,
+        line: p.cont.line,
+        trainIdx: p.cont.trainIdx,
+        boardPos: 0,
+        alightPos: p.cont.alightPos,
+        boardStation: handover,
+        delaySec: p.delaySec,
+        through: true,
+      },
+    ];
+  });
+  const legs: RouteLeg[] = legPreds.map((p) => {
     const data = net.lines[p.line];
     const train = data.trains[p.trainIdx];
     const stops = train[5];
@@ -376,6 +460,7 @@ const searchOnce = (net: Net, ctx: Ctx, from: string, to: string, readySec: numb
       passedVias,
       crowd,
       crowdAvg,
+      through: p.through,
     };
   });
 
@@ -386,8 +471,20 @@ const searchOnce = (net: Net, ctx: Ctx, from: string, to: string, readySec: numb
   for (let k = 1; k < legs.length; k++) {
     const prev = legs[k - 1];
     const next = legs[k];
-    const pp = preds[k - 1];
-    const pn = preds[k];
+    // 直通は、降りずに乗ったままなので、乗換ではない(失敗しない)
+    if (next.through) {
+      connections.push({
+        station: next.from,
+        gapMin: Math.round(((next.depSec - prev.arrSec) / 60) * 10) / 10,
+        level: 'ok',
+        prevDelayMin: prev.delayMin,
+        risk: 0,
+        through: true,
+      });
+      continue;
+    }
+    const pp = legPreds[k - 1];
+    const pn = legPreds[k];
     const dPrev = rawDelay(ctx, net, pp.line, pp.trainIdx, pp.boardStation, prev.schedDepSec).min;
     const dNext = rawDelay(ctx, net, pn.line, pn.trainIdx, pn.boardStation, next.schedDepSec).min;
     const gapMin = (next.schedDepSec + dNext * 60 - (prev.schedArrSec + dPrev * 60)) / 60;
@@ -420,7 +517,7 @@ const searchOnce = (net: Net, ctx: Ctx, from: string, to: string, readySec: numb
     depSec: legs[0].depSec,
     arrSec: legs[legs.length - 1].arrSec,
     minutes: Math.round((legs[legs.length - 1].arrSec - legs[0].depSec) / 60),
-    transfers: legs.length - 1,
+    transfers: legs.filter((l) => !l.through).length - 1,
     km,
     fare: calculateFare(km),
     hasPaid: legs.some((l) => l.paid),

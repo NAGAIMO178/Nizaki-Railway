@@ -156,7 +156,9 @@ export const RouteDetail: React.FC<RouteDetailProps> = ({ result: r, from, to, v
                   <span className="h-6 border-l-2 border-dotted border-[#C4BCD8]" />
                 </div>
                 <div className="text-[11px] text-[#857D99]">
-                  {leg.from}で乗換（待ち{Math.round((leg.depSec - r.legs[k - 1].arrSec) / 60)}分）
+                  {leg.through
+                    ? `${leg.from}で直通（乗ったまま）`
+                    : `${leg.from}で乗換（待ち${Math.round((leg.depSec - r.legs[k - 1].arrSec) / 60)}分）`}
                   {r.connections[k - 1]?.level === 'fail' && (
                     <div className="font-bold text-rose-600">
                       前の列車が約{r.connections[k - 1].prevDelayMin}分遅れていて、この列車には間に合いません。

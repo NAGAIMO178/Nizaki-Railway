@@ -3,7 +3,7 @@
 // 時刻は「0時0分0秒からの経過秒」で、86400以上は翌日(24時以降)。
 import { disruptionManager } from './disruptionManager';
 import { isLaunched } from './launch';
-import { bumpForDelay, crowdDelayRate, dayTypeOf, loadAllCrowdTrains, trainMaxLevel, trainSegmentLevel } from './crowd';
+import { bumpForDelay, crowdDelayRate, dayTypeOf, loadAllCrowdTrains, trainMaxLevelAnyLine, trainSegmentLevel } from './crowd';
 import type { DynamicDeparture } from '../components/MyStationCard';
 
 type MasterLine = {
@@ -72,10 +72,11 @@ const isRushStart = (trainStartSec: number): boolean => {
 
 const autoDelayMinutes = (lineCode: string, trainNo: string, serviceDayStartMs: number, trainStartSec?: number): number => {
   const d = new Date(serviceDayStartMs);
-  const key = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}|${lineCode}|${trainNo}`;
-  // 公開後: 混雑レベルの高い列車ほど遅れやすい。混雑のデータが無いとき(読み込み前・失敗)は、朝夕の時間帯で決める
   const launched = isLaunched();
-  const level = launched ? trainMaxLevel(dayTypeOf(serviceDayStartMs), lineCode, trainNo) : undefined;
+  // 公開後: 直通の列車は、同じ番号が2つの路線にあって、同じ列車なので、路線によらず同じ遅れにする(公開前は、これまでどおり路線ごと)
+  const key = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}|${launched ? '' : `${lineCode}|`}${trainNo}`;
+  // 公開後: 混雑レベルの高い列車ほど遅れやすい。混雑のデータが無いとき(読み込み前・失敗)は、朝夕の時間帯で決める
+  const level = launched ? trainMaxLevelAnyLine(dayTypeOf(serviceDayStartMs), trainNo) : undefined;
   const rate =
     level !== undefined
       ? crowdDelayRate(level)
