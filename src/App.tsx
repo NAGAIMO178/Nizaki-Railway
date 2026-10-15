@@ -25,6 +25,7 @@ import { POINT_CODES, normalizePointCode } from './data/pointCodes';
 import { getLocalDateString, isOrderExpired } from './utils/orderExpiry';
 import { callGas } from './utils/accountApi';
 import { isLaunched } from './utils/launch';
+import LaunchCountdown from './components/LaunchCountdown';
 import { useCloudAccount } from './utils/useCloudAccount';
 import { rewardIdFromTitle } from './utils/cloudAccount';
 import { useDelayNotifyMode } from './utils/delayNotifySettings';
@@ -702,6 +703,9 @@ export default function App() {
           setIsLoginModalOpen(true);
         }}
       />
+
+      {/* 公開までのカウントダウン(公開前の、ホームだけ) */}
+      {activeTab === 'home' && !isLaunched() && <LaunchCountdown />}
 
       {/* 遅れの知らせ(公開後。どのタブでも出る) */}
       {delayWatch.notice && (
