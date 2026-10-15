@@ -6,6 +6,7 @@ import { sendLocalPushNotification } from '../utils/pushNotification';
 import { disruptionManager } from '../utils/disruptionManager';
 import { useDragToDismiss } from '../utils/useDragToDismiss';
 import { isLaunched } from '../utils/launch';
+import { crowdInfo, loadAllCrowdTrains } from '../utils/crowd';
 
 export interface StationNode {
   id: string;
@@ -37,7 +38,8 @@ export interface LiveTrainPos {
   isBetween: boolean; // 駅間走行中かどうか
   isStopStation?: boolean; // 現在位置の駅に停車するかどうか（falseなら通過駅）
   delayMinutes: number; // 0=定時
-  timetable: { stationName: string; scheduledTime: string; estimatedTime: string }[];
+  crowdNow?: number; // いまの区間の混雑レベル(1〜6。公開後だけ)
+  timetable: { stationName: string; scheduledTime: string; estimatedTime: string; crowd?: number }[];
 }
 
 // 統一された種別スタイル取得関数
@@ -340,6 +342,12 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = () => {
     };
   }, [diaLineCode, diaRetry]);
 
+  // 混雑予報のデータ(公開後だけ)。読み込めたら、1秒おきの更新で、列車の詳細に混雑が付く(読めなくても、付かないだけ)
+  useEffect(() => {
+    if (!isLaunched()) return;
+    loadAllCrowdTrains().catch(() => undefined);
+  }, []);
+
   // ダイヤに基づいて、いまの時刻に走っている列車と位置を求める
   // (運転見合わせの列車は含まれない。遅延は運行指令の設定だけを反映する)
   const computeLiveTrains = (): LiveTrainPos[] => {
@@ -361,6 +369,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = () => {
           isBetween: t.isBetween,
           isStopStation: t.isStopStation,
           delayMinutes: t.delayMinutes,
+          crowdNow: t.crowdNow,
           timetable: t.timetable,
         },
       ];
@@ -903,6 +912,20 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = () => {
             </div>
           </div>
 
+          {/* いまの混雑(公開後だけ) */}
+          {selectedTrain.crowdNow && crowdInfo(selectedTrain.crowdNow) && (
+            <div className="flex items-center gap-2 text-xs">
+              <span className="font-bold text-[#6B6380]">いまの混雑</span>
+              <span
+                className="text-[11px] font-black px-2.5 py-1 rounded-lg border border-black/10 whitespace-nowrap"
+                style={{ background: crowdInfo(selectedTrain.crowdNow)!.color, color: crowdInfo(selectedTrain.crowdNow)!.text }}
+              >
+                {crowdInfo(selectedTrain.crowdNow)!.label}
+              </span>
+              <span className="text-[10px] text-[#857D99]">(乗車率の目安 {crowdInfo(selectedTrain.crowdNow)!.range})</span>
+            </div>
+          )}
+
           {/* Interactive Pull-down / Accordion Section (今後の停車駅時刻表) */}
           <div className="bg-[#F9F8FD] rounded-xl border border-[#E6E2EE] overflow-hidden">
             {/* Accordion Toggle Header */}
@@ -955,6 +978,15 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = () => {
                               <div className="flex items-center gap-2">
                                 <span className="w-2 h-2 rounded-full bg-[#5B21B6]" />
                                 <span className="text-[#221C35]">{item.stationName}</span>
+                                {item.crowd && crowdInfo(item.crowd) && (
+                                  <span
+                                    className="text-[9px] font-black px-1.5 py-0.5 rounded border border-black/10 whitespace-nowrap"
+                                    style={{ background: crowdInfo(item.crowd)!.color, color: crowdInfo(item.crowd)!.text }}
+                                    title={`この駅を出たあとの混雑の目安: ${crowdInfo(item.crowd)!.label}`}
+                                  >
+                                    {crowdInfo(item.crowd)!.short}
+                                  </span>
+                                )}
                               </div>
                               <div className="flex items-center gap-8 font-mono">
                                 <span className="text-[#6B6380]">{item.scheduledTime}</span>
@@ -968,6 +1000,11 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = () => {
                           </div>
                         )}
                       </div>
+                      {futureTimetable.some((item) => item.crowd) && (
+                        <p className="text-[10px] text-[#857D99] leading-relaxed pt-1">
+                          ※色つきの言葉は、その駅を出たあとの区間の混雑の目安です(模擬)。遅れている列車は、人がたまるので、1段階高く見せています。
+                        </p>
+                      )}
                     </div>
                   );
                 })()}
