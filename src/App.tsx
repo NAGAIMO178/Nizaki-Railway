@@ -29,6 +29,7 @@ import { useCloudAccount } from './utils/useCloudAccount';
 import { rewardIdFromTitle } from './utils/cloudAccount';
 import { useDelayNotifyMode } from './utils/delayNotifySettings';
 import { useDelayWatcher } from './utils/useDelayWatcher';
+import { useReservationWatcher } from './utils/useReservationWatcher';
 import { computeMileage, Mileage } from './utils/mileage';
 import { TabType, ActiveOrder, EquipItem, PointHistoryItem, UserProfile, OrderHistoryItem } from './types';
 
@@ -486,6 +487,14 @@ export default function App() {
     myStationNames: registeredStations.map((s) => s.name),
   });
 
+  // NIZAKI 2.0(公開後): ご予約の特急の、発車のリマインド・列車の遅れ・デリバリーのお届けを知らせる(アプリを開いているあいだ)
+  const reservationWatch = useReservationWatcher({
+    enabled: isLaunched() && isLoggedIn,
+    order: activeOrder,
+    onStatusChange: (orderId, status) =>
+      setActiveOrder((prev) => (prev && prev.orderId === orderId && prev.status !== status ? { ...prev, status } : prev)),
+  });
+
   // Modals state
   const [isEDeliveryModalOpen, setIsEDeliveryModalOpen] = useState(false);
   const [isNPointModalOpen, setIsNPointModalOpen] = useState(false);
@@ -707,6 +716,23 @@ export default function App() {
             onClick={delayWatch.dismiss}
             className="shrink-0 px-1.5 py-0.5 hover:bg-amber-600 rounded text-white cursor-pointer"
             aria-label="遅れの知らせを閉じる"
+          >
+            ×
+          </button>
+        </div>
+      )}
+      {reservationWatch.notice && (
+        <div
+          key={reservationWatch.notice.key}
+          className="bg-[#5B21B6] text-white text-xs font-bold px-3 py-2 flex items-center justify-between gap-2 shadow-sm animate-fadeIn"
+          role="status"
+        >
+          <span className="min-w-0">{reservationWatch.notice.text}</span>
+          <button
+            type="button"
+            onClick={reservationWatch.dismiss}
+            className="shrink-0 px-1.5 py-0.5 hover:bg-[#4C1D95] rounded text-white cursor-pointer"
+            aria-label="予約の知らせを閉じる"
           >
             ×
           </button>
