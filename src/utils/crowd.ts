@@ -5,24 +5,26 @@ export type CrowdDay = 'wd' | 'we'; // 平日 / 土休日
 
 export interface CrowdLevelInfo {
   level: number;
-  label: string;
-  short: string; // 狭い場所(発車案内など)で使う短い言葉
+  label: string; // 「〜です」の言い方(詳細の画面)
+  short: string; // 狭い場所(経路検索の候補など)で使う短い言葉
   range: string; // 乗車率の目安
-  color: string; // 表の色
-  text: string; // 色の上の文字色
+  color: string; // 小さな札の背景色
+  text: string; // 札の文字色
+  icon: string; // 人のアイコンの色
 }
 
-// 1〜6。乗車率は、定員を100%とした目安(sim.py の LEVELS と合わせる)
+// 5段階。乗車率は、定員を100%とした目安(tools/crowd-sim/sim.py の LEVELS と合わせる。データは6段階で出るが、5と6は、同じ「かなり混み合っています」)
+export const CROWD_MAX_LEVEL = 5;
 export const CROWD_LEVELS: CrowdLevelInfo[] = [
-  { level: 1, label: '座れる', short: '座れる', range: '〜50%', color: '#E4F4EC', text: '#2C6B4F' },
-  { level: 2, label: 'ゆったり', short: 'ゆったり', range: '〜100%', color: '#C9E9BF', text: '#3B6B2E' },
-  { level: 3, label: 'やや混んでいる', short: 'やや混', range: '〜150%', color: '#FBE7A1', text: '#7A5A00' },
-  { level: 4, label: '混んでいる', short: '混雑', range: '〜180%', color: '#FBBE7D', text: '#7A3F00' },
-  { level: 5, label: 'かなり混んでいる', short: '大混雑', range: '〜200%', color: '#F28B82', text: '#7A1E17' },
-  { level: 6, label: '身動きが取れない', short: '激混み', range: '200%超', color: '#A8386C', text: '#FFFFFF' },
+  { level: 1, label: '座席に座れる程度です', short: '座れる', range: '〜50%', color: '#E4F4EC', text: '#2C6B4F', icon: '#3FA37A' },
+  { level: 2, label: 'ゆったり立てる程度です', short: 'ゆったり', range: '〜100%', color: '#C9E9BF', text: '#3B6B2E', icon: '#7BBF5E' },
+  { level: 3, label: '少し混み合っています', short: 'やや混', range: '〜150%', color: '#FBE7A1', text: '#7A5A00', icon: '#E5B320' },
+  { level: 4, label: '肩がふれあう程度です', short: '混雑', range: '〜180%', color: '#FBBE7D', text: '#7A3F00', icon: '#F08A2C' },
+  { level: 5, label: 'かなり混み合っています', short: '大混雑', range: '180%超', color: '#F28B82', text: '#7A1E17', icon: '#E0554B' },
 ];
 
-export const crowdInfo = (level: number): CrowdLevelInfo | undefined => CROWD_LEVELS[level - 1];
+export const crowdInfo = (level: number): CrowdLevelInfo | undefined =>
+  level >= 1 ? CROWD_LEVELS[Math.min(level, CROWD_MAX_LEVEL) - 1] : undefined;
 
 // 土曜・日曜は「土休日」、それ以外は「平日」(祝日は、いまは見ない)
 export const dayTypeOf = (ms: number): CrowdDay => {
@@ -67,12 +69,12 @@ export const loadAllCrowdTrains = async (): Promise<void> => {
 // 遅れている列車は、人がたまるので、混雑を1つ上げて見せる(3分以上の遅れ)
 export const DELAY_BUMP_MIN = 3;
 export const bumpForDelay = (level: number, delayMinutes: number | undefined): number =>
-  delayMinutes !== undefined && delayMinutes >= DELAY_BUMP_MIN ? Math.min(6, level + 1) : level;
+  delayMinutes !== undefined && delayMinutes >= DELAY_BUMP_MIN ? Math.min(CROWD_MAX_LEVEL, level + 1) : Math.min(CROWD_MAX_LEVEL, level);
 
 // 読み込み済みなら、列車の、k番目の区間(k番目の停車駅を出たあとの区間)のレベル。まだ・データなしは undefined
 export const trainSegmentLevel = (day: CrowdDay, lineCode: string, trainNo: string, k: number): number | undefined => {
   const s = trainCache.get(day)?.[lineCode]?.[trainNo];
   if (!s || k < 0 || k >= s.length) return undefined;
   const n = Number(s[k]);
-  return n >= 1 && n <= 6 ? n : undefined;
+  return n >= 1 && n <= 6 ? Math.min(n, CROWD_MAX_LEVEL) : undefined;
 };

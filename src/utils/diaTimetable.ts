@@ -336,7 +336,28 @@ export interface DiaLiveTrain {
   // 混雑レベル(1〜6。公開後で、データを読み込み済みのときだけ)。crowd は、その駅を出たあとの区間。遅れて(3分以上)いれば、1つ上げてある
   crowdNow?: number;
   timetable: { stationName: string; scheduledTime: string; estimatedTime: string; crowd?: number }[];
+  // 列車の詳細(公開後の新しい画面)用
+  trainNo: string;
+  typeName: string; // ダイヤ上の種別名(例: 特急(Nライナー))
+  paid: boolean; // 有料の特急
+  expressBand?: string; // 有料の特急の、見出しの名前(例: Nライナー)
+  expressName?: string; // 有料の特急の、号つきの名前(例: Nライナー5号)
+  // これから通る駅(止まる駅と、通過する駅)。通過する駅は、時刻なし
+  rows: { stationName: string; pass: boolean; scheduledTime?: string; estimatedTime?: string }[];
 }
+
+// 有料の特急の、見出しの名前と、号つきの名前(予約の画面と、同じ番号の付け方)
+const expressNames = (data: LineData, train: TrainRow): { band: string; name: string } | undefined => {
+  const key = Object.values(EXPRESS_TYPES).find((e) => e.lineCode === data.code && data.master.types[train[1]]?.[0] === e.typeName);
+  if (!key) return undefined;
+  const typeIdx = train[1];
+  const dirIdx = data.master.dirs.indexOf(train[2]) === 1 ? 1 : 0;
+  const ofType = data.trains.filter((t) => t[1] === typeIdx && t[2] === train[2]).sort((a, b) => a[4] - b[4]);
+  const i = ofType.findIndex((t) => t[0] === train[0]);
+  if (i < 0) return undefined;
+  const band = key.label.replace(/^特急/, '');
+  return { band, name: `${band}${key.numberBase + i * 2 + 1 + dirIdx}号` };
+};
 
 // direction: 1=各路線の1つ目の方向(下り/外回り) 2=もう一方
 // lineId: 運行指令(遅延・見合わせ)の路線ID。運転見合わせの列車は含めない
@@ -417,6 +438,7 @@ export const computeLiveTrains = (data: LineData, lineId: string, direction: 1 |
     let isBetween: boolean;
     let isStopStation: boolean;
     let futureFrom: number;
+    let passedFrom = -1; // 駅間を走っているとき、次の停車駅の前の、これから通過する駅の最初の位置(停車中は、なし)
 
     if (atStop >= 0) {
       stationName = master.stations[idxOfPos(stops[atStop].pos)][0];
@@ -430,6 +452,7 @@ export const computeLiveTrains = (data: LineData, lineId: string, direction: 1 |
       const kmFrom = kmOfPos(from.pos);
       const kmTo = kmOfPos(to.pos);
       let passed = from.pos;
+      passedFrom = -1; // (下で決める)
       for (let r = from.pos + 1; r < to.pos; r++) {
         const frac = kmTo === kmFrom ? 0 : (kmOfPos(r) - kmFrom) / (kmTo - kmFrom);
         if (from.D + frac * (to.A - from.D) <= nowSec) passed = r;
@@ -443,6 +466,7 @@ export const computeLiveTrains = (data: LineData, lineId: string, direction: 1 |
       isBetween = true;
       isStopStation = stops.some((st) => st.pos === passed);
       futureFrom = segment + 1;
+      passedFrom = passed + 1; // すでに通りすぎた駅のあとから、次の停車駅までの、通過する駅
     }
 
     const serviceDayMs = nowSec === s ? base : base - DAY * 1000;
@@ -467,6 +491,26 @@ export const computeLiveTrains = (data: LineData, lineId: string, direction: 1 |
       crowd: crowdAt(futureFrom + i),
     }));
 
+    // これから通る駅の一覧(通過する駅も入れる)
+    const rows: DiaLiveTrain['rows'] = [];
+    const pushPass = (fromPos: number, toPos: number) => {
+      for (let r = fromPos; r < toPos; r++) {
+        const nm = master.stations[idxOfPos(r)]?.[0];
+        if (nm) rows.push({ stationName: nm, pass: true });
+      }
+    };
+    if (passedFrom >= 0 && futureFrom < stops.length) pushPass(passedFrom, stops[futureFrom].pos);
+    for (let k = futureFrom; k < stops.length; k++) {
+      rows.push({
+        stationName: master.stations[idxOfPos(stops[k].pos)][0],
+        pass: false,
+        scheduledTime: formatDiaTime(stops[k].A),
+        estimatedTime: formatDiaTime(stops[k].A + delay * 60),
+      });
+      if (k + 1 < stops.length) pushPass(stops[k].pos + 1, stops[k + 1].pos);
+    }
+    const names = expressNames(data, t);
+
     const typeName = master.types[t[1]]?.[0] ?? '各停';
     result.push({
       id: `dia-${data.code}-${t[0]}`,
@@ -480,6 +524,12 @@ export const computeLiveTrains = (data: LineData, lineId: string, direction: 1 |
       delayMinutes: delay,
       crowdNow: crowdAt(atStop >= 0 ? atStop : segment),
       timetable,
+      trainNo: t[0],
+      typeName,
+      paid: master.types[t[1]]?.[2] === 1,
+      expressBand: names?.band,
+      expressName: names?.name,
+      rows,
     });
   }
 

@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ChevronRight, ChevronDown, ChevronUp, Info, HelpCircle, AlertCircle, ArrowLeftRight, X, Clock, RotateCcw, CheckCircle2 } from 'lucide-react';
-import { computeLiveTrains as computeDiaLiveTrains, getCachedLineData, loadLineData, normalizeStationName } from '../utils/diaTimetable';
+import { computeLiveTrains as computeDiaLiveTrains, EXPRESS_TYPES, getCachedLineData, loadLineData, normalizeStationName } from '../utils/diaTimetable';
+import { TrainDetailV2 } from './TrainDetailV2';
+import type { ReservationPreset } from './ReservationTab';
 import { LocationStationDetailCard, LocationStationInfo } from './LocationStationDetailCard';
 import { sendLocalPushNotification } from '../utils/pushNotification';
 import { disruptionManager } from '../utils/disruptionManager';
@@ -25,7 +27,10 @@ export interface DisplayLine {
   stations: StationNode[];
 }
 
-interface TrainLocationTabProps {}
+interface TrainLocationTabProps {
+  // 特急の詳細の「空席を予約画面で見る」から、予約画面を、その列車を選んだ状態で開く(公開後だけ)
+  onOpenReservation?: (preset: ReservationPreset) => void;
+}
 
 export interface LiveTrainPos {
   id: string;
@@ -38,8 +43,15 @@ export interface LiveTrainPos {
   isBetween: boolean; // 駅間走行中かどうか
   isStopStation?: boolean; // 現在位置の駅に停車するかどうか（falseなら通過駅）
   delayMinutes: number; // 0=定時
-  crowdNow?: number; // いまの区間の混雑レベル(1〜6。公開後だけ)
+  crowdNow?: number; // いまの区間の混雑レベル(1〜5。公開後だけ)
   timetable: { stationName: string; scheduledTime: string; estimatedTime: string; crowd?: number }[];
+  // 列車の詳細(公開後の新しい画面)用
+  trainNo?: string;
+  typeName?: string;
+  paid?: boolean;
+  expressBand?: string;
+  expressName?: string;
+  rows?: { stationName: string; pass: boolean; scheduledTime?: string; estimatedTime?: string }[];
 }
 
 // 統一された種別スタイル取得関数
@@ -226,7 +238,7 @@ const DIA_LINE_CODES: Record<string, string> = {
   tsuchiura: 'TC',
 };
 
-export const TrainLocationTab: React.FC<TrainLocationTabProps> = () => {
+export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReservation }) => {
   const [activeLineId, setActiveLineId] = useState<string>('kanzaki');
   const [direction, setDirection] = useState<1 | 2>(1); // 1=下り/方向1, 2=上り/方向2
   const [selectedTrain, setSelectedTrain] = useState<LiveTrainPos | null>(null);
@@ -371,6 +383,12 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = () => {
           delayMinutes: t.delayMinutes,
           crowdNow: t.crowdNow,
           timetable: t.timetable,
+          trainNo: t.trainNo,
+          typeName: t.typeName,
+          paid: t.paid,
+          expressBand: t.expressBand,
+          expressName: t.expressName,
+          rows: t.rows,
         },
       ];
     });
@@ -870,6 +888,27 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = () => {
             <div className="w-12 h-1.5 bg-[#D1C9E3] group-hover:bg-[#5B21B6] rounded-full transition-colors" />
           </div>
 
+          {isLaunched() ? (
+            <TrainDetailV2
+              train={selectedTrain}
+              lineName={activeLine.name}
+              contentRef={trainSheetDrag.contentRef}
+              onOpenReservation={
+                onOpenReservation && selectedTrain.paid
+                  ? () => {
+                      const key = (Object.keys(EXPRESS_TYPES) as (keyof typeof EXPRESS_TYPES)[]).find((k) => EXPRESS_TYPES[k].typeName === selectedTrain.typeName);
+                      if (!key || !selectedTrain.trainNo) return;
+                      const stops = (selectedTrain.rows ?? []).filter((r) => !r.pass);
+                      const boarding = stops[0]?.stationName;
+                      const destination = stops[stops.length - 1]?.stationName;
+                      const ok = !!boarding && !!destination && boarding !== destination;
+                      onOpenReservation({ key: Date.now(), expressType: key, boarding: ok ? boarding : undefined, destination: ok ? destination : undefined, trainCode: selectedTrain.trainNo });
+                    }
+                  : undefined
+              }
+            />
+          ) : (
+          <>
           {/* Train Top Info Line */}
           <div className="flex items-center justify-between pt-0.5">
             <div className="flex items-center gap-2">
@@ -1011,6 +1050,8 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = () => {
               </div>
             )}
           </div>
+          </>
+          )}
         </div>
       )}
     </div>
