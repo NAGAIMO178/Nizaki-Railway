@@ -1,5 +1,5 @@
 // NIZAKI 2.0: アカウントのデータ(ポイント・クーポン・ミステリー・予約の履歴)を、クラウド(GAS)で持つための通信。
-// 設計は docs/NIZAKI-2.0-plan.md。公開日まで、アプリは、ここを使わない(isLaunched() の内側だけ)。
+// 公開日まで、アプリは、ここを使わない(isLaunched() の内側だけ)。
 import { callGas } from './accountApi';
 import { PointHistoryItem, OrderHistoryItem } from '../types';
 

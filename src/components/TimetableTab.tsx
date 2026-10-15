@@ -54,7 +54,7 @@ export const TimetableTab: React.FC = () => {
   const [ttRetry, setTtRetry] = useState(0);
   const [dirIdx, setDirIdx] = useState(0);
   const [nowSec, setNowSec] = useState(() => nowAsServiceSec(new Date()));
-  // 経路検索は、公開日まで隠す(公開前に確かめるときは、URLの末尾に ?preview=1)
+  // 経路検索は、公開日まで隠す
   const showRoute = isLaunched();
   const [mode, setModeState] = useState<'timetable' | 'route'>(lastMode);
   const setMode = (m: 'timetable' | 'route') => {

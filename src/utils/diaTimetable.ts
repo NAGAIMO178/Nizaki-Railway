@@ -21,7 +21,7 @@ type TrainRow = [string, number, string, string, number, number[]];
 type StationFile = Record<string, [number, number, number][]>;
 
 // ダイヤは、公開前は data/dia/、公開後(NIZAKI 2.0 のダイヤ改正)は data/dia-2/ を読む。
-// 公開前の本家には、新しいダイヤを見せない。作業用リンク(?preview=1)では、公開後と同じ新しいダイヤを読む。
+// 公開前の本家には、新しいダイヤを見せない。作業用の確認でも、公開後と同じ新しいダイヤを読む。
 const diaBaseUrl = (): string => `${import.meta.env.BASE_URL}data/${isLaunched() ? 'dia-2' : 'dia'}/`;
 
 const LINE_IDS: Record<string, string> = {
