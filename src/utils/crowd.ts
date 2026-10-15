@@ -71,6 +71,26 @@ export const DELAY_BUMP_MIN = 3;
 export const bumpForDelay = (level: number, delayMinutes: number | undefined): number =>
   delayMinutes !== undefined && delayMinutes >= DELAY_BUMP_MIN ? Math.min(CROWD_MAX_LEVEL, level + 1) : Math.min(CROWD_MAX_LEVEL, level);
 
+// 列車の、いちばん混む区間のレベル(1〜5)。遅れやすさの元にする。まだ・データなしは undefined
+const maxLevelCache = new Map<string, number | undefined>();
+export const trainMaxLevel = (day: CrowdDay, lineCode: string, trainNo: string): number | undefined => {
+  const s = trainCache.get(day)?.[lineCode]?.[trainNo];
+  if (!s) return undefined;
+  const key = `${day}|${lineCode}|${trainNo}`;
+  if (maxLevelCache.has(key)) return maxLevelCache.get(key);
+  let m = 0;
+  for (const c of s) m = Math.max(m, Number(c));
+  const v = m >= 1 ? Math.min(m, CROWD_MAX_LEVEL) : undefined;
+  maxLevelCache.set(key, v);
+  return v;
+};
+
+// 混雑 → 遅れ: 混んでいる列車ほど、遅れやすい(乗り降りに時間がかかるため)。全体で、1日に約40本、いまの朝夕の山と同じくらいになるよう調整した
+export const CROWD_DELAY_BASE_RATE = 0.022;
+export const CROWD_DELAY_FACTOR = [0.5, 1, 2, 3.5, 5]; // レベル1〜5
+export const crowdDelayRate = (level: number): number =>
+  CROWD_DELAY_BASE_RATE * CROWD_DELAY_FACTOR[Math.min(Math.max(level, 1), CROWD_MAX_LEVEL) - 1];
+
 // 読み込み済みなら、列車の、k番目の区間(k番目の停車駅を出たあとの区間)のレベル。まだ・データなしは undefined
 export const trainSegmentLevel = (day: CrowdDay, lineCode: string, trainNo: string, k: number): number | undefined => {
   const s = trainCache.get(day)?.[lineCode]?.[trainNo];

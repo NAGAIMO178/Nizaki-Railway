@@ -3,7 +3,7 @@
 // 時刻は「0時0分0秒からの経過秒」で、86400以上は翌日(24時以降)。
 import { disruptionManager } from './disruptionManager';
 import { isLaunched } from './launch';
-import { bumpForDelay, dayTypeOf, trainSegmentLevel } from './crowd';
+import { bumpForDelay, crowdDelayRate, dayTypeOf, loadAllCrowdTrains, trainMaxLevel, trainSegmentLevel } from './crowd';
 import type { DynamicDeparture } from '../components/MyStationCard';
 
 type MasterLine = {
@@ -72,7 +72,15 @@ const isRushStart = (trainStartSec: number): boolean => {
 const autoDelayMinutes = (lineCode: string, trainNo: string, serviceDayStartMs: number, trainStartSec?: number): number => {
   const d = new Date(serviceDayStartMs);
   const key = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}|${lineCode}|${trainNo}`;
-  const rate = trainStartSec !== undefined && isRushStart(trainStartSec) && isLaunched() ? RUSH_DELAY_RATE : AUTO_DELAY_RATE;
+  // 公開後: 混雑レベルの高い列車ほど遅れやすい。混雑のデータが無いとき(読み込み前・失敗)は、朝夕の時間帯で決める
+  const launched = isLaunched();
+  const level = launched ? trainMaxLevel(dayTypeOf(serviceDayStartMs), lineCode, trainNo) : undefined;
+  const rate =
+    level !== undefined
+      ? crowdDelayRate(level)
+      : trainStartSec !== undefined && isRushStart(trainStartSec) && launched
+        ? RUSH_DELAY_RATE
+        : AUTO_DELAY_RATE;
   if (hash32(`a|${key}`) / 4294967296 >= rate) return 0;
   return 1 + Math.floor((hash32(`b|${key}`) / 4294967296) * AUTO_DELAY_MAX_MIN);
 };
@@ -123,6 +131,9 @@ const fetchJson = async <T>(file: string): Promise<T> => {
 };
 
 // 同じファイルは1度しか読まない(失敗したときは次回やり直す)
+// 混雑のデータ(公開後だけ)。自動の遅れが、混雑レベルで決まるので、遅れを計算する前に読み込んでおく(読めなくても、進める)
+const ensureCrowd = (): Promise<void> => (isLaunched() ? loadAllCrowdTrains().catch(() => undefined) : Promise.resolve());
+
 const promiseCache = new Map<string, Promise<unknown>>();
 const loadOnce = <T>(file: string): Promise<T> => {
   // どちらのダイヤを読んでいるかも、キャッシュの名前に入れる(公開の時刻をまたいでも、混ざらない)
@@ -161,6 +172,7 @@ export const loadBoardData = async (stationName: string): Promise<BoardData> => 
   if (cached) return cached;
 
   const master = await loadOnce<Master>('master.json');
+  await ensureCrowd();
   const lines: BoardLine[] = [];
   for (const [code, cfg] of Object.entries(master)) {
     const stationIdx = cfg.stations.findIndex((s) => s[0] === name);
@@ -312,6 +324,7 @@ export const loadLineData = async (code: string): Promise<LineData> => {
   const cached = lineCache.get(code);
   if (cached) return cached;
   const master = await loadOnce<Master>('master.json');
+  await ensureCrowd();
   const found = master[code];
   if (!found) throw new Error(`路線が見つかりません (${code})`);
   // 環状線の一周の距離は、ダイヤのデータに無いので、作成時の値を補う(データに loopKm があればそちらを使う)
