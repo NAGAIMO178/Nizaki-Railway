@@ -9,6 +9,7 @@ import { MysteryTrainApp } from './MysteryTrainApp';
 import { MysteryTrainEvent } from './MysteryTrainEvent';
 import { KANZAKI_ALL_STATIONS_72 } from '../data/mysteryTrainData';
 import { DigitalStampRallyBanner } from './DigitalStampRallyBanner';
+import { isLaunched } from '../utils/launch';
 
 interface EventsTabProps {
   onAddNPoints?: (points: number, title?: string, type?: 'stamp' | 'coupon') => void;
@@ -165,7 +166,8 @@ export const EventsTab: React.FC<EventsTabProps> = ({
             <div className="flex items-center gap-2">
               <Layers className="w-4 h-4 text-[#5B21B6]" />
               <h3 className="text-sm font-bold text-[#221C35]">
-                参加可能イベント（タップして開始）
+                {/* 公開後は、カードのボタンに「捜査を開始する」とあるので、見出しを短くして折れないようにする */}
+                {isLaunched() ? '参加可能イベント' : '参加可能イベント（タップして開始）'}
               </h3>
             </div>
             <span className="text-xs text-[#6B6380]">2件の特命事件</span>
