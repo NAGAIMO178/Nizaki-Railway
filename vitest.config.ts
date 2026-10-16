@@ -9,5 +9,7 @@ export default defineConfig({
     include: ['tests/**/*.test.ts'],
     environment: 'node',
     setupFiles: ['tests/setup.ts'],
+    // 経路検索を、たくさんの駅の組み合わせで動かすテストがあるので、遅い環境でも、時間切れで落ちないようにする
+    testTimeout: 30000,
   },
 });
