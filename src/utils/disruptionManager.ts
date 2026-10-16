@@ -498,7 +498,7 @@ export const disruptionManager = {
 
     if (d.statusType === 'partially_suspended') {
       // 3本に1本程度を運休、他は小遅延
-      const seedNum = typeof trainSeed === 'number' ? Math.floor(Math.abs(trainSeed)) : stringToSeed(String(trainSeed));
+      const seedNum = toSeed(trainSeed);
       const isSusp = seedNum % 3 === 0;
       return {
         delayMinutes: isSusp ? 0 : Math.min(d.maxDelayMinutes || 5, (seedNum % 5) + 1),
@@ -508,7 +508,7 @@ export const disruptionManager = {
 
     // statusType === 'delay'
     const max = Math.max(1, d.maxDelayMinutes || 1);
-    const seedNum = typeof trainSeed === 'number' ? Math.floor(Math.abs(trainSeed)) : stringToSeed(String(trainSeed));
+    const seedNum = toSeed(trainSeed);
     // 1〜max の範囲で乱数遅延を決定論的に生成
     const generatedDelay = (seedNum % max) + 1;
 
@@ -595,6 +595,13 @@ if (typeof window !== 'undefined') {
   setInterval(() => {
     disruptionManager.syncFromServer();
   }, 20000);
+}
+
+// 列車のシード(列車番号や、発車時刻をミリ秒にした数)を、割り算に使う数にする。
+// 数のままで割ると、時刻(1000や60000の倍数)のあまりが、数種類にかたよる(最大120分なら、1分・41分・81分だけ)ので、
+// 文字のシードと同じ混ぜ方を通す
+function toSeed(trainSeed: string | number): number {
+  return stringToSeed(typeof trainSeed === 'number' ? String(Math.floor(Math.abs(trainSeed))) : String(trainSeed));
 }
 
 function stringToSeed(str: string): number {
