@@ -152,6 +152,62 @@ describe('予約で付くポイント(3%・最低50pt)', () => {
   });
 });
 
+describe('デリバリーを足したときのポイント(増えた金額の3%。最低50ptは、なし)', () => {
+  const added = (previous: number, next: number) => {
+    gas.awardReservationPoints('M1', 'EQ-1', next, previous, 't');
+    return rows[rows.length - 1];
+  };
+
+  it('少額の追加は、3%だけ(450円で13pt)。最低50ptには、ならない', () => {
+    put('welcome', 'welcome', 0);
+    gas.awardReservationPoints('M1', 'EQ-1', 900, null, 't'); // 新しい予約は、最低50pt
+    expect(rows[rows.length - 1].slice(3, 5)).toEqual(['reservation:EQ-1', 50]);
+    expect(added(900, 1350).slice(2, 5)).toEqual(['delivery', 'delivery:EQ-1:1', 13]);
+  });
+
+  it('1,000円は30pt、1,667円は50pt、3,000円は90pt', () => {
+    put('welcome', 'welcome', 0);
+    expect(added(1000, 2000)[4]).toBe(30);
+    expect(added(2000, 3667)[4]).toBe(50);
+    expect(added(3667, 6667)[4]).toBe(90);
+  });
+
+  it('3%が0ptになる少額(33円)は、行を作らない', () => {
+    put('welcome', 'welcome', 0);
+    const n = rows.length;
+    gas.awardReservationPoints('M1', 'EQ-1', 1033, 1000, 't');
+    expect(rows.length).toBe(n);
+  });
+
+  it('金額が減った・変わらないときは、付かない(ポイントで払った追加も)', () => {
+    put('welcome', 'welcome', 0);
+    const n = rows.length;
+    gas.awardReservationPoints('M1', 'EQ-1', 2000, 2000, 't');
+    gas.awardReservationPoints('M1', 'EQ-1', 1500, 2000, 't');
+    expect(rows.length).toBe(n);
+  });
+
+  it('少額を何度足しても、最低分は集められない', () => {
+    put('welcome', 'welcome', 0);
+    let total = 1000;
+    for (let i = 0; i < 5; i++) {
+      gas.awardReservationPoints('M1', 'EQ-1', total + 450, total, 't');
+      total += 450;
+    }
+    expect(balance()).toBe(13 * 5);
+  });
+
+  it('追加を重ねたあとの取り消しで、予約分も追加分も、全部消える', () => {
+    put('welcome', 'welcome', 100);
+    gas.awardReservationPoints('M1', 'EQ-1', 900, null, 't'); // 50
+    gas.awardReservationPoints('M1', 'EQ-1', 1350, 900, 't'); // 13
+    gas.awardReservationPoints('M1', 'EQ-1', 2350, 1350, 't'); // 30
+    expect(balance()).toBe(100 + 50 + 13 + 30);
+    gas.revokeReservationPoints('M1', 'EQ-1');
+    expect(balance()).toBe(100);
+  });
+});
+
 describe('予約を取り消したとき', () => {
   it('付いたポイントは取り消す。使ったポイントは、戻らない', () => {
     put('welcome', 'welcome', 1000);

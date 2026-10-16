@@ -1600,11 +1600,13 @@ function awardReservationPoints(memberId, orderId, total, previousTotal, trainNa
     return;
   }
   if (total > previousTotal) {
-    // デリバリーを足した: 増えた金額の3%(最低50pt)。金額が変わらない再送では、何も付かない
+    // デリバリーを足した: 増えた金額の3%(最低はなし。最低50ptは、新しい予約だけ)。金額が変わらない再送では、何も付かない。
+    // 3%が0ptになる少額は、行を作らない
     const prefix = 'delivery:' + orderId + ':';
     let n = 1;
     Object.keys(ledger.keys).forEach(function (k) { if (k.indexOf(prefix) === 0) n++; });
-    const points = Math.max(RESERVATION_POINT_MIN, Math.floor((total - previousTotal) * RESERVATION_POINT_RATE));
+    const points = Math.floor((total - previousTotal) * RESERVATION_POINT_RATE);
+    if (points <= 0) return;
     addPointEntry(ledger, memberId, 'delivery', prefix + n, points, (trainName || '特急列車予約') + ' 乗車・デリバリー利用');
   }
 }

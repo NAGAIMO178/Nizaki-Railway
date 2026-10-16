@@ -25,6 +25,7 @@ import { POINT_CODES, normalizePointCode } from './data/pointCodes';
 import { getLocalDateString, isOrderExpired } from './utils/orderExpiry';
 import { callGas } from './utils/accountApi';
 import { isLaunched } from './utils/launch';
+import { calcDeliveryAddPoints, calcReservationPoints } from './utils/points';
 import LaunchCountdown from './components/LaunchCountdown';
 import { useCloudAccount } from './utils/useCloudAccount';
 import { rewardIdFromTitle } from './utils/cloudAccount';
@@ -579,7 +580,14 @@ export default function App() {
     const owner = normEmail(currentUserRef.current?.email) || undefined;
     // (N-POINTで払った分は、含まない。ぜんぶポイントで払ったときは、付けない)
     const paidAllByPoints = (order.pointsUsed ?? 0) > 0 && order.totalPrice <= 0;
-    const earnedPoints = owner && !paidAllByPoints ? Math.max(50, Math.floor((order.totalPrice || 2000) * 0.03)) : 0;
+    // (公開後: デリバリーを足したときは、増えた金額の3%だけ。最低50ptは、新しい予約だけ)
+    const isDeliveryAdd = isLaunched() && activeOrder !== null;
+    const earnedPoints =
+      owner && !paidAllByPoints
+        ? isDeliveryAdd
+          ? calcDeliveryAddPoints(order.totalPrice)
+          : calcReservationPoints(order.totalPrice || 2000)
+        : 0;
 
     setActiveOrder((prevOrder) => {
       if (!prevOrder) {
