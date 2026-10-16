@@ -102,6 +102,10 @@ function doPost(e) {
     if (json.action === 'setDisruptions') {
       return handleSetDisruptions(json.disruptions, json.forecasts, json.adminToken);
     }
+    // 管理者画面を開く前に、管理トークンが本物かだけを確かめる(何も書き換えない)
+    if (json.action === 'verifyAdminToken') {
+      return handleVerifyAdminToken(json.adminToken);
+    }
 
     // ② LINE Messaging APIからのWebhookイベント
     if (json.events && Array.isArray(json.events)) {
@@ -354,10 +358,9 @@ function handleGetDisruptions() {
  * ② 管理者コンソールからの運行支障情報の保存
  */
 function handleSetDisruptions(disruptions, forecasts, adminToken) {
-  // 管理トークン(スクリプトプロパティ ADMIN_TOKEN)が未設定、または一致しなければ書き換えさせない
-  if (!isValidAdminToken(adminToken)) {
-    return createJsonResponse({ status: 'error', message: '管理トークンが正しくないか、サーバーに設定されていません。' });
-  }
+  // 管理トークン(スクリプトプロパティ ADMIN_TOKEN)が未設定、または一致しなければ書き換えさせない(失敗が続けば、しばらく断る)
+  const denied = adminTokenErrorResponse(checkAdminToken(adminToken));
+  if (denied) return denied;
   const props = PropertiesService.getScriptProperties();
   const data = { disruptions: disruptions || {}, forecasts: forecasts || [] };
   props.setProperty(DISRUPTIONS_PROPERTY_KEY, JSON.stringify(data));
@@ -1073,11 +1076,67 @@ function hashPassword(password, salt) {
 }
 
 /**
- * 管理トークンの照合(スクリプトプロパティ ADMIN_TOKEN と一致するか)
+ * 管理トークンの照合(スクリプトプロパティ ADMIN_TOKEN と一致するか)。比較は、途中で止めずに、最後まで行う
  */
 function isValidAdminToken(token) {
   const expected = PropertiesService.getScriptProperties().getProperty('ADMIN_TOKEN');
-  return !!expected && typeof token === 'string' && token === expected;
+  if (!expected || typeof token !== 'string') return false;
+  const a = String(expected);
+  const b = token.slice(0, a.length + 1);
+  let diff = a.length === token.length ? 0 : 1;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ (b.charCodeAt(i) || 0);
+  }
+  return diff === 0;
+}
+
+// 管理トークンの失敗の回数制限(全体で、10分に5回。メールのような単位が無いため、1つだけ数える)
+const ADMIN_MAX_FAILURES = 5;
+const ADMIN_LOCK_SECONDS = 600;
+const ADMIN_FAIL_KEY = 'admin_token_fail';
+
+/**
+ * 管理トークンを確かめて、回数を数える。'ok' | 'denied' | 'locked' | 'busy'
+ * 数えるところは、同時に送られても数え漏れないよう、ロックの中で行う。ロックを取れなければ、通さない('busy')
+ */
+function checkAdminToken(token) {
+  const cache = CacheService.getScriptCache();
+  // すでに止めているときは、ロックを待たずに断る(連打でロックを塞がせない)
+  if (Number(cache.get(ADMIN_FAIL_KEY) || 0) >= ADMIN_MAX_FAILURES) return 'locked';
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(3000);
+  } catch (err) {
+    return 'busy';
+  }
+  try {
+    const count = Number(cache.get(ADMIN_FAIL_KEY) || 0);
+    if (count >= ADMIN_MAX_FAILURES) return 'locked';
+    if (isValidAdminToken(token)) {
+      cache.remove(ADMIN_FAIL_KEY);
+      return 'ok';
+    }
+    cache.put(ADMIN_FAIL_KEY, String(count + 1), ADMIN_LOCK_SECONDS);
+    return 'denied';
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// 'ok' のときは null。それ以外は、断りの応答(code で、アプリが見分ける)
+function adminTokenErrorResponse(result) {
+  if (result === 'ok') return null;
+  if (result === 'locked') {
+    return createJsonResponse({ status: 'error', code: 'admin_locked', message: '管理トークンの失敗が続いたため、しばらくしてからお試しください(約10分)。' });
+  }
+  if (result === 'busy') {
+    return createJsonResponse({ status: 'error', code: 'admin_busy', message: '混み合っています。しばらくしてからもう一度お試しください。' });
+  }
+  return createJsonResponse({ status: 'error', code: 'admin', message: '管理トークンが正しくないか、サーバーに設定されていません。' });
+}
+
+function handleVerifyAdminToken(adminToken) {
+  return adminTokenErrorResponse(checkAdminToken(adminToken)) || createJsonResponse({ status: 'success' });
 }
 
 /**

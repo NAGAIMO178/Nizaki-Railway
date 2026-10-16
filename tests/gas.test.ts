@@ -434,3 +434,113 @@ describe('ポイントの水増しを防ぐ(予約の登録・取消)', () => {
     expect(create('EQ-999', 1000).status).toBe('success');
   });
 });
+
+// ---- 管理トークン: 管理者画面を開く前の確認と、失敗の回数制限 ----
+describe('管理トークン(verifyAdminToken・setDisruptions)', () => {
+  const KEY = 'correct-horse-battery';
+  let cache: Record<string, string>;
+  let props: Record<string, string>;
+  let lockFails: boolean;
+  let saved: unknown[];
+
+  beforeEach(() => {
+    cache = {};
+    props = { ADMIN_TOKEN: KEY };
+    lockFails = false;
+    saved = [];
+    gas.CacheService = {
+      getScriptCache: () => ({
+        get: (k: string) => cache[k] ?? null,
+        put: (k: string, v: string) => void (cache[k] = v),
+        remove: (k: string) => void delete cache[k],
+      }),
+    };
+    gas.LockService = {
+      getScriptLock: () => ({
+        waitLock: () => {
+          if (lockFails) throw new Error('busy');
+        },
+        releaseLock: () => undefined,
+      }),
+    };
+    gas.PropertiesService = {
+      getScriptProperties: () => ({
+        getProperty: (k: string) => props[k] ?? '',
+        setProperty: (k: string, v: string) => void ((props[k] = v), saved.push(k)),
+      }),
+    };
+  });
+
+  it('正しい管理トークンは通る', () => {
+    expect(gas.handleVerifyAdminToken(KEY)).toEqual({ status: 'success' });
+  });
+
+  it('違うトークン・空・文字でないものは、断る(code: admin)', () => {
+    [KEY + 'x', KEY.slice(0, -1), '', 'x'.repeat(5000), undefined, null, 123, [KEY], { a: 1 }].forEach((t) => {
+      cache = {};
+      expect(gas.handleVerifyAdminToken(t), String(t)).toMatchObject({ status: 'error', code: 'admin' });
+    });
+  });
+
+  it('サーバーにトークンが設定されていなければ、空のトークンでも通さない', () => {
+    props = {};
+    expect(gas.handleVerifyAdminToken('')).toMatchObject({ status: 'error', code: 'admin' });
+    expect(gas.handleVerifyAdminToken(undefined)).toMatchObject({ status: 'error', code: 'admin' });
+  });
+
+  it('5回続けて失敗すると、正しいトークンでも、しばらく断る(code: admin_locked)', () => {
+    for (let i = 0; i < 5; i++) expect(gas.handleVerifyAdminToken('bad' + i)).toMatchObject({ code: 'admin' });
+    expect(gas.handleVerifyAdminToken(KEY)).toMatchObject({ status: 'error', code: 'admin_locked' });
+  });
+
+  it('4回失敗して、5回目に成功すれば、回数は消える', () => {
+    for (let i = 0; i < 4; i++) gas.handleVerifyAdminToken('bad' + i);
+    expect(gas.handleVerifyAdminToken(KEY)).toEqual({ status: 'success' });
+    for (let i = 0; i < 4; i++) expect(gas.handleVerifyAdminToken('bad' + i)).toMatchObject({ code: 'admin' });
+    expect(gas.handleVerifyAdminToken(KEY)).toEqual({ status: 'success' });
+  });
+
+  it('同じ時刻に送られても、数え漏れない(数えるところは、ロックの中。ロックを取れなければ通さない)', () => {
+    lockFails = true;
+    expect(gas.handleVerifyAdminToken(KEY)).toMatchObject({ status: 'error', code: 'admin_busy' });
+    expect(gas.handleSetDisruptions({ a: 1 }, [], KEY)).toMatchObject({ status: 'error', code: 'admin_busy' });
+    expect(saved).toEqual([]);
+  });
+
+  it('ロックを待っているあいだに、ほかの失敗で上限に届いたら、ロックの中で確かめ直して断る', () => {
+    let reads = 0;
+    gas.CacheService = {
+      getScriptCache: () => ({
+        get: () => (++reads === 1 ? '4' : '5'), // 1回目(ロックの前)は4回、ロックの中では、もう5回
+        put: () => undefined,
+        remove: () => undefined,
+      }),
+    };
+    expect(gas.handleVerifyAdminToken(KEY)).toMatchObject({ status: 'error', code: 'admin_locked' });
+  });
+
+  it('止めているあいだは、ロックを待たずに断る(連打でロックを塞がせない)', () => {
+    cache['admin_token_fail'] = '5';
+    lockFails = true; // ロックを取ろうとすれば、busy になるはず
+    expect(gas.handleVerifyAdminToken(KEY)).toMatchObject({ code: 'admin_locked' });
+  });
+
+  it('運行情報の保存(setDisruptions)も、同じ回数制限を使う', () => {
+    for (let i = 0; i < 3; i++) gas.handleVerifyAdminToken('bad' + i);
+    for (let i = 0; i < 2; i++) expect(gas.handleSetDisruptions({ a: 1 }, [], 'bad')).toMatchObject({ code: 'admin' });
+    expect(gas.handleSetDisruptions({ a: 1 }, [], KEY)).toMatchObject({ status: 'error', code: 'admin_locked' });
+    expect(saved).toEqual([]);
+  });
+
+  it('正しいトークンなら、運行情報を保存できる(これまでどおり)', () => {
+    expect(gas.handleSetDisruptions({ kanzaki: { statusType: 'delay' } }, [], KEY)).toEqual({ status: 'success' });
+    expect(saved).toEqual(['OPERATION_DISRUPTIONS']);
+  });
+
+  it('doPost の verifyAdminToken は、トークンだけを確かめる(何も書き換えない)', () => {
+    gas.ContentService = {};
+    const out = gas.doPost({ postData: { contents: JSON.stringify({ action: 'verifyAdminToken', adminToken: KEY }) } });
+    expect(out).toEqual({ status: 'success' });
+    expect(saved).toEqual([]);
+  });
+});
