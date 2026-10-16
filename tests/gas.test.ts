@@ -324,3 +324,113 @@ describe('シートに書く文字(式の注入を防ぐ)', () => {
     expect(cells[`2,${headers.indexOf('予約日') + 1}`]).toEqual(['2026-11-02']);
   });
 });
+
+// ---- ポイントの台帳: 申告の金額・くり返しで、水増しできない ----
+// ポイントの決まり(3%・最低50pt)は変えない。くり返し・巨額の申告・取消のあとの出し直しで、増やせないことを調べる。
+describe('ポイントの水増しを防ぐ(予約の登録・取消)', () => {
+  const HEADERS = ['予約日時', '予約番号', 'LINE_USER_ID', '列車名', '号車', '座席番号', '席種', '乗車駅', '降車駅', '合計金額', 'ステータス', '会員ID', '予約日', '出発時刻', '到着時刻'];
+  let grid: unknown[][];
+
+  const setupReservations = () => {
+    grid = [[...HEADERS]];
+    const sheet = {
+      getDataRange: () => ({ getValues: () => grid.map((r) => [...r]) }),
+      appendRow: (r: unknown[]) => void grid.push([...r]),
+      getLastRow: () => grid.length,
+      getLastColumn: () => grid[0].length,
+      getRange: (row: number, col: number, nr = 1, nc = 1) => ({
+        getValues: () => [grid[row - 1].slice(col - 1, col - 1 + nc)],
+        setValue: (v: unknown) => void (grid[row - 1][col - 1] = v),
+        setValues: (vs: unknown[][]) => vs.forEach((r, i) => r.forEach((v, j) => void (grid[row - 1 + i][col - 1 + j] = v))),
+        setNumberFormat: () => undefined,
+      }),
+    };
+    gas.verifySessionToken = () => 'M1';
+    gas.findMemberById = () => ({ memberId: 'M1', lineUserId: '' });
+    gas.getOrCreateReservationsSheet = () => sheet;
+    gas.getDataSpreadsheet = () => ({ getSheetByName: () => sheet });
+  };
+
+  const order = (orderId: string, totalPrice: number) => ({
+    orderId, trainName: '特急あやみ 1号', carNo: 1, seatNo: '1A', seatType: '指定席', boardingStation: '東京', destinationStation: '大宮',
+    totalPrice, reservedDate: '2099-01-01', departureTime: '10:00', arrivalTime: '11:00', items: [], itemDiscount: 0,
+  });
+  const create = (id: string, total: number, award = true) => gas.handleCreateReservation('t', order(id, total), award);
+
+  beforeEach(() => {
+    setupReservations();
+    put('welcome', 'welcome', 0);
+  });
+
+  it('金額を下げて、また上げても、同じ分のポイントは、二度付かない', () => {
+    create('EQ-1', 20000); // 600pt
+    expect(balance()).toBe(600);
+    create('EQ-1', 100); // 下げる
+    create('EQ-1', 20000); // 上げ直す(いままでの最高と同じ)
+    expect(balance()).toBe(600);
+    create('EQ-1', 30000); // 最高を超えた分(10000円の3%)だけ付く
+    expect(balance()).toBe(900);
+  });
+
+  it('金額を1円ずつ上げ下げしても、ポイントは増えない', () => {
+    create('EQ-1', 1000); // 最低50pt
+    for (let i = 0; i < 6; i++) {
+      create('EQ-1', 1001 + i);
+      create('EQ-1', 1000);
+    }
+    expect(balance()).toBe(50);
+  });
+
+  it('巨額の申告でも、ポイントの計算は10万円まで(予約の記録は、そのまま)', () => {
+    create('EQ-1', 1000000);
+    expect(balance()).toBe(3000);
+    expect(grid[1][HEADERS.indexOf('合計金額')]).toBe(1000000);
+  });
+
+  it('10万円を超える申告は、日をまたいでも、10万円までの分しか付かない', () => {
+    create('EQ-1', 90000); // 2700pt
+    gas.nowText = () => '2026/11/03 12:00:00'; // 翌日(1日の上限に、かからない)
+    create('EQ-1', 1000000); // 10万円までの、増えた10000円の3% = 300pt
+    expect(balance()).toBe(3000);
+  });
+
+  it('1日に予約で付くポイントは、3000ptまで(予約をくり返しても、それ以上は付かない)', () => {
+    for (let i = 0; i < 5; i++) create(`EQ-${i + 1}`, 50000); // 1回1500pt
+    expect(balance()).toBe(3000);
+  });
+
+  it('日が変われば、また付く', () => {
+    for (let i = 0; i < 3; i++) create(`EQ-${i + 1}`, 50000);
+    expect(balance()).toBe(3000);
+    rows.forEach((r, i) => i > 0 && (r[0] = '2026/11/01 12:00:00')); // きのうの分にする
+    create('EQ-9', 50000);
+    expect(balance()).toBe(4500);
+  });
+
+  it('取り消した予約は、同じ予約番号で出し直せない(取消のあとの出し直しで、ポイントを残せない)', () => {
+    create('EQ-1', 1000);
+    gas.handleCancelReservation('t', 'EQ-1', true);
+    expect(balance()).toBe(0);
+    for (let i = 0; i < 3; i++) {
+      expect(create('EQ-1', 2000 + i)).toMatchObject({ status: 'error' });
+      gas.handleCancelReservation('t', 'EQ-1', true);
+    }
+    expect(balance()).toBe(0);
+  });
+
+  it('公開前のアプリ(ポイントに触れない呼び出し)は、これまでどおり出し直せて、予約の数も縛られない', () => {
+    create('EQ-1', 1000, false);
+    gas.handleCancelReservation('t', 'EQ-1', false);
+    expect(create('EQ-1', 1000, false)).toMatchObject({ status: 'success' });
+    for (let i = 0; i < 25; i++) expect(create(`EQ-X${i}`, 1000, false).status).toBe('success');
+    expect(rows.length).toBe(2); // 台帳には触れない
+  });
+
+  it('まだ乗っていない予約は、1会員20件まで。取り消すか乗車後なら、また取れる', () => {
+    for (let i = 0; i < 20; i++) expect(create(`EQ-${100 + i}`, 1000).status).toBe('success');
+    expect(create('EQ-999', 1000)).toMatchObject({ status: 'error' });
+    expect(create('EQ-100', 1500).status).toBe('success'); // 持っている予約の更新は、数えない
+    gas.handleCancelReservation('t', 'EQ-101', true);
+    expect(create('EQ-999', 1000).status).toBe('success');
+  });
+});
