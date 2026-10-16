@@ -469,7 +469,7 @@ function logCouponIssue(userId, course) {
     const timestamp = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm:ss');
     sheet.appendRow([
       timestamp,
-      userId,
+      sheetSafe(userId),
       course.courseId,
       course.courseName,
       course.reward,
@@ -576,10 +576,10 @@ function handleAccessPing(deviceId, version) {
     if (found > 0) {
       const count = Number(sheet.getRange(found, 3).getValue()) || 0;
       sheet.getRange(found, 3).setValue(count + 1);
-      sheet.getRange(found, 5, 1, 2).setValues([[nowText, ver]]);
+      sheet.getRange(found, 5, 1, 2).setValues([[nowText, sheetSafe(ver)]]);
     } else if (todayRows.length < 3000) {
       // 1日3000端末を超える記録は行わない(いたずらでシートが膨らむのを防ぐ)
-      sheet.appendRow([today, id, 1, nowText, nowText, ver]);
+      sheet.appendRow([today, id, 1, nowText, nowText, sheetSafe(ver)]);
     }
     return createJsonResponse({ status: 'success' });
   } finally {
@@ -589,6 +589,14 @@ function handleAccessPing(deviceId, version) {
 
 function limitText(value, max) {
   return String(value === undefined || value === null ? '' : value).slice(0, max);
+}
+
+// シートに書く文字が「=」「+」「-」「@」で始まると、シートが式として動かす(外へデータを送る式も作れる)。
+// 先頭に ' を付けて、ただの文字として書く(読み戻すと ' は付いていない)。
+// 利用者・LINE から来る文字は、シートに書く前に、必ずこれを通す。文字の書式にしてある列には、通さない(' がそのまま残る)
+function sheetSafe(value) {
+  if (typeof value !== 'string') return value;
+  return /^[=+\-@\t\r]/.test(value) ? "'" + value : value;
 }
 
 /**
@@ -653,7 +661,7 @@ function handleCreateReservation(sessionToken, order, awardPoints) {
       }
     }
 
-    const row = headers.map(function (h) { return values[h] !== undefined ? values[h] : ''; });
+    const row = headers.map(function (h) { return values[h] !== undefined ? sheetSafe(values[h]) : ''; });
     if (targetRow === -1) {
       sheet.appendRow(row);
       targetRow = sheet.getLastRow();
@@ -957,13 +965,14 @@ function handleVerifyLineAndRegister(email, password, token, code, name) {
     const passwordHash = hashPassword(password, salt);
     const joinDate = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
     const timestamp = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm:ss');
-    sheet.appendRow([timestamp, email, memberId, name || email.split('@')[0], salt, passwordHash, 'レギュラー', joinDate, data.lineUserId || '']);
+    const userName = String(name || email.split('@')[0]);
+    sheet.appendRow([timestamp, sheetSafe(email), memberId, sheetSafe(userName), salt, passwordHash, 'レギュラー', joinDate, sheetSafe(data.lineUserId || '')]);
 
     cache.remove('line_otp_' + normalizedToken);
 
     return createJsonResponse({
       status: 'success',
-      user: { memberId: memberId, name: name || email.split('@')[0], email: email, rank: 'レギュラー', joinDate: joinDate },
+      user: { memberId: memberId, name: userName, email: email, rank: 'レギュラー', joinDate: joinDate },
       sessionToken: createSessionToken(memberId)
     });
   } finally {
@@ -1209,7 +1218,7 @@ function readMemberPoints(memberId) {
 function addPointEntry(ledger, memberId, kind, key, points, title) {
   if (ledger.keys[key]) return false;
   const ts = nowText();
-  ledger.sheet.appendRow([ts, memberId, kind, key, points, title]);
+  ledger.sheet.appendRow([ts, memberId, kind, sheetSafe(key), points, sheetSafe(title)]);
   const row = { ts: ts, kind: kind, key: key, points: points, title: title };
   ledger.rows.push(row);
   ledger.keys[key] = row;
