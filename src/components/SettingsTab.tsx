@@ -442,16 +442,18 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
         </div>
       </section>
 
-      {/* 管理者用設定・システム診断を開くボタン (落ち着いたデザイン) */}
-      <div className="pt-2">
-        <button
-          onClick={() => setIsAdminModalOpen(true)}
-          className="w-full py-2.5 px-3 bg-[#F6F5FA] hover:bg-[#EFE8FA] border border-[#E3DFED] hover:border-[#CBD5E1] text-[#475569] hover:text-[#1E293B] font-medium text-xs rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99]"
-        >
-          <KeyRound className="w-3.5 h-3.5 text-[#64748B]" />
-          <span>管理者用設定・システム診断（パスコード保護）</span>
-        </button>
-      </div>
+      {/* 管理者用設定・システム診断を開くボタン (公開後は出さない。入口は、下のバージョン表示のタップだけ) */}
+      {!isLaunched() && (
+        <div className="pt-2">
+          <button
+            onClick={() => setIsAdminModalOpen(true)}
+            className="w-full py-2.5 px-3 bg-[#F6F5FA] hover:bg-[#EFE8FA] border border-[#E3DFED] hover:border-[#CBD5E1] text-[#475569] hover:text-[#1E293B] font-medium text-xs rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99]"
+          >
+            <KeyRound className="w-3.5 h-3.5 text-[#64748B]" />
+            <span>管理者用設定・システム診断（パスコード保護）</span>
+          </button>
+        </div>
+      )}
 
       {/* App Version Info (Clickable for Admin Mode) */}
       <div className="text-center pt-2 space-y-0.5">

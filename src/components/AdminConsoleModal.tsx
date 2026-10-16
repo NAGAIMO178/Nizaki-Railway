@@ -35,7 +35,7 @@ import {
   Info,
 } from 'lucide-react';
 import { systemLogger, SystemLogEntry, SystemMetrics } from '../utils/systemLogger';
-import { getStoredPin, savePin, clearPin } from '../utils/adminPin';
+import { checkStoredAdminKey, submitAdminKey, type AdminAccess } from '../utils/adminAccess';
 import {
   disruptionManager,
   getAdminToken,
@@ -126,15 +126,11 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
   onRefreshAppState,
 }) => {
   // Auth state
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [pinInput, setPinInput] = useState('');
-  const [pinError, setPinError] = useState(false);
-  // 決めてあるパスコード(null = まだ決めていない。最初に開くとき、2回入力して決める)
-  const [currentPin, setCurrentPin] = useState<string | null>(() => getStoredPin());
-  const [setupFirstPin, setSetupFirstPin] = useState<string | null>(null);
-  const [newPinInput, setNewPinInput] = useState('');
-  const [pinChangeSuccess, setPinChangeSuccess] = useState(false);
-
+  // サーバーが管理トークンを認めたときだけ、中身を描く(認められるまでは、鍵の入力だけ)
+  const [access, setAccess] = useState<AdminAccess>('checking');
+  const [keyInput, setKeyInput] = useState('');
+  const [verifying, setVerifying] = useState(false);
+  const isAuthenticated = access === 'ok';
   // Tabs: 'disruption' | 'forecast' | 'diagnostics' | 'errors' | 'storage' | 'settings'
   const [activeTab, setActiveTab] = useState<'disruption' | 'forecast' | 'diagnostics' | 'errors' | 'storage' | 'settings'>('disruption');
 
@@ -522,25 +518,30 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
 
   // Handle modal close with auth reset
   const handleClose = () => {
-    setIsAuthenticated(false);
-    setPinInput('');
-    setPinError(false);
+    setAccess('checking');
+    setKeyInput('');
     setShowClearStorageConfirm(false);
     onClose();
   };
 
-  // Reset auth and load custom PIN whenever modal opens/closes
+  // 開くたびに、保存してある鍵を、サーバーで確かめる(通れば、そのまま入れる)。閉じたら、認めた状態も捨てる
   useEffect(() => {
-    setIsAuthenticated(false);
-    setPinInput('');
-    setPinError(false);
+    setAccess('checking');
+    setKeyInput('');
     setShowClearStorageConfirm(false);
     setSelectedStorageKey(null);
     setStorageDataView(null);
-    if (isOpen) loadLineConfig(selectedLineId);
-
-    setSetupFirstPin(null);
-    setCurrentPin(getStoredPin());
+    if (!isOpen) return;
+    loadLineConfig(selectedLineId);
+    let cancelled = false;
+    checkStoredAdminKey().then((result) => {
+      if (cancelled) return;
+      setAccess(result);
+      if (result === 'ok') systemLogger.info('管理者コンソールへのアクセスが認証されました', 'AdminAuth');
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [isOpen]);
 
   // サーバー(GAS)への反映に失敗したら管理者に知らせる(トークン未設定・不一致など)
@@ -585,82 +586,20 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Handle PIN Keypad input
-  const handleKeypadPress = (val: string) => {
-    if (pinInput.length < 4) {
-      const nextPin = pinInput + val;
-      setPinInput(nextPin);
-      setPinError(false);
-
-      if (nextPin.length === 4) {
-        verifyPin(nextPin);
-      }
-    }
-  };
-
-  const handleKeypadBackspace = () => {
-    setPinInput((prev) => prev.slice(0, -1));
-    setPinError(false);
-  };
-
-  const handleKeypadClear = () => {
-    setPinInput('');
-    setPinError(false);
-  };
-
-  // Strictly verify against current active PIN only
-  const verifyPin = (inputToTest: string) => {
-    if (currentPin === null) {
-      // まだ決めていない: 1回目の入力を覚えて、2回目と同じなら、決める
-      if (setupFirstPin === null) {
-        setSetupFirstPin(inputToTest);
-        setPinInput('');
-      } else if (setupFirstPin === inputToTest && savePin(inputToTest)) {
-        setCurrentPin(inputToTest);
-        setSetupFirstPin(null);
-        setIsAuthenticated(true);
-        setPinInput('');
-        setPinError(false);
-        systemLogger.info('管理者パスコードが決められました', 'AdminAuth');
-      } else {
-        setPinError(true);
-        setSetupFirstPin(null);
-        setTimeout(() => setPinInput(''), 500);
-      }
-      return;
-    }
-    if (inputToTest === currentPin) {
-      setIsAuthenticated(true);
-      setPinInput('');
-      setPinError(false);
+  // 鍵を入力して、サーバーに確かめてもらう。認められたときだけ入れる
+  const handleSubmitKey = async () => {
+    if (verifying || !keyInput.trim()) return;
+    setVerifying(true);
+    const result = await submitAdminKey(keyInput);
+    setVerifying(false);
+    setAccess(result);
+    if (result === 'ok') {
+      setKeyInput('');
+      setAdminTokenSaved(true);
       systemLogger.info('管理者コンソールへのアクセスが認証されました', 'AdminAuth');
     } else {
-      setPinError(true);
-      setTimeout(() => {
-        setPinInput('');
-      }, 500);
-      systemLogger.warn('パスコード不一致の入力試行', 'AdminAuth');
+      systemLogger.warn('管理トークンの確認に失敗しました', 'AdminAuth');
     }
-  };
-
-  const handleChangePin = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (newPinInput.length === 4 && /^\d{4}$/.test(newPinInput)) {
-      setCurrentPin(newPinInput);
-      savePin(newPinInput);
-      setPinChangeSuccess(true);
-      setNewPinInput('');
-      setTimeout(() => setPinChangeSuccess(false), 2500);
-      systemLogger.info('管理者パスコードが更新されました（旧PINは無効化されました）', 'AdminAuth');
-    }
-  };
-
-  const handleResetPin = () => {
-    clearPin();
-    setCurrentPin(null);
-    setPinChangeSuccess(true);
-    setTimeout(() => setPinChangeSuccess(false), 2500);
-    systemLogger.info('管理者パスコードが消されました(次に開くとき、新しく決めます)', 'AdminAuth');
   };
 
   const handleClearLogs = () => {
@@ -770,7 +709,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                 </span>
               </div>
               <p className="text-[10px] text-slate-400">
-                {isAuthenticated ? '運行指令・駅間影響設定・システム診断' : 'アクセスには4桁の認証パスコードが必要です'}
+                {isAuthenticated ? '運行指令・駅間影響設定・システム診断' : 'アクセスには管理トークンの確認が必要です'}
               </p>
             </div>
           </div>
@@ -779,9 +718,9 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
             {isAuthenticated && (
               <button
                 onClick={() => {
-                  setIsAuthenticated(false);
-                  setPinInput('');
-                  setPinError(false);
+                  // この画面だけロックする(端末の鍵は残す。次に開くときは、また確かめて入る)
+                  setAccess('needKey');
+                  setKeyInput('');
                 }}
                 className="px-2.5 py-1 bg-slate-700 hover:bg-slate-600 text-slate-200 hover:text-white rounded text-[11px] font-medium flex items-center gap-1 transition-colors cursor-pointer"
                 title="セッションをロック"
@@ -811,68 +750,56 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
         {/* Modal Body */}
         {!isAuthenticated ? (
           /* ========================================================
-             1. Passcode Authentication Screen (UD & High Contrast)
+             1. 管理トークンの確認画面(サーバーが認めるまで、中身は描かない)
              ======================================================== */
-          <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-3.5 min-h-0 select-none">
+          <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-3.5 min-h-0">
             <div className="w-13 h-13 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center text-amber-400 shadow-md">
               <KeyRound className="w-6 h-6" />
             </div>
 
-            <div className="space-y-1">
-              <h3 className="text-sm font-bold text-slate-100">
-                {currentPin !== null ? '管理者パスコードを入力' : setupFirstPin === null ? '管理者パスコードを決める（4桁）' : 'もう一度、同じパスコードを入力'}
-              </h3>
-              <p className="text-[11px] text-slate-400">
-                運行指令・遅延設定およびシステム診断ツールを開きます
-              </p>
-            </div>
+            {access === 'checking' ? (
+              <p className="text-[11px] text-slate-400">確認しています…</p>
+            ) : (
+              <>
+                <div className="space-y-1">
+                  <h3 className="text-sm font-bold text-slate-100">管理トークンを入力</h3>
+                  <p className="text-[11px] text-slate-400">GAS のスクリプトプロパティ ADMIN_TOKEN と同じ文字列です</p>
+                </div>
 
-            {/* PIN Indicator Dots */}
-            <div className="flex items-center justify-center gap-3 py-1">
-              {[0, 1, 2, 3].map((index) => (
-                <div
-                  key={index}
-                  className={`w-3.5 h-3.5 rounded-full transition-all duration-150 ${
-                    pinInput.length > index
-                      ? 'bg-amber-400 scale-115 shadow-sm shadow-amber-400/50'
-                      : 'bg-slate-700 border border-slate-600'
-                  }`}
-                />
-              ))}
-            </div>
-
-            {/* Fixed Height Slot: Prevents layout jumping */}
-            <div className="h-5 flex items-center justify-center">
-              <p
-                className={`text-[11px] text-rose-400 font-semibold flex items-center gap-1 transition-opacity duration-150 ${
-                  pinError ? 'opacity-100' : 'opacity-0 pointer-events-none'
-                }`}
-              >
-                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                <span>{currentPin !== null ? 'パスコードが正しくありません' : '一致しません。最初からやり直してください'}</span>
-              </p>
-            </div>
-
-            {/* Numeric Keypad */}
-            <div className="grid grid-cols-3 gap-2 w-60 max-w-full">
-              {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '⌫'].map((k) => (
-                <button
-                  key={k}
-                  onClick={() => {
-                    if (k === 'C') handleKeypadClear();
-                    else if (k === '⌫') handleKeypadBackspace();
-                    else handleKeypadPress(k);
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleSubmitKey();
                   }}
-                  className={`h-11 rounded-xl font-mono text-sm font-semibold transition-all active:scale-95 flex items-center justify-center cursor-pointer ${
-                    k === 'C' || k === '⌫'
-                      ? 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-100 text-xs font-sans'
-                      : 'bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 hover:border-slate-500 shadow-sm'
-                  }`}
+                  className="w-64 max-w-full space-y-2"
                 >
-                  {k}
-                </button>
-              ))}
-            </div>
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={keyInput}
+                    onChange={(e) => setKeyInput(e.target.value)}
+                    disabled={verifying || access === 'locked'}
+                    className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-amber-400 disabled:opacity-40"
+                  />
+                  <button
+                    type="submit"
+                    disabled={verifying || access === 'locked' || !keyInput.trim()}
+                    className="w-full px-3 py-2 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    {verifying ? '確認中…' : '開く'}
+                  </button>
+                </form>
+
+                <p className={`min-h-4 text-[11px] font-semibold flex items-center gap-1 ${access === 'needKey' ? 'invisible' : 'text-rose-400'}`}>
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>
+                    {access === 'denied' && '管理トークンが正しくありません'}
+                    {access === 'locked' && '失敗が続いたため、しばらくしてからお試しください（約10分）'}
+                    {access === 'offline' && 'サーバーに接続できません。通信を確かめて、もう一度開いてください'}
+                  </span>
+                </p>
+              </>
+            )}
           </div>
         ) : (
           /* ========================================================
@@ -974,7 +901,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                 }`}
               >
                 <KeyRound className="w-3.5 h-3.5" />
-                <span>PIN設定</span>
+                <span>管理トークン</span>
               </button>
             </div>
 
@@ -2505,57 +2432,10 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
               )}
 
               {/* ========================================================
-                  TAB 4: 管理者設定 (PIN & Security)
+                  TAB 4: 管理者設定 (管理トークン)
                   ======================================================== */}
               {activeTab === 'settings' && (
                 <div className="space-y-3">
-                  <div className="p-3.5 bg-slate-800 rounded-xl border border-slate-700 space-y-3">
-                    <div className="font-bold text-slate-100 text-xs flex items-center gap-1.5">
-                      <KeyRound className="w-4 h-4 text-amber-400" />
-                      <span>管理者パスコード変更</span>
-                    </div>
-                    <p className="text-[11px] text-slate-400 leading-relaxed">
-                      4桁の数字で新しい管理者パスコードを設定できます。変更後は旧パスコードでは解錠できなくなります。
-                    </p>
-
-                    <form onSubmit={handleChangePin} className="space-y-2 pt-1">
-                      <div className="flex gap-2">
-                        <input
-                          type="password"
-                          maxLength={4}
-                          placeholder="新PIN (4桁)"
-                          value={newPinInput}
-                          onChange={(e) => setNewPinInput(e.target.value.replace(/\D/g, ''))}
-                          className="w-32 px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 font-mono text-center text-xs tracking-widest focus:outline-none focus:border-amber-400"
-                        />
-                        <button
-                          type="submit"
-                          disabled={newPinInput.length !== 4}
-                          className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer"
-                        >
-                          変更する
-                        </button>
-                      </div>
-
-                      {pinChangeSuccess && (
-                        <p className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>パスコードを正常に更新しました</span>
-                        </p>
-                      )}
-                    </form>
-
-                    <div className="pt-2.5 border-t border-slate-700 flex justify-between items-center">
-                      <span className="text-[11px] text-slate-400">パスコードを消す（次に開くとき、新しく決める）</span>
-                      <button
-                        onClick={handleResetPin}
-                        className="px-2.5 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white rounded text-[11px] font-medium transition-colors cursor-pointer"
-                      >
-                        消す
-                      </button>
-                    </div>
-                  </div>
-
                   <div className="p-3.5 bg-slate-800 rounded-xl border border-slate-700 space-y-3">
                     <div className="font-bold text-slate-100 text-xs flex items-center gap-1.5">
                       <ShieldAlert className="w-4 h-4 text-amber-400" />
@@ -2576,11 +2456,16 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                       <button
                         type="button"
                         disabled={!adminTokenInput.trim()}
-                        onClick={() => {
-                          setAdminToken(adminTokenInput.trim());
-                          setAdminTokenInput('');
-                          setAdminTokenSaved(true);
-                          setActionNotice('管理トークンをこの端末に保存しました');
+                        onClick={async () => {
+                          // サーバーが認めた鍵だけを、端末に保存する
+                          const result = await submitAdminKey(adminTokenInput);
+                          if (result === 'ok') {
+                            setAdminTokenInput('');
+                            setAdminTokenSaved(true);
+                            setActionNotice('管理トークンをこの端末に保存しました');
+                          } else {
+                            setActionNotice(result === 'denied' ? '管理トークンが正しくありません。保存していません' : result === 'locked' ? '失敗が続いたため、しばらくしてからお試しください(約10分)' : 'サーバーに接続できません。保存していません');
+                          }
                           setTimeout(() => setActionNotice(null), 3000);
                         }}
                         className="px-3 py-2 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
