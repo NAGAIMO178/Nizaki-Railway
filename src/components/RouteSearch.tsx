@@ -207,7 +207,7 @@ export const RouteSearch: React.FC = () => {
         <div className="flex items-center gap-2">
           <div className="flex-1 min-w-0 divide-y divide-[#EFEDF5]">
             <label className="flex items-center gap-2">
-              <span className="shrink-0 w-10 text-center text-[10px] font-black text-white bg-[#3B82F6] rounded py-1">出発</span>
+              <span className="shrink-0 w-10 text-center text-[11px] font-black text-white bg-[#3B82F6] rounded py-1">出発</span>
               <select className={selectClass} value={from} onChange={(e) => setFrom(e.target.value)} aria-label="出発駅">
                 {stations.map((s) => (
                   <option key={s} value={s}>
@@ -217,7 +217,7 @@ export const RouteSearch: React.FC = () => {
               </select>
             </label>
             <label className="flex items-center gap-2">
-              <span className="shrink-0 w-10 text-center text-[10px] font-black text-white bg-[#EC4899] rounded py-1">到着</span>
+              <span className="shrink-0 w-10 text-center text-[11px] font-black text-white bg-[#EC4899] rounded py-1">到着</span>
               <select className={selectClass} value={to} onChange={(e) => setTo(e.target.value)} aria-label="到着駅">
                 {stations.map((s) => (
                   <option key={s} value={s}>
@@ -242,7 +242,7 @@ export const RouteSearch: React.FC = () => {
           <div className="space-y-1.5">
             {vias.map((v, i) => (
               <div key={i} className="flex items-center gap-2">
-                <span className="shrink-0 w-10 text-center text-[10px] font-black text-[#6B6380] bg-[#E6E2EE] rounded py-1">経由</span>
+                <span className="shrink-0 w-10 text-center text-[11px] font-black text-[#6B6380] bg-[#E6E2EE] rounded py-1">経由</span>
                 <select
                   className="flex-1 min-w-0 border border-[#E6E2EE] rounded-lg px-2 py-1.5 bg-transparent text-sm font-bold text-[#221C35] cursor-pointer"
                   value={v}
@@ -318,7 +318,7 @@ export const RouteSearch: React.FC = () => {
             <SlidersHorizontal className="w-4 h-4" />
             <span>絞り込み</span>
             {changed > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-[#5B21B6] text-white text-[9px] font-black flex items-center justify-center">
+              <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-[#5B21B6] text-white text-[10px] font-black flex items-center justify-center">
                 {changed}
               </span>
             )}
@@ -371,18 +371,18 @@ export const RouteSearch: React.FC = () => {
               >
                 <div className="px-3.5 pt-3 pb-2 flex items-end justify-between gap-2">
                   <div>
-                    <div className="text-[10px] font-bold text-[#857D99]">
+                    <div className="text-[11px] font-bold text-[#857D99]">
                       候補 {i + 1}
                       {r.delayed && <span className="ml-1.5 text-rose-700">遅れあり</span>}
                     </div>
                     <div className={`text-2xl font-black font-mono leading-tight ${r.delayed ? 'text-rose-600' : 'text-[#221C35]'}`}>
                       {timeLabel(r.depSec)} <span className="text-[#B4ADC4]">→</span> {timeLabel(r.arrSec)}
-                      {r.arrSec >= DAY && <span className="ml-1 text-[10px] font-bold text-[#857D99]">翌</span>}
+                      {r.arrSec >= DAY && <span className="ml-1 text-[11px] font-bold text-[#857D99]">翌</span>}
                     </div>
                   </div>
                   <div className="text-right shrink-0">
                     <div className="text-sm font-black text-[#5B21B6]">{r.minutes}分</div>
-                    <div className="text-[10px] text-[#857D99]">乗換 {r.transfers}回</div>
+                    <div className="text-[11px] text-[#857D99]">乗換 {r.transfers}回</div>
                   </div>
                 </div>
 
@@ -408,12 +408,12 @@ export const RouteSearch: React.FC = () => {
                     {r.legs.map((leg, k) => (
                       <div key={`${leg.trainNo}-${k}`} className="flex items-center gap-2 text-[11px] text-[#221C35]">
                         <span className="w-1.5 h-4 rounded-full shrink-0" style={{ backgroundColor: lineColor(leg.lineCode) }} />
-                        {leg.through && <span className="shrink-0 text-[9px] font-bold text-[#5B21B6] bg-[#EFE8FA] px-1 py-px rounded">直通</span>}
+                        {leg.through && <span className="shrink-0 text-[11px] font-bold text-[#5B21B6] bg-[#EFE8FA] px-1 py-px rounded">直通</span>}
                         <span className="font-bold truncate">{leg.lineName}</span>
                         <span className={`shrink-0 ${leg.paid ? 'text-amber-600 font-bold' : 'text-[#857D99]'}`}>{leg.typeAbbr}</span>
                         {leg.crowd && crowdInfo(leg.crowd) && (
                           <span
-                            className="shrink-0 text-[9px] font-black px-1 py-px rounded border border-black/10 whitespace-nowrap"
+                            className="shrink-0 text-[11px] font-black px-1 py-px rounded border border-black/10 whitespace-nowrap"
                             style={{ background: crowdInfo(leg.crowd)!.color, color: crowdInfo(leg.crowd)!.text }}
                           >
                             {crowdInfo(leg.crowd)!.short}
@@ -433,7 +433,7 @@ export const RouteSearch: React.FC = () => {
           })}
 
           {results.length > 0 && (
-            <div className="text-[10px] text-[#857D99] leading-relaxed px-1">
+            <div className="text-[11px] text-[#857D99] leading-relaxed px-1">
               {results.some((x) => x.crowd) && '色つきの言葉は、混雑の目安です(模擬)。乗っている区間で、いちばん混むところを出しています。'}
               タップすると、詳細(停車駅・運賃の内訳)が見られます。乗換は{options.relaxedTransfer ? '8' : '4'}分以上で乗り継げる列車を探しています。運賃は、全区間の営業キロを合わせて計算した普通運賃です。
               {usedRealtime ? '遅れは、検索した時点のものです。' : '表示は予定の時刻で、遅れは反映されていません。'}

@@ -14,7 +14,7 @@ const Time: React.FC<{ sec: number; sched: number; className?: string }> = ({ se
   const delayed = sec !== sched;
   return (
     <div className={`font-mono leading-tight ${className}`}>
-      {delayed && <div className="text-[10px] text-[#B4ADC4] line-through">{formatDiaTime(sched)}</div>}
+      {delayed && <div className="text-[11px] text-[#B4ADC4] line-through">{formatDiaTime(sched)}</div>}
       <div className={`text-sm font-black ${delayed ? 'text-rose-600' : 'text-[#221C35]'}`}>{formatDiaTime(sec)}</div>
     </div>
   );
@@ -48,12 +48,12 @@ const LegBlock: React.FC<{ leg: RouteLeg }> = ({ leg }) => {
           </div>
           <div className="text-[11px] text-[#6B6380] mt-0.5">{leg.destLabel}</div>
           {leg.delayMin > 0 && (
-            <div className="mt-1.5 inline-block text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded px-1.5 py-0.5">
+            <div className="mt-1.5 inline-block text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded px-1.5 py-0.5">
               {leg.delayMin}分遅れ
             </div>
           )}
           {leg.crowd && crowdInfo(leg.crowd) && (
-            <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px] text-[#6B6380]">
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-[#6B6380]">
               <span className="font-bold">混雑の目安</span>
               <span
                 className="font-black px-1.5 py-0.5 rounded border border-black/10 whitespace-nowrap"
@@ -64,9 +64,9 @@ const LegBlock: React.FC<{ leg: RouteLeg }> = ({ leg }) => {
               <span>(いちばん混む区間・乗車率 {crowdInfo(leg.crowd)!.range})</span>
             </div>
           )}
-          {leg.paid && <div className="mt-1.5 text-[10px] font-bold text-amber-700">有料の列車です(特急券が別に必要)</div>}
+          {leg.paid && <div className="mt-1.5 text-[11px] font-bold text-amber-700">有料の列車です(特急券が別に必要)</div>}
           {leg.passedVias.map((v) => (
-            <div key={v.name} className="mt-1.5 text-[10px] font-bold text-[#5B21B6]">
+            <div key={v.name} className="mt-1.5 text-[11px] font-bold text-[#5B21B6]">
               経由駅の{v.name}に{v.stopped ? '停車します' : '停まらずに通過します'}
             </div>
           ))}
@@ -131,11 +131,11 @@ export const RouteDetail: React.FC<RouteDetailProps> = ({ result: r, from, to, v
           <div>
             <div className="text-2xl font-black text-[#221C35] font-mono leading-tight">
               {formatDiaTime(r.depSec)} <span className="text-[#B4ADC4]">→</span> {formatDiaTime(r.arrSec)}
-              {r.arrSec >= DAY && <span className="ml-1 text-[10px] font-bold text-[#857D99]">翌</span>}
+              {r.arrSec >= DAY && <span className="ml-1 text-[11px] font-bold text-[#857D99]">翌</span>}
             </div>
             <div className="text-[11px] text-[#857D99] mt-0.5">{dayLabel}</div>
           </div>
-          <div className="text-right shrink-0 text-[10px] text-[#857D99]">
+          <div className="text-right shrink-0 text-[11px] text-[#857D99]">
             {realtime && <div className="font-bold text-emerald-700">リアルタイム検索</div>}
             <div>検索 {searchedAt}</div>
           </div>
@@ -224,7 +224,7 @@ export const RouteDetail: React.FC<RouteDetailProps> = ({ result: r, from, to, v
         )}
       </div>
 
-      <div className="text-[10px] text-[#857D99] leading-relaxed px-1">
+      <div className="text-[11px] text-[#857D99] leading-relaxed px-1">
         ご利用にあたって: 神埼鉄道は架空の鉄道です。時刻・遅れ・運賃は、アプリの中だけの模擬の情報です。乗換は、同じ駅名で乗り継げる列車を探しています。
       </div>
     </div>
