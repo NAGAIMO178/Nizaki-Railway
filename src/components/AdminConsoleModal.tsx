@@ -35,6 +35,7 @@ import {
   Info,
 } from 'lucide-react';
 import { systemLogger, SystemLogEntry, SystemMetrics } from '../utils/systemLogger';
+import { getStoredPin, savePin, clearPin } from '../utils/adminPin';
 import {
   disruptionManager,
   getAdminToken,
@@ -118,8 +119,6 @@ const parseExpiryFromDuration = (text: string, now: Date = new Date()): number |
 const rewriteDuration = (prev: string, ts: number): string =>
   buildDurationLabel(ts) + (/※架空/.test(prev) ? '（※架空設定）' : '');
 
-const DEFAULT_PIN = '1925'; // 神埼鉄道 創業年 (初期値)
-const PIN_STORAGE_KEY = 'nizaki_admin_pin';
 
 export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
   isOpen,
@@ -130,7 +129,9 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState(false);
-  const [currentPin, setCurrentPin] = useState(DEFAULT_PIN);
+  // 決めてあるパスコード(null = まだ決めていない。最初に開くとき、2回入力して決める)
+  const [currentPin, setCurrentPin] = useState<string | null>(() => getStoredPin());
+  const [setupFirstPin, setSetupFirstPin] = useState<string | null>(null);
   const [newPinInput, setNewPinInput] = useState('');
   const [pinChangeSuccess, setPinChangeSuccess] = useState(false);
 
@@ -538,17 +539,8 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
     setStorageDataView(null);
     if (isOpen) loadLineConfig(selectedLineId);
 
-    try {
-      const savedPin = localStorage.getItem(PIN_STORAGE_KEY);
-      if (savedPin && savedPin.length === 4) {
-        setCurrentPin(savedPin);
-      } else {
-        setCurrentPin(DEFAULT_PIN);
-      }
-
-    } catch {
-      // Ignore
-    }
+    setSetupFirstPin(null);
+    setCurrentPin(getStoredPin());
   }, [isOpen]);
 
   // サーバー(GAS)への反映に失敗したら管理者に知らせる(トークン未設定・不一致など)
@@ -618,6 +610,25 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
 
   // Strictly verify against current active PIN only
   const verifyPin = (inputToTest: string) => {
+    if (currentPin === null) {
+      // まだ決めていない: 1回目の入力を覚えて、2回目と同じなら、決める
+      if (setupFirstPin === null) {
+        setSetupFirstPin(inputToTest);
+        setPinInput('');
+      } else if (setupFirstPin === inputToTest && savePin(inputToTest)) {
+        setCurrentPin(inputToTest);
+        setSetupFirstPin(null);
+        setIsAuthenticated(true);
+        setPinInput('');
+        setPinError(false);
+        systemLogger.info('管理者パスコードが決められました', 'AdminAuth');
+      } else {
+        setPinError(true);
+        setSetupFirstPin(null);
+        setTimeout(() => setPinInput(''), 500);
+      }
+      return;
+    }
     if (inputToTest === currentPin) {
       setIsAuthenticated(true);
       setPinInput('');
@@ -628,7 +639,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
       setTimeout(() => {
         setPinInput('');
       }, 500);
-      systemLogger.warn(`パスコード不一致の入力試行: [${inputToTest}]`, 'AdminAuth');
+      systemLogger.warn('パスコード不一致の入力試行', 'AdminAuth');
     }
   };
 
@@ -636,11 +647,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
     e.preventDefault();
     if (newPinInput.length === 4 && /^\d{4}$/.test(newPinInput)) {
       setCurrentPin(newPinInput);
-      try {
-        localStorage.setItem(PIN_STORAGE_KEY, newPinInput);
-      } catch {
-        // Ignore
-      }
+      savePin(newPinInput);
       setPinChangeSuccess(true);
       setNewPinInput('');
       setTimeout(() => setPinChangeSuccess(false), 2500);
@@ -649,15 +656,11 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
   };
 
   const handleResetPin = () => {
-    setCurrentPin(DEFAULT_PIN);
-    try {
-      localStorage.removeItem(PIN_STORAGE_KEY);
-    } catch {
-      // Ignore
-    }
+    clearPin();
+    setCurrentPin(null);
     setPinChangeSuccess(true);
     setTimeout(() => setPinChangeSuccess(false), 2500);
-    systemLogger.info('管理者パスコードが初期値にリセットされました', 'AdminAuth');
+    systemLogger.info('管理者パスコードが消されました(次に開くとき、新しく決めます)', 'AdminAuth');
   };
 
   const handleClearLogs = () => {
@@ -816,7 +819,9 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
             </div>
 
             <div className="space-y-1">
-              <h3 className="text-sm font-bold text-slate-100">管理者パスコードを入力</h3>
+              <h3 className="text-sm font-bold text-slate-100">
+                {currentPin !== null ? '管理者パスコードを入力' : setupFirstPin === null ? '管理者パスコードを決める（4桁）' : 'もう一度、同じパスコードを入力'}
+              </h3>
               <p className="text-[11px] text-slate-400">
                 運行指令・遅延設定およびシステム診断ツールを開きます
               </p>
@@ -844,7 +849,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                 }`}
               >
                 <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                <span>パスコードが正しくありません</span>
+                <span>{currentPin !== null ? 'パスコードが正しくありません' : '一致しません。最初からやり直してください'}</span>
               </p>
             </div>
 
@@ -2510,7 +2515,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                       <span>管理者パスコード変更</span>
                     </div>
                     <p className="text-[11px] text-slate-400 leading-relaxed">
-                      4桁の数字で新しい管理者パスコードを設定できます。変更後は旧パスコードや初期パスコードでは解錠できなくなります。
+                      4桁の数字で新しい管理者パスコードを設定できます。変更後は旧パスコードでは解錠できなくなります。
                     </p>
 
                     <form onSubmit={handleChangePin} className="space-y-2 pt-1">
@@ -2541,12 +2546,12 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                     </form>
 
                     <div className="pt-2.5 border-t border-slate-700 flex justify-between items-center">
-                      <span className="text-[11px] text-slate-400">初期パスコード（1925）に戻す</span>
+                      <span className="text-[11px] text-slate-400">パスコードを消す（次に開くとき、新しく決める）</span>
                       <button
                         onClick={handleResetPin}
                         className="px-2.5 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white rounded text-[11px] font-medium transition-colors cursor-pointer"
                       >
-                        初期値にリセット
+                        消す
                       </button>
                     </div>
                   </div>
