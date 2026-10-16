@@ -128,11 +128,7 @@ export const planArrival = async (q: ArrivalQuery): Promise<ArrivalPlan> => {
   const windowSec = Math.max(MIN_WINDOW_SEC, probe[0].minutes * 60 * 2);
   const found = await search(Math.max(probeStart, deadlineSec - windowSec), MAX_CANDIDATES);
 
-  // もっと遅く出て、もっと早く着く便がある便は、除く(出発の早い順)
-  const all = found
-    .filter((r) => r.arrSec <= deadlineSec)
-    .filter((r, _i, list) => !list.some((o) => o !== r && o.depSec >= r.depSec && o.arrSec <= r.arrSec && (o.depSec > r.depSec || o.arrSec < r.arrSec)))
-    .sort((a, b) => a.depSec - b.depSec);
+  const all = found.filter((r) => r.arrSec <= deadlineSec).sort((a, b) => a.depSec - b.depSec);
   if (all.length === 0) return EMPTY(deadlineSec, usedDelays);
 
   const marginOf = (r: RouteResult) => Math.floor((deadlineSec - r.arrSec) / 60);
@@ -153,9 +149,11 @@ export const planArrival = async (q: ArrivalQuery): Promise<ArrivalPlan> => {
   )[0];
 
   // 前後の便: おすすめより、NEIGHBOR_GAP_MIN 分以上ずれたもののうち、いちばん近いもの
+  // (もっと遅く出て、もっと早く着く便がある便は、候補にしない。おすすめは、乗換や遅れへの強さで選ぶので、この絞りは使わない)
   const gap = NEIGHBOR_GAP_MIN * 60;
-  const earlier = [...all].reverse().find((r) => r.depSec <= pick.depSec - gap);
-  const later = all.find((r) => r.depSec >= pick.depSec + gap);
+  const useful = all.filter((r) => !all.some((o) => o !== r && o.depSec >= r.depSec && o.arrSec <= r.arrSec && (o.depSec > r.depSec || o.arrSec < r.arrSec)));
+  const earlier = [...useful].reverse().find((r) => r.depSec <= pick.depSec - gap);
+  const later = useful.find((r) => r.depSec >= pick.depSec + gap);
 
   const chosen = [earlier, pick, later].filter((r): r is RouteResult => r !== undefined);
   return {
