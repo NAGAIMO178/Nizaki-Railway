@@ -25,6 +25,8 @@ import { deleteAccount } from '../utils/accountApi';
 import { MileageCard } from './MileageCard';
 import type { Mileage } from '../utils/mileage';
 import { getSeatClassLabel } from '../utils/seatUtils';
+import { isLaunched } from '../utils/launch';
+import { calcReservationPoints } from '../utils/points';
 import { PrivacyPolicyModal } from './PrivacyPolicyModal';
 
 interface MyPageModalProps {
@@ -112,7 +114,10 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
             status: '予約確定・乗車前',
             statusColor: 'emerald',
             amount: `¥${activeOrder.totalPrice.toLocaleString()}`,
-            pointsEarned: Math.floor(activeOrder.totalPrice * 0.03),
+            // 公開後: 付いたポイント(予約全体。デリバリーの分も含む)を出す。公開前は、これまでの表示
+            pointsEarned: isLaunched()
+              ? (activeOrder.earnedPoints ?? (activeOrder.totalPrice > 0 ? calcReservationPoints(activeOrder.totalPrice) : 0))
+              : Math.floor(activeOrder.totalPrice * 0.03),
             details: {
               座席種別: getSeatClassLabel(activeOrder.seatType),
               予約番号: activeOrder.orderId,
@@ -132,7 +137,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
             status: activeOrder.status === 'delivered' ? 'お届け済み' : activeOrder.status === 'delivering' ? '配達中' : '準備中',
             statusColor: 'purple',
             amount: `¥${Math.max(0, activeOrder.items.reduce((sum, i) => sum + i.item.price * i.quantity, 0) - (activeOrder.itemDiscount || 0)).toLocaleString()}`,
-            pointsEarned: 50,
+            pointsEarned: isLaunched() ? undefined : 50, // 公開後は、予約の行にまとめて出す
           },
         ]
       : []),
