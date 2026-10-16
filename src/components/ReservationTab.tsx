@@ -473,18 +473,25 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
   return (
     <div className="space-y-4 text-[#221C35] max-w-md mx-auto p-4 pb-20 animate-fadeIn">
       {/* Title Header */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-base font-bold text-[#221C35] flex items-center gap-2">
-          <Ticket className="w-5 h-5 text-[#5B21B6]" />
-          <span>特急券・座席指定予約</span>
-        </h2>
-        {activeOrder && (
-          <span className="text-[11px] font-bold bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full flex items-center gap-1 border border-emerald-300">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-            <span>予約済み</span>
-          </span>
-        )}
-      </div>
+      {/* 公開後は、上の切り替えに「特急券・座席」とあるので、見出しは出さない(「予約済み」の札だけ残す) */}
+      {(!isLaunched() || activeOrder) && (
+        <div className="flex items-center justify-between">
+          {!isLaunched() ? (
+            <h2 className="text-base font-bold text-[#221C35] flex items-center gap-2">
+              <Ticket className="w-5 h-5 text-[#5B21B6]" />
+              <span>特急券・座席指定予約</span>
+            </h2>
+          ) : (
+            <span />
+          )}
+          {activeOrder && (
+            <span className="text-[11px] font-bold bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full flex items-center gap-1 border border-emerald-300">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+              <span>予約済み</span>
+            </span>
+          )}
+        </div>
+      )}
 
       {/* ─────────────────────────────────────────────────────────────
           1. 予約済みの場合の表示 (出発時刻 & デリバリー予定の弁当表示欄)
