@@ -164,10 +164,13 @@ describe('遅れ・運休の割り当て', () => {
     expect(disruptionManager.getEffectiveDelayForTrain('kanzaki', 'T1')).toEqual({ delayMinutes: 1, isSuspended: false });
   });
 
-  it('数のシードは、符号と小数を無視して決まる', () => {
+  it('数のシードは、符号と小数を無視して決まり、範囲に収まる', () => {
     disruptionManager.setLineDisruption(makeDisruption({ maxDelayMinutes: 10 }));
-    expect(disruptionManager.getEffectiveDelayForTrain('kanzaki', 13).delayMinutes).toBe(4);
-    expect(disruptionManager.getEffectiveDelayForTrain('kanzaki', -13.9).delayMinutes).toBe(4);
+    const a = disruptionManager.getEffectiveDelayForTrain('kanzaki', 13).delayMinutes;
+    expect(disruptionManager.getEffectiveDelayForTrain('kanzaki', -13.9).delayMinutes).toBe(a);
+    expect(disruptionManager.getEffectiveDelayForTrain('kanzaki', 13.2).delayMinutes).toBe(a);
+    expect(a).toBeGreaterThanOrEqual(1);
+    expect(a).toBeLessThanOrEqual(10);
   });
 
   it('運転見合わせは、全部の列車が運休', () => {
@@ -220,6 +223,48 @@ describe('遅れ・運休の割り当て', () => {
     expect(disruptionManager.getEffectiveDelayForTrain('saichi_loop', 'T').isSuspended).toBe(true);
     disruptionManager.clearLineDisruption('saichi_loop');
     expect(disruptionManager.getLineDisruption('saichi')).toBeNull();
+  });
+});
+
+describe('遅れの配り方(時刻のシード)', () => {
+  // 実際に渡される形: ダイヤの日の始まり + 発車時刻(秒)をミリ秒にした数。分の単位や、秒つきの発車が混ざる
+  const dayStart = new Date(2026, 10, 2).getTime();
+  const seeds = Array.from({ length: 489 }, (_, k) => dayStart + (5 * 3600 + k * 143 + (k % 3) * 20) * 1000);
+  const minuteSeeds = Array.from({ length: 489 }, (_, k) => dayStart + (5 * 3600 + k * 120) * 1000);
+
+  it.each([120, 60, 30, 15])('最大%i分の遅延は、数種類にかたよらず、1〜最大分にばらける', (max) => {
+    disruptionManager.setLineDisruption(makeDisruption({ maxDelayMinutes: max }));
+    for (const list of [seeds, minuteSeeds]) {
+      const delays = list.map((s) => disruptionManager.getEffectiveDelayForTrain('kanzaki', s).delayMinutes);
+      delays.forEach((d) => {
+        expect(d).toBeGreaterThanOrEqual(1);
+        expect(d).toBeLessThanOrEqual(max);
+      });
+      // 489本で、最大分の半分以上の種類(最大15分なら、ほぼ全部)が出る。前は、3種類だけだった
+      expect(new Set(delays).size).toBeGreaterThanOrEqual(Math.min(max, 20) * 0.9);
+      expect(new Set(delays).size).toBeGreaterThan(Math.floor(max / 2));
+      const mean = delays.reduce((a, b) => a + b, 0) / delays.length;
+      expect(Math.abs(mean - (max + 1) / 2)).toBeLessThan(max * 0.1);
+    }
+  });
+
+  it('一部運休は、3本に1本ほどが運休で、残りの遅れも、1〜5分にばらける', () => {
+    disruptionManager.setLineDisruption(makeDisruption({ statusType: 'partially_suspended', maxDelayMinutes: 15 }));
+    const results = seeds.map((s) => disruptionManager.getEffectiveDelayForTrain('kanzaki', s));
+    const suspended = results.filter((r) => r.isSuspended).length;
+    expect(suspended / results.length).toBeGreaterThan(0.25);
+    expect(suspended / results.length).toBeLessThan(0.42);
+    const delays = results.filter((r) => !r.isSuspended).map((r) => r.delayMinutes);
+    expect(Math.min(...delays)).toBe(1);
+    expect(Math.max(...delays)).toBe(5);
+    expect(new Set(delays).size).toBe(5);
+  });
+
+  it('同じシードなら、いつも同じ遅れ', () => {
+    disruptionManager.setLineDisruption(makeDisruption({ maxDelayMinutes: 120 }));
+    seeds.slice(0, 50).forEach((s) => {
+      expect(disruptionManager.getEffectiveDelayForTrain('kanzaki', s)).toEqual(disruptionManager.getEffectiveDelayForTrain('kanzaki', s));
+    });
   });
 });
 
