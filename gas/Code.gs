@@ -650,14 +650,34 @@ function handleCreateReservation(sessionToken, order, awardPoints) {
 
     let targetRow = -1;
     let previousTotal = null; // 更新のとき、更新前の合計金額(デリバリーを足したときのポイントを求める)
+    let previousBasis = 0;    // これまでに、ポイントを計算した、いちばん大きい合計金額(下げて、また上げても、二重に付かない)
     for (let i = 1; i < data.length; i++) {
       if (String(data[i][col['予約番号']]) === values['予約番号']) {
         if (String(data[i][col['会員ID']]) !== memberId) {
           return createJsonResponse({ status: 'error', message: 'この予約番号は使用できません。' });
         }
+        // 取り消した予約は、同じ番号で出し直せない(取消で消したポイントを、また付けられてしまう)
+        if (awardPoints && String(data[i][col['ステータス']]) === 'キャンセル') {
+          return createJsonResponse({ status: 'error', message: 'この予約は取り消されています。新しく予約してください。' });
+        }
         targetRow = i + 1;
         previousTotal = Number(data[i][col['合計金額']]) || 0;
+        previousBasis = readPointBasis(col['明細'] !== undefined ? data[i][col['明細']] : '');
         break;
+      }
+    }
+
+    // 公開後のアプリ: 新しい予約は、まだ乗っていない予約が多すぎるときは受けない(シートが膨らむのを防ぐ)
+    if (awardPoints && targetRow === -1) {
+      let active = 0;
+      for (let i = 1; i < data.length; i++) {
+        if (String(data[i][col['会員ID']]) !== memberId) continue;
+        if (String(data[i][col['ステータス']]) === 'キャンセル') continue;
+        if (isReservationRowExpired(headers, data[i])) continue;
+        active++;
+      }
+      if (active >= MAX_ACTIVE_RESERVATIONS) {
+        return createJsonResponse({ status: 'error', message: '一度に持てる予約の数の上限です。乗車後か、取消のあとに、もう一度お試しください。' });
       }
     }
 
@@ -680,8 +700,11 @@ function handleCreateReservation(sessionToken, order, awardPoints) {
 
     // 公開後のアプリ: 明細(デリバリーの商品と割引)を残し、ポイントをサーバーが付ける
     if (awardPoints) {
-      saveReservationDetail(sheet, targetRow, order);
-      awardReservationPoints(memberId, String(order.orderId), values['合計金額'], previousTotal, limitText(order.trainName, 60));
+      // ポイントは、上限までの金額で計算する。前の金額は、「これまでに計算したいちばん大きい金額」と比べる
+      const pointsTotal = Math.min(values['合計金額'], POINT_BASIS_CAP);
+      const pointsFrom = previousTotal === null ? null : Math.min(Math.max(previousTotal, previousBasis), POINT_BASIS_CAP);
+      saveReservationDetail(sheet, targetRow, order, Math.max(pointsTotal, pointsFrom || 0));
+      awardReservationPoints(memberId, String(order.orderId), pointsTotal, pointsFrom, limitText(order.trainName, 60));
     }
 
     return createJsonResponse({ status: 'success' });
@@ -1133,6 +1156,10 @@ const EVENT_REWARD_TABLE = {
 };
 const RESERVATION_POINT_RATE = 0.03;
 const RESERVATION_POINT_MIN = 50;
+// 申告の金額を信じすぎないための上限(ポイントの決まりは変えない。ふつうの予約は、ここに届かない)
+const POINT_BASIS_CAP = 100000;          // 1つの予約で、ポイントを計算する合計金額の上限
+const DAILY_RESERVATION_POINT_CAP = 3000; // 1会員が、予約で付くポイントを、1日(日本時間)に受け取れる上限
+const MAX_ACTIVE_RESERVATIONS = 20;       // 1会員の、まだ乗っていない(取消でない)予約の上限
 const HISTORY_LIMIT = 30;
 const ORDER_HISTORY_LIMIT = 30;
 const RIDE_LOG_LIMIT = 500; // マイレージ・乗車記録に使う、乗車済みの予約の上限(新しい順)
@@ -1578,7 +1605,7 @@ function handleSaveMysteryProgress(sessionToken, progress) {
 // ---- 予約まわりのポイント(予約の登録・取消のロックの中から呼ばれる) ----
 
 // 予約の明細(デリバリーの商品と割引)を、予約台帳の「明細」列に残す(列が無ければ、このとき足す)
-function saveReservationDetail(sheet, row, order) {
+function saveReservationDetail(sheet, row, order, pointBasis) {
   const lastCol = Math.max(sheet.getLastColumn(), 1);
   const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
   let col = headers.indexOf('明細') + 1;
@@ -1592,9 +1619,30 @@ function saveReservationDetail(sheet, row, order) {
   const detail = {
     items: items,
     itemDiscount: Math.max(0, Math.floor(Number(order.itemDiscount)) || 0),
-    pointsUsed: Math.max(0, Math.floor(Number(order.pointsUsed)) || 0)
+    pointsUsed: Math.max(0, Math.floor(Number(order.pointsUsed)) || 0),
+    pointBasis: Math.max(0, Math.floor(Number(pointBasis)) || 0) // ポイントを計算した、いちばん大きい合計金額
   };
   sheet.getRange(row, col).setValue(JSON.stringify(detail));
+}
+
+// 予約の明細の列から、これまでにポイントを計算した、いちばん大きい合計金額を読む(無ければ0)
+function readPointBasis(detailCell) {
+  if (!detailCell) return 0;
+  try {
+    return Math.max(0, Math.floor(Number(JSON.parse(String(detailCell)).pointBasis)) || 0);
+  } catch (err) {
+    return 0;
+  }
+}
+
+// 今日(日本時間)、予約で付いたポイントの合計(取消で引いた分は、数えない)
+function pointsAwardedToday(ledger) {
+  const today = nowText().slice(0, 10);
+  let sum = 0;
+  ledger.rows.forEach(function (r) {
+    if ((r.kind === 'reservation' || r.kind === 'delivery') && r.points > 0 && String(r.ts).slice(0, 10) === today) sum += r.points;
+  });
+  return sum;
 }
 
 function awardReservationPoints(memberId, orderId, total, previousTotal, trainName) {
@@ -1604,7 +1652,8 @@ function awardReservationPoints(memberId, orderId, total, previousTotal, trainNa
   if (previousTotal === null) {
     // 新しい予約: 合計金額(N-POINTで払った分は、含まない)の3%(最低50pt)。ぜんぶポイントで払ったときは、付けない
     if (total <= 0) return;
-    const points = Math.max(RESERVATION_POINT_MIN, Math.floor(total * RESERVATION_POINT_RATE));
+    const points = Math.min(Math.max(RESERVATION_POINT_MIN, Math.floor(total * RESERVATION_POINT_RATE)), DAILY_RESERVATION_POINT_CAP - pointsAwardedToday(ledger));
+    if (points <= 0) return;
     addPointEntry(ledger, memberId, 'reservation', 'reservation:' + orderId, points, (trainName || '特急列車予約') + ' 乗車・デリバリー利用');
     return;
   }
@@ -1614,7 +1663,7 @@ function awardReservationPoints(memberId, orderId, total, previousTotal, trainNa
     const prefix = 'delivery:' + orderId + ':';
     let n = 1;
     Object.keys(ledger.keys).forEach(function (k) { if (k.indexOf(prefix) === 0) n++; });
-    const points = Math.floor((total - previousTotal) * RESERVATION_POINT_RATE);
+    const points = Math.min(Math.floor((total - previousTotal) * RESERVATION_POINT_RATE), DAILY_RESERVATION_POINT_CAP - pointsAwardedToday(ledger));
     if (points <= 0) return;
     addPointEntry(ledger, memberId, 'delivery', prefix + n, points, (trainName || '特急列車予約') + ' 乗車・デリバリー利用');
   }
