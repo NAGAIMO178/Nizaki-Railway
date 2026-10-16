@@ -47,27 +47,63 @@ def load():
 
 
 def build(master, trains, st):
-    """全列車を「つながり(connection)」にする。駅は、駅名で1つにまとめる(乗換駅は、路線をまたぐ)。"""
+    """全列車を「つながり(connection)」にする。駅は、駅名で1つにまとめる(乗換駅は、路線をまたぐ)。
+    直通の列車(同じ列車番号が、2つの路線にある)は、2つの部分を、1本の列車につなぐ(乗り通す住民が、乗換なしで、路線をまたげる)。"""
     names = sorted(st)
     sid = {n: i for i, n in enumerate(names)}
-    T = []   # 列車: dict(line, no, type, paid, cap, stops=[駅番号...], arr=[...], dep=[...])
-    conns = []
-    for c, tl in trains.items():
+
+    def read(c, t):
+        no, ty, d, run, t0, a = t[:6]   # 7つ目以降(運行番号・行先・始発)は、混雑には使わない
         m = master[c]
+        nm, paid = m["types"][ty][0], m["types"][ty][2]
+        stops, arr, dep = [], [], []
+        for k in range(0, len(a), 3):
+            stops.append(sid[m["stations"][a[k]][0]])
+            arr.append(t0 + a[k + 1] if a[k + 1] >= 0 else None)
+            dep.append(t0 + a[k + 2] if a[k + 2] >= 0 else None)
+        return dict(line=c, no=no, dir=d, type=nm, paid=bool(paid), t0=t0, stops=stops, arr=arr, dep=dep)
+
+    parts = collections.defaultdict(list)   # 列車番号 -> 路線ごとの部分
+    for c, tl in trains.items():
         for t in tl:
-            no, ty, d, run, t0, a = t[:6]   # 7つ目は運行番号(混雑には使わない)
-            nm, ab, paid = m["types"][ty][0], m["types"][ty][1], m["types"][ty][2]
-            cars = 10 if ("特急" in nm or nm.startswith("特別快速")) else 8
-            cap = cars * (PAID_CAR_CAP if paid else CAR_CAP)
-            stops, arr, dep = [], [], []
-            for k in range(0, len(a), 3):
-                stops.append(sid[m["stations"][a[k]][0]])
-                arr.append(t0 + a[k + 1] if a[k + 1] >= 0 else None)
-                dep.append(t0 + a[k + 2] if a[k + 2] >= 0 else None)
+            parts[t[0]].append(read(c, t))
+
+    def join(ps):
+        """直通: 早く始まる部分のあとに、次の部分をつなぐ。接続の駅は、前の部分の着と、後の部分の発を、1つにまとめる。"""
+        a, b = sorted(ps, key=lambda p: p["t0"])
+        assert a["stops"][-1] == b["stops"][0], f"直通のつながりが合わない: {a['no']}"
+        stops = a["stops"] + b["stops"][1:]
+        arr = a["arr"] + b["arr"][1:]
+        dep = a["dep"][:-1] + [b["dep"][0]] + b["dep"][1:]
+        return dict(type=a["type"], paid=a["paid"], line=a["line"], no=a["no"], dir=a["dir"], stops=stops, arr=arr, dep=dep,
+                    seg_line=[a["line"]] * (len(a["stops"]) - 1) + [b["line"]] * (len(b["stops"]) - 1),
+                    seg_dir=[a["dir"]] * (len(a["stops"]) - 1) + [b["dir"]] * (len(b["stops"]) - 1),
+                    parts=[(a["line"], a["no"], len(a["stops"]) - 1), (b["line"], b["no"], len(b["stops"]) - 1)])
+
+    T = []   # 列車: dict(line, no, type, paid, cap, stops=[駅番号...], arr=[...], dep=[...], seg_line, seg_dir, parts)
+    conns = []
+    done = set()
+    for c, tl in trains.items():
+        for t in tl:
+            no = t[0]
+            if (c, no) in done:
+                continue
+            ps = parts[no]
+            if len(ps) == 2 and ps[0]["line"] != ps[1]["line"]:
+                tr = join(ps)
+                done.update((p["line"], no) for p in ps)
+            else:
+                p = next(x for x in ps if x["line"] == c)
+                n = len(p["stops"]) - 1
+                tr = dict(type=p["type"], paid=p["paid"], line=c, no=no, dir=p["dir"], stops=p["stops"], arr=p["arr"], dep=p["dep"],
+                          seg_line=[c] * n, seg_dir=[p["dir"]] * n, parts=[(c, no, n)])
+                done.add((c, no))
+            cars = 10 if ("特急" in tr["type"] or tr["type"].startswith("特別快速")) else 8
+            tr["cap"] = cars * (PAID_CAR_CAP if tr["paid"] else CAR_CAP)
             ti = len(T)
-            T.append(dict(line=c, no=no, type=nm, paid=bool(paid), cap=cap, stops=stops, arr=arr, dep=dep))
-            for k in range(len(stops) - 1):
-                conns.append((dep[k], arr[k + 1], stops[k], stops[k + 1], ti, k))
+            T.append(tr)
+            for k in range(len(tr["stops"]) - 1):
+                conns.append((tr["dep"][k], tr["arr"][k + 1], tr["stops"][k], tr["stops"][k + 1], ti, k))
     conns.sort()
     return names, sid, T, conns
 
@@ -286,10 +322,9 @@ def smooth_ratios(T, ratios):
     (自分の値 SMOOTH_SELF 割 + 前後の列車の、時間で重みをつけた平均 残り)"""
     groups = collections.defaultdict(list)   # (路線, 駅, 方向) -> [(発車秒, 列車の番号, 区間の番号)]
     for ti, t in enumerate(T):
-        dch = t["no"][len(t["line"])]
         for k in range(len(t["stops"]) - 1):
             if t["dep"][k] is not None:
-                groups[(t["line"], t["stops"][k], dch)].append((t["dep"][k], ti, k))
+                groups[(t["seg_line"][k], t["stops"][k], t["seg_dir"][k])].append((t["dep"][k], ti, k))
     new = {}
     for items in groups.values():
         items.sort()
@@ -316,8 +351,11 @@ def write_outputs(master, T, names, scale, res):
             ratios[ti] = [loads[ti][k] * scale / days / t["cap"] for k in range(len(loads[ti]))]
         smooth_ratios(T, ratios)
         for ti, t in enumerate(T):
-            rs = ratios[ti]
-            trainfile.setdefault(t["line"], {})[t["no"]] = "".join(str(level(r)) for r in rs)
+            levels = "".join(str(level(r)) for r in ratios[ti])
+            pos = 0
+            for line, no, nseg in t["parts"]:
+                trainfile.setdefault(line, {})[no] = levels[pos:pos + nseg]
+                pos += nseg
         json.dump(trainfile, open(os.path.join(OUT, f"train_{label}.json"), "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
         # 報告: レベルの分布と、いちばん混む区間
         cnt = collections.Counter()
@@ -325,7 +363,7 @@ def write_outputs(master, T, names, scale, res):
         for ti, t in enumerate(T):
             for k, r in enumerate(ratios[ti]):
                 cnt[level(r)] += 1
-                worst.append((r, t["line"], t["no"], t["type"], names[t["stops"][k]], names[t["stops"][k + 1]], hhmm(t["dep"][k])))
+                worst.append((r, t["seg_line"][k], t["no"], t["type"], names[t["stops"][k]], names[t["stops"][k + 1]], hhmm(t["dep"][k])))
         worst.sort(reverse=True)
         report.append(f"[{label}] 区間ごとのレベル分布: " + ", ".join(f"L{k}={cnt[k]}" for k in range(1, 7)))
         for r, line, no, ty, a, b, h in worst[:8]:
