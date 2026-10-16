@@ -10,6 +10,7 @@ export interface SystemLogEntry {
   message: string;
   details?: string;
   stack?: string;
+  count?: number; // 同じ内容が続けて起きた回数(2 以上のときだけ入る)
 }
 
 export interface SystemMetrics {
@@ -170,24 +171,44 @@ export const systemLogger = {
    */
   addLog: (entry: Omit<SystemLogEntry, 'id' | 'timestamp'> & { timestamp?: string }) => {
     if (isBenignOrTestNoise(entry.message)) return;
-    const newLog: SystemLogEntry = {
-      id: `log_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-      timestamp: entry.timestamp || new Date().toLocaleString('ja-JP', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-      }),
-      level: entry.level,
-      source: entry.source || 'App',
-      message: entry.message,
-      details: entry.details,
-      stack: entry.stack,
-    };
+    const timestamp = entry.timestamp || new Date().toLocaleString('ja-JP', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    const source = entry.source || 'App';
 
-    logsMemoryCache = [newLog, ...logsMemoryCache].slice(0, MAX_LOGS);
+    // 同じ種類・出どころ・内容の記録が、もうあれば、新しく足さずに、回数を増やして先頭へ出す
+    // (同じエラーが続いても、100件の枠が埋まって、ほかの記録が押し出されないようにする)
+    const sameIndex = logsMemoryCache.findIndex(
+      (l) => l.level === entry.level && l.source === source && l.message === entry.message
+    );
+    let newLog: SystemLogEntry;
+    if (sameIndex !== -1) {
+      const same = logsMemoryCache[sameIndex];
+      newLog = {
+        ...same,
+        timestamp,
+        details: entry.details ?? same.details,
+        stack: entry.stack ?? same.stack,
+        count: (same.count ?? 1) + 1,
+      };
+      logsMemoryCache = [newLog, ...logsMemoryCache.filter((_, i) => i !== sameIndex)];
+    } else {
+      newLog = {
+        id: `log_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        timestamp,
+        level: entry.level,
+        source,
+        message: entry.message,
+        details: entry.details,
+        stack: entry.stack,
+      };
+      logsMemoryCache = [newLog, ...logsMemoryCache].slice(0, MAX_LOGS);
+    }
     saveLogsToStorage(logsMemoryCache);
 
     // Notify active listeners
