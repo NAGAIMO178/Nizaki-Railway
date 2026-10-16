@@ -9,6 +9,7 @@ import { formatDiaTime } from '../utils/diaTimetable';
 import { crowdInfo } from '../utils/crowd';
 import { loadRouteStations, searchRoutes, RouteResult } from '../utils/routeSearch';
 import { planArrival, ArrivalPlan, ArrivalOption } from '../utils/arrivalPlan';
+import { isLaunched } from '../utils/launch';
 import { ArrivalTime, ArrivalDay, defaultArrival, arrivalClock, arrivalLabel } from '../utils/arrivalInput';
 import {
   RouteOptions,
@@ -85,7 +86,9 @@ export const RouteSearch: React.FC = () => {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [detailIdx, setDetailIdx] = useState<number | null>(null);
   // 到着の時刻から逆算する探し方
-  const [basis, setBasis] = useState<'dep' | 'arr'>('dep');
+  const [basisChoice, setBasis] = useState<'dep' | 'arr'>('dep');
+  // 到着から逆算する探し方は、公開後だけ(公開前は、いつも「出発」)
+  const basis = isLaunched() ? basisChoice : 'dep';
   const [arrival, setArrival] = useState<ArrivalTime>(() => defaultArrival(new Date()));
   const [arrivalSheetOpen, setArrivalSheetOpen] = useState(false);
   const [plan, setPlan] = useState<ArrivalPlan | null>(null);
@@ -344,28 +347,30 @@ export const RouteSearch: React.FC = () => {
           </button>
         )}
 
-        <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[#E6E2EE]" role="radiogroup" aria-label="時刻の基準">
-          {([
-            ['dep', '出発'],
-            ['arr', '到着'],
-          ] as const).map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              role="radio"
-              aria-checked={basis === id}
-              onClick={() => {
-                setBasis(id);
-                setMessage(null);
-              }}
-              className={`py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                basis === id ? 'bg-white text-[#5B21B6] shadow-xs' : 'text-[#6B6380] hover:text-[#221C35]'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        {isLaunched() && (
+          <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[#E6E2EE]" role="radiogroup" aria-label="時刻の基準">
+            {([
+              ['dep', '出発'],
+              ['arr', '到着'],
+            ] as const).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                role="radio"
+                aria-checked={basis === id}
+                onClick={() => {
+                  setBasis(id);
+                  setMessage(null);
+                }}
+                className={`py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  basis === id ? 'bg-white text-[#5B21B6] shadow-xs' : 'text-[#6B6380] hover:text-[#221C35]'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {basis === 'dep' ? (
           <div className="flex items-center gap-2">

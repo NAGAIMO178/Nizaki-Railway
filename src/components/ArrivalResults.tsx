@@ -2,6 +2,7 @@ import React from 'react';
 import { ChevronRight } from 'lucide-react';
 import { ArrivalOption, ArrivalPlan } from '../utils/arrivalPlan';
 import { formatDiaTime } from '../utils/diaTimetable';
+import { isLaunched } from '../utils/launch';
 
 const DAY = 86400;
 // 余裕が、この分数より少ないときは、黄色の札にする
@@ -56,6 +57,8 @@ const TimeRange: React.FC<{ option: ArrivalOption; className: string }> = ({ opt
 );
 
 export const ArrivalResults: React.FC<ArrivalResultsProps> = ({ plan, deadlineText, lineColor, onOpen }) => {
+  if (!isLaunched()) return null;
+
   if (plan.options.length === 0) {
     return (
       <div className="bg-white border border-[#E6E2EE] rounded-2xl p-5 text-center text-sm font-bold text-[#6B6380]">
