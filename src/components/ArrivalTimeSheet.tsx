@@ -50,8 +50,8 @@ export const ArrivalTimeSheet: React.FC<ArrivalTimeSheetProps> = ({ isOpen, valu
   const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end animate-fadeIn" role="dialog" aria-modal="true" aria-label="到着の日時">
-      <button type="button" onClick={onClose} className="flex-1 bg-slate-900/40 cursor-default" aria-label="閉じる" />
+    <div className="fixed inset-0 z-50 flex flex-col justify-end bg-slate-900/40 animate-fadeIn" role="dialog" aria-modal="true" aria-label="到着の日時">
+      <button type="button" onClick={onClose} className="flex-1 cursor-default" aria-label="閉じる" />
       <div style={drag.style} className="w-full max-w-md mx-auto bg-white rounded-t-3xl shadow-2xl">
         <div {...drag.handleProps} className="shrink-0 px-4 pt-3 pb-2 cursor-grab active:cursor-grabbing select-none">
           <div className="mx-auto h-1.5 w-12 rounded-full bg-[#D1C9E3]" />

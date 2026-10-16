@@ -82,8 +82,8 @@ export const RouteFilterSheet: React.FC<RouteFilterSheetProps> = ({ isOpen, opti
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end animate-fadeIn" role="dialog" aria-modal="true" aria-label="絞り込み">
-      <button type="button" onClick={onClose} className="flex-1 bg-slate-900/40 cursor-default" aria-label="絞り込みを閉じる" />
+    <div className="fixed inset-0 z-50 flex flex-col justify-end bg-slate-900/40 animate-fadeIn" role="dialog" aria-modal="true" aria-label="絞り込み">
+      <button type="button" onClick={onClose} className="flex-1 cursor-default" aria-label="絞り込みを閉じる" />
       <div style={drag.style} className="w-full max-w-md mx-auto bg-white rounded-t-3xl shadow-2xl max-h-[85vh] flex flex-col">
         {/* つまみと見出し: ここを下に引くと、閉じる */}
         <div {...drag.handleProps} className="shrink-0 px-4 pt-3 pb-2 cursor-grab active:cursor-grabbing select-none">
