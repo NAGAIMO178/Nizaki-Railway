@@ -7,6 +7,10 @@ vi.mock('../src/utils/accountApi', () => ({ callGas: vi.fn() }));
 import { callGas } from '../src/utils/accountApi';
 import {
   disruptionManager,
+  COMMON_REASON_CATEGORIES,
+  COMMON_REASONS,
+  COMMON_SECTIONS,
+  FORECAST_PRESETS,
   generateDisruptionText,
   getAffectedStationRange,
   getDurationPresetsForReason,
@@ -437,5 +441,33 @@ describe('理由と期限の補助', () => {
       expect(o.hoursFromNow).toBeGreaterThanOrEqual(1);
     }
     expect(opts[0].date.getTime() - base.getTime()).toBe(3600_000);
+  });
+});
+
+describe('選択肢と定型文のデータ', () => {
+  it('理由は、種類ごとの一覧をまとめた一覧と合い、復旧見込みの候補を持つ', () => {
+    expect(COMMON_REASONS).toEqual(COMMON_REASON_CATEGORIES.flatMap((c) => c.reasons));
+    expect(COMMON_REASONS.length).toBeGreaterThan(0);
+    for (const c of COMMON_REASON_CATEGORIES) {
+      expect(c.reasons.length).toBeGreaterThan(0);
+      expect(c.durationPresets.length).toBeGreaterThan(0);
+      expect(getDurationPresetsForReason(c.reasons[0])).toBe(c.durationPresets);
+    }
+  });
+
+  it('区間の候補は、先頭が「全線」で、4路線ぶんそろっている', () => {
+    for (const id of ['kanzaki', 'kanzaki_kosoku', 'saichi', 'tsuchiura']) {
+      expect(COMMON_SECTIONS[id][0]).toBe('全線');
+    }
+  });
+
+  it('予報の定型は、種類が重ならず、見出しと説明に路線名が入る', () => {
+    const cats = FORECAST_PRESETS.map((p) => p.category);
+    expect(new Set(cats).size).toBe(cats.length);
+    for (const p of FORECAST_PRESETS) {
+      expect(p.defaultHoursAhead).toBeGreaterThan(0);
+      expect(p.generateHeadline('神埼線')).toContain('神埼線');
+      expect(p.generateDescription('神埼線', '本日夕方', '全線')).toContain('神埼線');
+    }
   });
 });
