@@ -433,7 +433,8 @@ describe('理由と期限の補助', () => {
   });
 
   it('期限の候補は、8つで、基準の時刻より先になる', () => {
-    const base = new Date('2026-11-02T22:30:00+09:00');
+    // 端末の時刻帯で動く計算なので、時刻帯に左右されないよう、端末の時刻で組み立てる
+    const base = new Date(2026, 10, 2, 22, 30);
     const opts = getExpiryOptions(base);
     expect(opts).toHaveLength(8);
     for (const o of opts) {
@@ -441,6 +442,11 @@ describe('理由と期限の補助', () => {
       expect(o.hoursFromNow).toBeGreaterThanOrEqual(1);
     }
     expect(opts[0].date.getTime() - base.getTime()).toBe(3600_000);
+    expect(opts.slice(0, 4).map((o) => o.hoursFromNow)).toEqual([1, 2, 3, 6]);
+    // 22:30 から見て、「本日終電」は 24:00(1.5 時間後→四捨五入で 2)、「翌朝 06:00」は 7.5 時間後(→8)
+    expect(opts[4].label).toContain('本日 24:00');
+    expect(opts[4].hoursFromNow).toBe(2);
+    expect(opts[5].hoursFromNow).toBe(8);
   });
 });
 
