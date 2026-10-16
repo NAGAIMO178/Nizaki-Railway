@@ -206,6 +206,8 @@ interface Ctx {
   maxLegs: number;
   allowPaid: boolean;
   realtime: boolean;
+  // 遅れ・運転見合わせを、いっさい見ない(「明日」の探索。運行指令は「いま」の状態で、明日のものではないため)
+  noDelay: boolean;
   dayStartMs: number;
   crowd: boolean; // 混雑のデータを使う(公開後で、読み込めたとき)
   delayCache: Map<string, { min: number; suspended: boolean }>;
@@ -246,6 +248,7 @@ const lowerBound = (list: Dep[], sec: number): number => {
 
 // その列車が、その駅を出るときの遅れ(運行指令があれば優先。無ければ自動の遅れ)。リアルタイム検索でなくても、遅れを調べる
 const rawDelay = (ctx: Ctx, net: Net, line: string, trainIdx: number, station: string, schedDep: number) => {
+  if (ctx.noDelay) return { min: 0, suspended: false };
   const key = `${line}|${trainIdx}|${station}`;
   const hit = ctx.delayCache.get(key);
   if (hit) return hit;
@@ -536,19 +539,20 @@ export const serviceDayStartMs = (readySec: number, now: Date = new Date()): num
   return d.getTime() - (readySec >= DAY ? DAY * 1000 : 0);
 };
 
-// 出発の時刻(0時からの秒数。0〜4時は、前日のダイヤの続きとして、24時台以降で渡す)以降の、早く着く順に最大 count 件
-export const searchRoutes = async (
+// 探索の準備: 駅名の確認・経由駅の整理・混雑データの読み込み・探索の設定。探せない入力(駅が無い・同じ駅)は null
+// dayOverride: ダイヤの日の始まり(ms)と、遅れを見ないか、を呼び出し側が決めるとき(省略すると、いまの日・遅れを見る)
+const prepare = async (
   from: string,
   to: string,
   readySec: number,
-  options: RouteOptions = DEFAULT_ROUTE_OPTIONS,
-  count = 3,
-  viaStations: string[] = []
-): Promise<RouteResult[]> => {
+  options: RouteOptions,
+  viaStations: string[],
+  dayOverride?: { dayStartMs: number; noDelay: boolean }
+): Promise<{ net: Net; a: string; b: string; ctx: Ctx } | null> => {
   const net = await getNet();
   const a = normalizeStationName(from);
   const b = normalizeStationName(to);
-  if (!net.stationLines.has(a) || !net.stationLines.has(b) || a === b) return [];
+  if (!net.stationLines.has(a) || !net.stationLines.has(b) || a === b) return null;
 
   // 経由駅: 駅の一覧にある駅だけ。出発駅・到着駅と同じ駅、重複は、指定されなかったものとして扱う
   const vias: string[] = [];
@@ -570,17 +574,34 @@ export const searchRoutes = async (
     }
   }
 
+  const noDelay = dayOverride?.noDelay ?? false;
   const ctx: Ctx = {
     transferSec: options.relaxedTransfer ? RELAXED_TRANSFER_SEC : TRANSFER_SEC,
     maxLegs: Math.min(vias.length > 0 ? MAX_LEGS_WITH_VIAS : MAX_LEGS, options.maxTransfers + 1),
     allowPaid: options.allowPaid,
-    realtime: options.realtime,
-    dayStartMs: serviceDayStartMs(readySec),
+    realtime: options.realtime && !noDelay,
+    noDelay,
+    dayStartMs: dayOverride?.dayStartMs ?? serviceDayStartMs(readySec),
     crowd,
     delayCache: new Map(),
     vias,
     viaBits,
   };
+  return { net, a, b, ctx };
+};
+
+// 出発の時刻(0時からの秒数。0〜4時は、前日のダイヤの続きとして、24時台以降で渡す)以降の、早く着く順に最大 count 件
+export const searchRoutes = async (
+  from: string,
+  to: string,
+  readySec: number,
+  options: RouteOptions = DEFAULT_ROUTE_OPTIONS,
+  count = 3,
+  viaStations: string[] = []
+): Promise<RouteResult[]> => {
+  const prepared = await prepare(from, to, readySec, options, viaStations);
+  if (!prepared) return [];
+  const { net, a, b, ctx } = prepared;
 
   // 出発の時刻から、早く着く順に、n 件ぶん探す(同じ出発・到着は、1件にまとめる)
   const collect = (c: Ctx, n: number): RouteResult[] => {
@@ -616,7 +637,7 @@ export const searchRoutes = async (
   }
 
   // 空いている順のときは、早く着く便を多めに探して、そのなかから、混雑の低い順に選ぶ
-  const byCrowd = crowd && options.sortBy === 'crowd';
+  const byCrowd = ctx.crowd && options.sortBy === 'crowd';
   const results = collect(ctx, byCrowd ? CROWD_CANDIDATES : count);
   if (!byCrowd || results.length === 0) return results.slice(0, count);
   // いちばん早く着く便から、CROWD_WINDOW_SEC 以内に着くものだけを、混雑の点数の低い順(同じなら、早く着く順)に並べる
@@ -625,4 +646,35 @@ export const searchRoutes = async (
     .filter((r) => r.arrSec <= earliest + CROWD_WINDOW_SEC)
     .sort((x, y) => (x.crowdScore ?? 99) - (y.crowdScore ?? 99) || x.arrSec - y.arrSec)
     .slice(0, count);
+};
+
+// 到着の締め切りに間に合う乗り方を、出発の早い順に、すべて集める(到着時刻からの逆算に使う)
+//  - fromSec 以降の出発を、1分ずつ進めて探し、到着が untilArrSec を超えたら、止める(最大 maxCandidates 件)
+//  - serviceDayStartMs: 使うダイヤの日の始まり(ms)。withDelays が false のときは、遅れ・運転見合わせを、いっさい見ない(時刻表どおり)
+export const searchRoutesInWindow = async (p: {
+  from: string;
+  to: string;
+  fromSec: number;
+  untilArrSec: number;
+  serviceDayStartMs: number;
+  withDelays: boolean;
+  options?: RouteOptions;
+  viaStations?: string[];
+  maxCandidates?: number;
+}): Promise<RouteResult[]> => {
+  const prepared = await prepare(p.from, p.to, p.fromSec, p.options ?? DEFAULT_ROUTE_OPTIONS, p.viaStations ?? [], {
+    dayStartMs: p.serviceDayStartMs,
+    noDelay: !p.withDelays,
+  });
+  if (!prepared) return [];
+  const { net, a, b, ctx } = prepared;
+  const out: RouteResult[] = [];
+  let ready = p.fromSec;
+  for (let i = 0; i < (p.maxCandidates ?? 60) && ready < 2 * DAY; i++) {
+    const r = searchOnce(net, ctx, a, b, ready);
+    if (!r || r.arrSec > p.untilArrSec) break;
+    if (!out.some((x) => x.depSec === r.depSec && x.arrSec === r.arrSec)) out.push(r);
+    ready = r.depSec + 60;
+  }
+  return out;
 };
