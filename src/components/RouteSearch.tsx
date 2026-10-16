@@ -1,11 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowUpDown, Search, RefreshCw, SlidersHorizontal, ChevronRight, Plus, X } from 'lucide-react';
+import { ArrowUpDown, Search, RefreshCw, SlidersHorizontal, ChevronRight, ChevronDown, Plus, X } from 'lucide-react';
 import { REGISTERABLE_LINES } from './MyStationRegisterCard';
 import { RouteFilterSheet } from './RouteFilterSheet';
 import { RouteDetail } from './RouteDetail';
+import { ArrivalTimeSheet } from './ArrivalTimeSheet';
+import { ArrivalResults } from './ArrivalResults';
 import { formatDiaTime } from '../utils/diaTimetable';
 import { crowdInfo } from '../utils/crowd';
 import { loadRouteStations, searchRoutes, RouteResult } from '../utils/routeSearch';
+import { planArrival, ArrivalPlan, ArrivalOption } from '../utils/arrivalPlan';
+import { ArrivalTime, ArrivalDay, defaultArrival, arrivalClock, arrivalLabel } from '../utils/arrivalInput';
 import {
   RouteOptions,
   loadRouteOptions,
@@ -36,6 +40,14 @@ const toServiceSec = (text: string): number | null => {
 const dayLabelOf = (d: Date = new Date()): string => `${d.getMonth() + 1}月${d.getDate()}日(${'日月火水木金土'[d.getDay()]})`;
 
 const timeLabel = (sec: number): string => formatDiaTime(sec);
+
+// 出発・到着・経由の駅の組み合わせが、探せる形か。だめなら、その理由
+const checkStations = (fromV: string, toV: string, chosen: string[]): string | null => {
+  if (fromV === toV) return '出発駅と到着駅が同じです。';
+  if (chosen.some((v) => v === fromV || v === toV)) return '経由駅に、出発駅・到着駅と同じ駅は指定できません。';
+  if (new Set(chosen).size !== chosen.length) return '同じ駅を、経由駅に2回は指定できません。';
+  return null;
+};
 
 // 時刻表タブから別のタブへ移って戻ったときに、前回の検索を続きから見られるよう、アプリを開いているあいだは覚えておく
 interface Session {
@@ -72,6 +84,15 @@ export const RouteSearch: React.FC = () => {
   const [message, setMessage] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [detailIdx, setDetailIdx] = useState<number | null>(null);
+  // 到着の時刻から逆算する探し方
+  const [basis, setBasis] = useState<'dep' | 'arr'>('dep');
+  const [arrival, setArrival] = useState<ArrivalTime>(() => defaultArrival(new Date()));
+  const [arrivalSheetOpen, setArrivalSheetOpen] = useState(false);
+  const [plan, setPlan] = useState<ArrivalPlan | null>(null);
+  const [planArrivalText, setPlanArrivalText] = useState('');
+  const [planDay, setPlanDay] = useState<ArrivalDay>('today');
+  const [planKey, setPlanKey] = useState(0);
+  const [arrDetail, setArrDetail] = useState<ArrivalOption | null>(null);
   const optionsChanged = useRef(false);
 
   useEffect(() => {
@@ -97,20 +118,11 @@ export const RouteSearch: React.FC = () => {
   const runSearch = async (fromV: string, toV: string, timeV: string, optsV: RouteOptions, viasV: string[]) => {
     setMessage(null);
     setSearchError(false);
-    if (fromV === toV) {
-      setResults(null);
-      setMessage('出発駅と到着駅が同じです。');
-      return;
-    }
     const chosen = viasV.filter((v) => v !== '');
-    if (chosen.some((v) => v === fromV || v === toV)) {
+    const problem = checkStations(fromV, toV, chosen);
+    if (problem) {
       setResults(null);
-      setMessage('経由駅に、出発駅・到着駅と同じ駅は指定できません。');
-      return;
-    }
-    if (new Set(chosen).size !== chosen.length) {
-      setResults(null);
-      setMessage('同じ駅を、経由駅に2回は指定できません。');
+      setMessage(problem);
       return;
     }
     const sec = toServiceSec(timeV);
@@ -139,7 +151,36 @@ export const RouteSearch: React.FC = () => {
     }
   };
 
-  const handleSearch = () => runSearch(from, to, timeText, options, vias);
+  const runArrival = async (fromV: string, toV: string, arrV: ArrivalTime, optsV: RouteOptions, viasV: string[]) => {
+    setMessage(null);
+    setSearchError(false);
+    const chosen = viasV.filter((v) => v !== '');
+    const problem = checkStations(fromV, toV, chosen);
+    if (problem) {
+      setPlan(null);
+      setMessage(problem);
+      return;
+    }
+    setSearching(true);
+    try {
+      const found = await planArrival({ from: fromV, to: toV, day: arrV.day, arriveBy: arrivalClock(arrV), vias: chosen, options: optsV });
+      setPlan(found);
+      setPlanArrivalText(arrivalClock(arrV));
+      setPlanDay(arrV.day);
+      setSearchedAt(nowText());
+      setUsedRealtime(found.usedDelays);
+      setPlanKey((n) => n + 1);
+      setArrDetail(null);
+      saveLastQuery(fromV, toV, chosen);
+    } catch {
+      setPlan(null);
+      setSearchError(true);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const handleSearch = () => (basis === 'arr' ? runArrival(from, to, arrival, options, vias) : runSearch(from, to, timeText, options, vias));
 
   const handleOptionsChange = (next: RouteOptions) => {
     setOptions(next);
@@ -152,7 +193,9 @@ export const RouteSearch: React.FC = () => {
     // 条件を変えたときは、結果が出ていれば、そのまま探し直す
     if (optionsChanged.current) {
       optionsChanged.current = false;
-      if (results !== null) runSearch(from, to, timeText, options, vias);
+      if (basis === 'arr') {
+        if (plan !== null) runArrival(from, to, arrival, options, vias);
+      } else if (results !== null) runSearch(from, to, timeText, options, vias);
     }
   };
 
@@ -160,8 +203,10 @@ export const RouteSearch: React.FC = () => {
     setFrom(to);
     setTo(from);
     setResults(null);
+    setPlan(null);
     setMessage(null);
     setDetailIdx(null);
+    setArrDetail(null);
   };
 
   if (stationsError) {
@@ -182,8 +227,26 @@ export const RouteSearch: React.FC = () => {
 
   if (!stations) return <div className="text-center text-xs text-[#857D99] py-10">読み込み中…</div>;
 
+  // 到着から逆算した結果の詳細
+  if (basis === 'arr' && arrDetail) {
+    const day = new Date();
+    if (planDay === 'tomorrow') day.setDate(day.getDate() + 1);
+    return (
+      <RouteDetail
+        result={arrDetail.route}
+        from={from}
+        to={to}
+        vias={vias.filter((v) => v !== '')}
+        dayLabel={dayLabelOf(day)}
+        searchedAt={searchedAt}
+        realtime={usedRealtime}
+        onBack={() => setArrDetail(null)}
+      />
+    );
+  }
+
   // 詳細
-  if (results && detailIdx !== null && results[detailIdx]) {
+  if (basis === 'dep' && results && detailIdx !== null && results[detailIdx]) {
     return (
       <RouteDetail
         result={results[detailIdx]}
@@ -281,23 +344,61 @@ export const RouteSearch: React.FC = () => {
           </button>
         )}
 
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-bold text-[#6B6380] shrink-0">出発の時刻</span>
-          <input
-            type="time"
-            value={timeText}
-            onChange={(e) => setTimeText(e.target.value)}
-            className="flex-1 min-w-0 border border-[#E6E2EE] rounded-lg px-2 py-1.5 text-sm font-bold text-[#221C35]"
-            aria-label="出発の時刻"
-          />
+        <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[#E6E2EE]" role="radiogroup" aria-label="時刻の基準">
+          {([
+            ['dep', '出発'],
+            ['arr', '到着'],
+          ] as const).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              role="radio"
+              aria-checked={basis === id}
+              onClick={() => {
+                setBasis(id);
+                setMessage(null);
+              }}
+              className={`py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                basis === id ? 'bg-white text-[#5B21B6] shadow-xs' : 'text-[#6B6380] hover:text-[#221C35]'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {basis === 'dep' ? (
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-[#6B6380] shrink-0">出発の時刻</span>
+            <input
+              type="time"
+              value={timeText}
+              onChange={(e) => setTimeText(e.target.value)}
+              className="flex-1 min-w-0 border border-[#E6E2EE] rounded-lg px-2 py-1.5 text-sm font-bold text-[#221C35]"
+              aria-label="出発の時刻"
+            />
+            <button
+              type="button"
+              onClick={() => setTimeText(nowText())}
+              className="shrink-0 px-2.5 py-1.5 rounded-lg bg-[#F4F3F8] text-[11px] font-bold text-[#5B21B6] hover:bg-[#EFE8FA] cursor-pointer"
+            >
+              いま
+            </button>
+          </div>
+        ) : (
           <button
             type="button"
-            onClick={() => setTimeText(nowText())}
-            className="shrink-0 px-2.5 py-1.5 rounded-lg bg-[#F4F3F8] text-[11px] font-bold text-[#5B21B6] hover:bg-[#EFE8FA] cursor-pointer"
+            onClick={() => setArrivalSheetOpen(true)}
+            className="w-full border border-[#E6E2EE] rounded-xl px-3 py-2.5 flex items-center justify-between cursor-pointer bg-white"
+            aria-label="到着の日時を選ぶ"
           >
-            いま
+            <span className="flex items-center gap-2">
+              <span className="text-[11px] font-black text-[#5B21B6] bg-[#EDE9FE] rounded px-1.5 py-0.5">到着</span>
+              <span className="font-mono text-base font-black text-[#221C35]">{arrivalLabel(arrival)}</span>
+            </span>
+            <ChevronDown className="w-4 h-4 text-[#857D99]" />
           </button>
-        </div>
+        )}
 
         <div className="flex items-center gap-2">
           <button
@@ -333,7 +434,7 @@ export const RouteSearch: React.FC = () => {
         </div>
       )}
 
-      {results && (
+      {basis === 'dep' && results && (
         <div key={resultKey} className="space-y-3 animate-fadeIn">
           <div className="flex items-center justify-between gap-2 px-1 text-[11px] text-[#6B6380]">
             <span className="truncate">
@@ -441,6 +542,20 @@ export const RouteSearch: React.FC = () => {
           )}
         </div>
       )}
+
+      {basis === 'arr' && plan && (
+        <ArrivalResults key={planKey} plan={plan} deadlineText={planArrivalText} lineColor={lineColor} onOpen={setArrDetail} />
+      )}
+
+      <ArrivalTimeSheet
+        isOpen={arrivalSheetOpen}
+        value={arrival}
+        onApply={(v) => {
+          setArrival(v);
+          setArrivalSheetOpen(false);
+        }}
+        onClose={() => setArrivalSheetOpen(false)}
+      />
 
       <RouteFilterSheet isOpen={sheetOpen} options={options} onChange={handleOptionsChange} onClose={closeSheet} />
     </div>
