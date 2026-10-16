@@ -103,8 +103,8 @@ export const planArrival = async (q: ArrivalQuery): Promise<ArrivalPlan> => {
   const nowSec = Math.floor((now.getTime() - nowServiceStart.getTime()) / 1000);
   const usedDelays = sameDay && options.realtime;
 
-  // 今日の締め切りが、もう過ぎている
-  if (sameDay && deadlineSec <= nowSec) return EMPTY(deadlineSec, usedDelays);
+  // 締め切りが、もう過ぎている(ダイヤの日が違っても、今日の未明を過ぎてから「今日 02:00」を選んだ場合などを含む)
+  if (serviceStart.getTime() + deadlineSec * 1000 <= now.getTime()) return EMPTY(deadlineSec, usedDelays);
 
   const earliestStart = sameDay ? Math.max(0, nowSec) : 0;
   const search = (fromSec: number, maxCandidates: number) =>
