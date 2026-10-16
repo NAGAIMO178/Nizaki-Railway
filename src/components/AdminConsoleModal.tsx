@@ -2414,7 +2414,10 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                           }`}
                         >
                           <div className="flex items-center justify-between text-[10px] text-slate-400">
-                            <span className="font-bold text-slate-300">[{log.source}]</span>
+                            <span className="font-bold text-slate-300">
+                              [{log.source}]
+                              {(log.count ?? 0) > 1 && <span className="ml-1.5 text-amber-300">×{log.count}</span>}
+                            </span>
                             <span>{new Date(log.timestamp).toLocaleTimeString('ja-JP')}</span>
                           </div>
                           <p className="font-sans leading-relaxed text-[11px] text-slate-100">{log.message}</p>

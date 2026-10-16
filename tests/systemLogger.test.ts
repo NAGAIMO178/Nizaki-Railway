@@ -63,6 +63,74 @@ describe('記録の追加', () => {
   });
 });
 
+describe('同じ内容のまとめ', () => {
+  it('同じ種類・出どころ・内容は、1件にまとめて、回数を持たせる', async () => {
+    const log = await load();
+    log.error('通信に失敗', 'Sync');
+    expect(log.getLogs()[0].count).toBeUndefined();
+    log.error('通信に失敗', 'Sync');
+    log.error('通信に失敗', 'Sync');
+    const logs = log.getLogs();
+    expect(logs).toHaveLength(1);
+    expect(logs[0].count).toBe(3);
+  });
+
+  it('種類・出どころ・内容のどれかが違えば、別の記録', async () => {
+    const log = await load();
+    log.error('同じ文', 'A');
+    log.error('同じ文', 'B');
+    log.warn('同じ文', 'A');
+    log.error('別の文', 'A');
+    expect(log.getLogs()).toHaveLength(4);
+  });
+
+  it('まとめた記録は先頭に出て、時刻・詳細・スタックは最新になり、番号(id)は変わらない', async () => {
+    const log = await load();
+    const first = log.addLog({ level: 'error', source: 'S', message: 'x', details: '古い詳細', stack: '古いスタック', timestamp: 't1' })!;
+    log.error('y', 'S');
+    log.addLog({ level: 'error', source: 'S', message: 'x', details: '新しい詳細', stack: '新しいスタック', timestamp: 't2' });
+    const [top, second] = log.getLogs();
+    expect(top).toMatchObject({ id: first.id, message: 'x', count: 2, timestamp: 't2', details: '新しい詳細', stack: '新しいスタック' });
+    expect(second.message).toBe('y');
+  });
+
+  it('新しい回に詳細が無ければ、前の詳細を残す', async () => {
+    const log = await load();
+    log.addLog({ level: 'error', source: 'S', message: 'x', details: '詳細', stack: 'スタック' });
+    log.addLog({ level: 'error', source: 'S', message: 'x' });
+    expect(log.getLogs()[0]).toMatchObject({ details: '詳細', stack: 'スタック', count: 2 });
+  });
+
+  it('同じエラーが何百回続いても、ほかの記録が押し出されない', async () => {
+    const log = await load();
+    for (let n = 0; n < 50; n++) log.info(`別の記録${n}`);
+    for (let n = 0; n < 500; n++) log.error('くり返しのエラー', 'Loop');
+    const logs = log.getLogs();
+    expect(logs).toHaveLength(51);
+    expect(logs[0]).toMatchObject({ message: 'くり返しのエラー', count: 500 });
+    expect(logs.at(-1)?.message).toBe('別の記録0');
+  });
+
+  it('回数は保存され、次に開いたときも続く', async () => {
+    const a = await load();
+    a.error('x');
+    a.error('x');
+    const b = await load();
+    b.error('x');
+    expect(b.getLogs()).toHaveLength(1);
+    expect(b.getLogs()[0].count).toBe(3);
+  });
+
+  it('まとめたときも、通知先に届く', async () => {
+    const log = await load();
+    log.error('x');
+    const seen: (number | undefined)[] = [];
+    log.subscribe((logs) => seen.push(logs[0]?.count));
+    log.error('x');
+    expect(seen).toEqual([undefined, 2]);
+  });
+});
+
 describe('保存データ', () => {
   it('次に開いたときも、残っている', async () => {
     const a = await load();
