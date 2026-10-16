@@ -401,17 +401,6 @@ export const RouteSearch: React.FC = () => {
                   {options.sortBy === 'safe' && !failConn && !tightConn && r.risk < 0.01 && (
                     <span className="font-bold text-emerald-700">遅れに強い</span>
                   )}
-                  {r.crowd && crowdInfo(r.crowd) && (
-                    <span className="inline-flex items-center gap-1">
-                      混雑
-                      <span
-                        className="text-[10px] font-black px-1.5 py-0.5 rounded border border-black/10 whitespace-nowrap"
-                        style={{ background: crowdInfo(r.crowd)!.color, color: crowdInfo(r.crowd)!.text }}
-                      >
-                        {crowdInfo(r.crowd)!.short}
-                      </span>
-                    </span>
-                  )}
                 </div>
 
                 <div className="border-t border-[#EFEDF5] px-3.5 py-2.5 flex items-center gap-2">
