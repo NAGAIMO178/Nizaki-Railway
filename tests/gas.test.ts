@@ -381,17 +381,10 @@ describe('ポイントの水増しを防ぐ(予約の登録・取消)', () => {
     expect(balance()).toBe(50);
   });
 
-  it('巨額の申告でも、ポイントの計算は10万円まで(予約の記録は、そのまま)', () => {
-    create('EQ-1', 1000000);
-    expect(balance()).toBe(3000);
-    expect(grid[1][HEADERS.indexOf('合計金額')]).toBe(1000000);
-  });
-
-  it('10万円を超える申告は、日をまたいでも、10万円までの分しか付かない', () => {
-    create('EQ-1', 90000); // 2700pt
-    gas.nowText = () => '2026/11/03 12:00:00'; // 翌日(1日の上限に、かからない)
-    create('EQ-1', 1000000); // 10万円までの、増えた10000円の3% = 300pt
-    expect(balance()).toBe(3000);
+  it('巨額の申告は、予約ごと断る(予約台帳にも、ポイントにも、触れない)', () => {
+    expect(create('EQ-1', 1000000)).toMatchObject({ status: 'error', code: 'order_limit' });
+    expect(grid.length).toBe(1);
+    expect(rows.length).toBe(2);
   });
 
   it('1日に予約で付くポイントは、3000ptまで(予約をくり返しても、それ以上は付かない)', () => {
@@ -542,5 +535,92 @@ describe('管理トークン(verifyAdminToken・setDisruptions)', () => {
     const out = gas.doPost({ postData: { contents: JSON.stringify({ action: 'verifyAdminToken', adminToken: KEY }) } });
     expect(out).toEqual({ status: 'success' });
     expect(saved).toEqual([]);
+  });
+});
+
+// ---- 1回の注文の上限(合計5万円・1商品9個・合計20個) ----
+describe('注文の上限(予約の登録・デリバリーの追加)', () => {
+  const HEADERS = ['予約日時', '予約番号', 'LINE_USER_ID', '列車名', '号車', '座席番号', '席種', '乗車駅', '降車駅', '合計金額', 'ステータス', '会員ID', '予約日', '出発時刻', '到着時刻'];
+  let grid: unknown[][];
+
+  beforeEach(() => {
+    grid = [[...HEADERS]];
+    const sheet = {
+      getDataRange: () => ({ getValues: () => grid.map((r) => [...r]) }),
+      appendRow: (r: unknown[]) => void grid.push([...r]),
+      getLastRow: () => grid.length,
+      getLastColumn: () => grid[0].length,
+      getRange: (row: number, col: number) => ({
+        getValues: () => [grid[row - 1].slice(col - 1, col)],
+        setValue: (v: unknown) => void (grid[row - 1][col - 1] = v),
+        setValues: (vs: unknown[][]) => vs.forEach((r, i) => r.forEach((v, j) => void (grid[row - 1 + i][col - 1 + j] = v))),
+        setNumberFormat: () => undefined,
+      }),
+    };
+    gas.verifySessionToken = () => 'M1';
+    gas.findMemberById = () => ({ memberId: 'M1', lineUserId: '' });
+    gas.getOrCreateReservationsSheet = () => sheet;
+    put('welcome', 'welcome', 0);
+  });
+
+  const base = { trainName: '特急あやみ 1号', carNo: 1, seatNo: '1A', seatType: '指定席', boardingStation: '東京', destinationStation: '大宮', reservedDate: '2099-01-01', departureTime: '10:00', arrivalTime: '11:00' };
+  const send = (o: Record<string, unknown>, award = true) => gas.handleCreateReservation('t', { orderId: 'EQ-1', ...base, ...o }, award);
+  const item = (quantity: number, price = 800, name = '駅弁') => ({ name, quantity, price });
+  const refused = (r: { status: string; code?: string }) => expect(r).toMatchObject({ status: 'error', code: 'order_limit' });
+
+  it('ふつうの注文(特急券と、駅弁数個)は、通る', () => {
+    expect(send({ totalPrice: 2400 + 2 * 800 + 500, items: [item(2), item(1, 500, 'お茶')], itemDiscount: 0, pointsUsed: 0 }).status).toBe('success');
+    expect(grid.length).toBe(2);
+  });
+
+  it('合計5万円までは通り、1円でも超えたら、断る(N-POINTで払った分も含めて数える)', () => {
+    expect(send({ totalPrice: 50000, items: [] }).status).toBe('success');
+    refused(send({ orderId: 'EQ-2', totalPrice: 50001, items: [] }));
+    expect(send({ orderId: 'EQ-3', totalPrice: 30000, pointsUsed: 20000, items: [] }).status).toBe('success');
+    refused(send({ orderId: 'EQ-4', totalPrice: 30000, pointsUsed: 20001, items: [] }));
+  });
+
+  it('1商品は9個まで。10個は断る', () => {
+    expect(send({ totalPrice: 7200, items: [item(9)] }).status).toBe('success');
+    refused(send({ orderId: 'EQ-2', totalPrice: 8000, items: [item(10)] }));
+  });
+
+  it('1注文は合わせて20個まで。21個は断る', () => {
+    const ok = [item(9, 100, 'a'), item(9, 100, 'b'), item(2, 100, 'c')];
+    expect(send({ totalPrice: 2000, items: ok }).status).toBe('success');
+    refused(send({ orderId: 'EQ-2', totalPrice: 2100, items: [item(9, 100, 'a'), item(9, 100, 'b'), item(3, 100, 'c')] }));
+  });
+
+  it('おかしな数(マイナス・小数・数でない・巨大)は、断る', () => {
+    [-1, 1.5, 'abc', NaN, Infinity, 11101].forEach((q, i) => refused(send({ orderId: `EQ-${i + 10}`, totalPrice: 1000, items: [item(q as number)] })));
+    [-5, 'x', Infinity].forEach((t, i) => refused(send({ orderId: `EQ-${i + 30}`, totalPrice: t as number, items: [] })));
+    refused(send({ orderId: 'EQ-40', totalPrice: 1000, pointsUsed: -1, items: [] }));
+    refused(send({ orderId: 'EQ-41', totalPrice: 1000, itemDiscount: 99999999, items: [] }));
+    refused(send({ orderId: 'EQ-42', totalPrice: 1000, items: [item(1, 31637850)] }));
+    expect(grid.length).toBe(1);
+  });
+
+  it('断った注文は、予約台帳にも、ポイント台帳にも、触れない', () => {
+    refused(send({ totalPrice: 31637850, items: [item(11101, 2850)] }));
+    expect(grid.length).toBe(1);
+    expect(rows.length).toBe(2);
+  });
+
+  it('デリバリーを足す(同じ予約番号の更新)ときも、上限で断る。前の内容は、そのまま残る', () => {
+    expect(send({ totalPrice: 3000, items: [] }).status).toBe('success');
+    refused(send({ totalPrice: 31637850, items: [item(11101, 2850)] }));
+    expect(grid[1][HEADERS.indexOf('合計金額')]).toBe(3000);
+    expect(balance()).toBe(90);
+  });
+
+  it('公開前のアプリの呼び出し(明細なし・ポイントなし)にも、合計金額の上限が効く', () => {
+    expect(send({ totalPrice: 4000 }, false).status).toBe('success');
+    refused(send({ orderId: 'EQ-2', totalPrice: 31637850 }, false));
+  });
+
+  it('N-POINTを使う額も、1回5万円まで', () => {
+    put('welcome', 'welcome2', 200000);
+    expect(gas.handleSpendPoints('ok', 'EQ-1', 50000, 't')).toMatchObject({ status: 'success' });
+    expect(gas.handleSpendPoints('ok', 'EQ-2', 50001, 't')).toMatchObject({ status: 'error' });
   });
 });
