@@ -848,7 +848,7 @@ export default function App() {
               <ReservationTab
                 preset={reservationPreset}
                 activeOrder={activeOrder}
-                onOpenEDeliveryModal={() => setIsEDeliveryModalOpen(true)}
+                onOpenDeliveryCatalog={() => setReservationView('delivery')}
                 onConfirmOrder={handleConfirmOrder}
                 onCancelOrder={handleCancelOrder}
                 isLoggedIn={isLoggedIn}
@@ -959,6 +959,7 @@ export default function App() {
       <EDeliveryModal
         isOpen={isEDeliveryModalOpen}
         onClose={() => setIsEDeliveryModalOpen(false)}
+        onFinish={() => setReservationView('ticket')}
         equipItems={MOCK_EQUIP_ITEMS}
         onConfirmOrder={handleConfirmOrder}
         initialCart={selectedCart}

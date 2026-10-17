@@ -4,7 +4,6 @@ import {
   Calendar,
   Users,
   ChevronRight,
-  Sparkles,
   Armchair,
   CheckCircle2,
   UtensilsCrossed,
@@ -39,6 +38,7 @@ import {
 } from '../utils/diaTimetable';
 import { isLaunched } from '../utils/launch';
 import { calculateFare } from '../utils/fare';
+import { CompletionModal } from './CompletionModal';
 
 // 列車位置の特急の詳細から、予約画面を、その列車を選んだ状態で開くための指定(公開後だけ。key が変わるたびに適用する)
 export interface ReservationPreset {
@@ -52,7 +52,7 @@ export interface ReservationPreset {
 interface ReservationTabProps {
   preset?: ReservationPreset | null;
   activeOrder: ActiveOrder | null;
-  onOpenEDeliveryModal: () => void;
+  onOpenDeliveryCatalog: () => void;
   onConfirmOrder: (order: ActiveOrder) => void;
   onCancelOrder: () => void;
   isLoggedIn?: boolean;
@@ -67,7 +67,7 @@ interface ReservationTabProps {
 export const ReservationTab: React.FC<ReservationTabProps> = ({
   preset,
   activeOrder,
-  onOpenEDeliveryModal,
+  onOpenDeliveryCatalog,
   onConfirmOrder,
   onCancelOrder,
   isLoggedIn = false,
@@ -620,7 +620,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
                     現在、車内デリバリーのお弁当・ドリンクは選択されていません。
                   </p>
                   <button
-                    onClick={onOpenEDeliveryModal}
+                    onClick={onOpenDeliveryCatalog}
                     className="text-xs font-bold text-[#5B21B6] bg-[#EFE8FA] hover:bg-[#E0D5F5] border border-[#DDD6FE] px-3 py-1.5 rounded-lg transition-all inline-flex items-center gap-1 cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5" />
@@ -639,7 +639,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
             <div className="pt-2 border-t border-[#E6E2EE] flex items-center gap-2">
               {canUseDelivery(activeOrder.seatType) && (
               <button
-                onClick={onOpenEDeliveryModal}
+                onClick={onOpenDeliveryCatalog}
                 className="flex-1 py-2.5 px-3 rounded-xl bg-[#5B21B6] hover:bg-[#4C1D95] text-white text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
               >
                 <UtensilsCrossed className="w-3.5 h-3.5" />
@@ -1211,65 +1211,28 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          4. 特急券の予約完了モーダル
+          4. 特急券の予約完了
          ───────────────────────────────────────────────────────────── */}
       {showBookingSuccessModal && activeOrder && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-fadeIn">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-6 space-y-4 shadow-2xl border border-emerald-200 text-center animate-scaleUp relative">
-            <div className="w-16 h-16 rounded-full bg-emerald-100 border-2 border-emerald-500 text-emerald-600 flex items-center justify-center mx-auto shadow-xs">
-              <CheckCircle2 className="w-9 h-9" />
-            </div>
-
-            <div className="space-y-1">
-              <span className="text-[11px] font-extrabold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-                予約コード: {activeOrder.orderId}
-              </span>
-              <h3 className="text-lg font-black text-[#221C35] pt-1">
-                予約しました！
-              </h3>
-              <p className="text-xs text-[#6B6380] font-medium">
-                特急券の予約が正常に完了いたしました。
-              </p>
-            </div>
-
-            <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-2.5 text-center text-[11px] font-bold flex items-center justify-center gap-1.5">
-              <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
-              <span>
-                {(activeOrder?.pointsUsed ?? 0) > 0 && (activeOrder?.totalPrice ?? 1) <= 0
-                  ? `N-POINT ${(activeOrder?.pointsUsed ?? 0).toLocaleString()}pt でお支払いしました`
-                  : '特急予約により N-POINT を獲得しました！'}
-              </span>
-            </div>
-
-            <div className="bg-[#F9F8FD] border border-[#E0D7F3] rounded-2xl p-3.5 space-y-2 text-left text-xs">
-              <div className="flex justify-between items-center border-b border-[#E6E2EE] pb-2">
-                <span className="text-[#6B6380]">ご乗車列車:</span>
-                <span className="font-bold text-[#5B21B6]">{activeOrder.trainName} ({activeOrder.departureTime || '—'}発)</span>
-              </div>
-              <div className="flex justify-between items-center border-b border-[#E6E2EE] pb-2">
-                <span className="text-[#6B6380]">ご乗車区間:</span>
-                <span className="font-bold text-[#221C35]">{activeOrder.boardingStation || '—'} → {activeOrder.destinationStation || '—'}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-[#6B6380]">ご着席位置:</span>
-                <span className="font-extrabold text-[#221C35]">{activeOrder.carNo}号車 ({getSeatClassLabel(activeOrder.seatType)}) {activeOrder.seatNo}（窓側）</span>
-              </div>
-              {activeOrder.items && activeOrder.items.length > 0 && (
-                <div className="flex justify-between items-center border-t border-[#E6E2EE] pt-2">
-                  <span className="text-[#6B6380]">車内デリバリー:</span>
-                  <span className="font-bold text-emerald-700">{activeOrder.items[0].item.name}</span>
-                </div>
-              )}
-            </div>
-
-            <button
-              onClick={() => setShowBookingSuccessModal(false)}
-              className="w-full bg-[#5B21B6] hover:bg-[#4C1D95] text-white font-bold text-xs py-3 px-4 rounded-xl shadow-xs transition-all cursor-pointer"
-            >
-              予約内容を確認する
-            </button>
-          </div>
-        </div>
+        <CompletionModal
+          title="予約しました"
+          orderId={activeOrder.orderId}
+          buttonLabel="予約内容を確認する"
+          onClose={() => setShowBookingSuccessModal(false)}
+          rows={[
+            { label: '列車', value: `${activeOrder.trainName} ${activeOrder.departureTime || '—'}発` },
+            { label: '区間', value: `${activeOrder.boardingStation || '—'} → ${activeOrder.destinationStation || '—'}` },
+            { label: '座席', value: `${activeOrder.carNo}号車 ${getSeatClassLabel(activeOrder.seatType)} ${activeOrder.seatNo}` },
+            ...(activeOrder.items && activeOrder.items.length > 0
+              ? [{ label: '車内デリバリー', value: activeOrder.items.map((ci) => ci.item.name).join('、') }]
+              : []),
+            ...((activeOrder.pointsUsed ?? 0) > 0 && (activeOrder.totalPrice ?? 1) <= 0
+              ? [{ label: 'N-POINT', value: `−${(activeOrder.pointsUsed ?? 0).toLocaleString()}pt` }]
+              : (activeOrder.earnedPoints ?? 0) > 0
+                ? [{ label: 'N-POINT', value: `+${(activeOrder.earnedPoints ?? 0).toLocaleString()}pt` }]
+                : []),
+          ]}
+        />
       )}
     </div>
   );

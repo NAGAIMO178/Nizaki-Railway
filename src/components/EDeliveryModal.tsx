@@ -4,10 +4,12 @@ import { EquipItem, ActiveOrder } from '../types';
 import { getSeatClassLabel, canOrderItem, canUseDelivery, getItemRestrictionLabel } from '../utils/seatUtils';
 import { handleImageError } from '../utils/imageFallback';
 import { NPointPayRow } from './NPointPayRow';
+import { CompletionModal, CompletionRow } from './CompletionModal';
 
 interface EDeliveryModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onFinish?: () => void; // 注文できたあと、「注文内容を確認する」を押したとき
   equipItems: EquipItem[];
   onConfirmOrder: (order: ActiveOrder) => void;
   initialCart?: { [key: string]: number };
@@ -25,6 +27,7 @@ interface EDeliveryModalProps {
 export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
   isOpen,
   onClose,
+  onFinish,
   equipItems,
   onConfirmOrder,
   initialCart,
@@ -50,7 +53,8 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
     }
   }, [isOpen, initialCart, activeOrder]);
 
-  const [isSuccess, setIsSuccess] = useState(false);
+  // 注文できたあとに出す画面の内容(注文した時点のもの)
+  const [completed, setCompleted] = useState<{ orderId: string; rows: CompletionRow[] } | null>(null);
 
   // N-POINT で払うか / 使う額 / ポイントを引いているあいだ / うまくいかなかったときの理由
   const [usePoints, setUsePoints] = useState(false);
@@ -167,16 +171,32 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
       status: 'confirmed',
     };
 
-    setIsSuccess(true);
-    setTimeout(() => {
-      onConfirmOrder(newOrder);
-      setIsSuccess(false);
-      setCart({});
-      setAppliedDeliveryCoupon(null);
-      setUsePoints(false);
-      onClose();
-    }, 1500);
+    onConfirmOrder(newOrder);
+    setCompleted({
+      orderId: activeOrder.orderId,
+      rows: [
+        { label: '商品', value: selectedItems.map((ci) => `${ci.item.name} ×${ci.quantity}`).join('、') },
+        { label: 'お届け先', value: `${activeOrder.carNo}号車 ${activeOrder.seatNo}` },
+        { label: '合計', value: `¥${finalTotalPrice.toLocaleString()}` },
+        ...(pointsToUse > 0 ? [{ label: 'N-POINT', value: `−${pointsToUse.toLocaleString()}pt` }] : []),
+      ],
+    });
   };
+
+  const handleCloseCompleted = () => {
+    setCompleted(null);
+    setCart({});
+    setAppliedDeliveryCoupon(null);
+    setUsePoints(false);
+    onClose();
+    onFinish?.();
+  };
+
+  if (completed) {
+    return (
+      <CompletionModal title="注文しました" orderId={completed.orderId} rows={completed.rows} buttonLabel="注文内容を確認する" onClose={handleCloseCompleted} />
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-slate-900/50 backdrop-blur-sm animate-fadeIn">
@@ -207,18 +227,7 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
 
         {/* Modal Content Scroll */}
         <div className="p-5 overflow-y-auto space-y-4 text-xs">
-          {isSuccess ? (
-            <div className="py-10 text-center space-y-3">
-              <div className="w-16 h-16 rounded-full bg-emerald-100 border-2 border-emerald-500 text-emerald-600 flex items-center justify-center mx-auto animate-bounce">
-                <Check className="w-8 h-8" />
-              </div>
-              <h4 className="text-lg font-black text-[#221C35]">デリバリーの購入が確定いたしました！</h4>
-              <p className="text-sm text-[#5B21B6] font-bold">
-                指定の {activeOrder?.carNo}号車 {activeOrder?.seatNo} へアテンダントが温かい状態でお届けいたします。
-              </p>
-            </div>
-          ) : (
-            <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4">
               {/* Warning Notice when Standard Seat or No Order */}
               {isNotMegu && (
                 <div className="bg-rose-50 border border-rose-200 rounded-2xl p-3.5 flex items-start gap-2.5 text-rose-900 animate-fadeIn">
@@ -549,8 +558,7 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
                   </span>
                 </button>
               </div>
-            </form>
-          )}
+          </form>
         </div>
       </div>
     </div>
