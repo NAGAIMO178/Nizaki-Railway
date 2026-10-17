@@ -326,8 +326,10 @@ const searchOnce = (net: Net, ctx: Ctx, from: string, to: string, readySec: numb
           if (cont) {
             const cData = net.lines[cont.line];
             const cTrain = cData.trains[cont.trainIdx];
-            if (ctx.allowPaid || cData.master.types[cTrain[1]][2] !== 1) {
-              const cStops = cTrain[5];
+            const cStops = cTrain[5];
+            // 乗り通す先の路線が運転見合わせなら、乗り通せない(最初の路線の遅れは、そのまま使う)
+            const contSuspended = delayFor(ctx, net, cont.line, cont.trainIdx, normalizeStationName(cData.master.stations[cStops[0]][0]), cTrain[4] + cStops[2]).suspended;
+            if (!contSuspended && (ctx.allowPaid || cData.master.types[cTrain[1]][2] !== 1)) {
               const cDir = (cData.master.dirs.indexOf(cTrain[2]) === 1 ? 1 : 0) as 0 | 1;
               for (let j = 3; j < cStops.length; j += 3) {
                 if (ctx.vias.length > 0) {
