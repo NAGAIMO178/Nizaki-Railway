@@ -780,13 +780,8 @@ export default function App() {
             <div className="pt-2">
               <button
                 onClick={() => {
-                  if (!isLoggedIn) {
-                    handleRequireLogin('車内デリバリーのご利用には、神埼IDログインが必要です。', () => {
-                      setIsEDeliveryModalOpen(true);
-                    });
-                    return;
-                  }
-                  setIsEDeliveryModalOpen(true);
+                  setReservationView('delivery');
+                  setActiveTab('reservation');
                 }}
                 className="w-full py-3.5 px-6 rounded-xl bg-[#5B21B6] hover:bg-[#4C1D95] text-white font-bold text-sm shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
