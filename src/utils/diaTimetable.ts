@@ -209,9 +209,9 @@ export interface BoardResult {
 export const trainDestName = (master: MasterLine, t: TrainRow): string => t[7] ?? master.stations[t[5][t[5].length - 3]]?.[0] ?? '';
 export const trainOriginName = (master: MasterLine, t: TrainRow): string => t[8] ?? master.stations[t[5][0]]?.[0] ?? '';
 
-// 画面の種別の名前: 各停は「各停」。直通の種別の「(越谷経由)」などは、はずす(「急行」「特別快速」と同じ色・同じ名前で見せる)
-const displayType = (typeName: string): string =>
-  typeName.startsWith('各停') ? '各停' : typeName.replace(/\((越谷経由|柏経由|東京直通)\)$/, '');
+// 画面の種別の名前: 各停は「各停」。直通の種別の「(越谷経由)」や、快速の「(松戸-土浦)」などは、はずす(「急行」「快速」と同じ色・同じ名前で見せる)
+export const displayType = (typeName: string): string =>
+  typeName.startsWith('各停') ? '各停' : typeName.replace(/\((越谷経由|柏経由|東京直通|松戸-土浦|土浦-日立)\)$/, '');
 
 // platform: 1=下り(各路線の1つ目の方向 / 環状線は外回り) 2=上り(内回り)
 export const computeBoard = (data: BoardData, platform: 1 | 2, nowMs: number, limit = 3): BoardResult => {
