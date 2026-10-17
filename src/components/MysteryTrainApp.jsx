@@ -1154,7 +1154,7 @@ export const MysteryTrainApp = ({ onAddNPoints, onExit, posterImageUrl }) => {
               <span className="text-[11px] text-amber-400 font-bold tracking-widest block font-serif">
                 【 公式LINE専用 特典引換コード 】
               </span>
-              <div className="font-mono text-xl sm:text-2xl font-black text-amber-300 bg-black/90 py-2 px-4 rounded-lg border border-amber-500/40 inline-block tracking-widest select-all">
+              <div className="font-mono text-sm sm:text-2xl font-black text-amber-300 bg-black/90 py-2 px-3 sm:px-4 rounded-lg border border-amber-500/40 inline-block max-w-full break-all tracking-wide sm:tracking-widest select-all">
                 {CLEAR_CODE}
               </div>
               <p className="text-[10px] text-stone-400">
