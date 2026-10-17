@@ -27,6 +27,7 @@ import {
   MysteryStage,
 } from '../data/mysteryTrainData';
 import { LINE_OA_ADD_FRIEND_URL } from '../utils/accountApi';
+import { RouteMapModal } from './RouteMapModal';
 
 interface MysteryTrainEventProps {
   onBack?: () => void;
@@ -89,6 +90,7 @@ export const MysteryTrainEvent: React.FC<MysteryTrainEventProps> = ({
 
   // 閲覧モード: 'investigation' (電文捜査帳) | 'stampbook' (特装朱印鑑) | 'routemap' (全線絵図)
   const [activeMode, setActiveMode] = useState<'investigation' | 'stampbook' | 'routemap'>('investigation');
+  const [routeMapOpen, setRouteMapOpen] = useState(false);
 
   // 特定した停車場（駅）ID
   const [selectedStationId, setSelectedStationId] = useState<string>('');
@@ -599,7 +601,7 @@ export const MysteryTrainEvent: React.FC<MysteryTrainEventProps> = ({
                 <span className="text-[10px] text-amber-400/90 tracking-widest block font-sans font-bold">
                   【 LINE公式アカウント専用 特典引換コード 】
                 </span>
-                <div className="font-mono text-xl sm:text-2xl font-black text-amber-300 select-all py-1.5 px-4 rounded bg-black/80 border border-amber-500/50 inline-block tracking-widest">
+                <div className="font-mono text-sm sm:text-2xl font-black text-amber-300 select-all py-1.5 px-3 sm:px-4 rounded bg-black/80 border border-amber-500/50 inline-block max-w-full break-all tracking-wide sm:tracking-widest">
                   {MYSTERY_CLEAR_COUPON_CODE}
                 </div>
               </div>
@@ -1143,20 +1145,15 @@ export const MysteryTrainEvent: React.FC<MysteryTrainEventProps> = ({
             </button>
           </div>
 
-          {/* 画像添付待機フレーム */}
-          <div className="min-h-[360px] sm:min-h-[440px] rounded-lg border-2 border-dashed border-amber-600/40 bg-black/50 p-6 flex flex-col items-center justify-center text-center space-y-3 relative overflow-hidden font-sans">
-            <div className="w-16 h-16 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
-              <Compass className="w-8 h-8" />
-            </div>
-
-            <div className="space-y-1 max-w-md">
-              <h3 className="text-base font-bold text-amber-200">
-                【全線路線図 掲載エリア】
-              </h3>
-              <p className="text-xs text-stone-400 leading-relaxed font-sans">
-                公式路線図の画像を準備中です。後ほど詳細な全線マップが掲載されます。
-              </p>
-            </div>
+          <div className="min-h-[240px] rounded-lg border border-amber-600/30 bg-black/50 p-6 flex flex-col items-center justify-center gap-3 font-sans">
+            <button
+              type="button"
+              onClick={() => setRouteMapOpen(true)}
+              className="h-11 px-6 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 text-sm font-bold transition-all shadow-md cursor-pointer flex items-center gap-2 active:scale-[0.98]"
+            >
+              <Map className="w-4 h-4" />
+              <span>路線図を開く</span>
+            </button>
 
             <div className="pt-2">
               <button
@@ -1171,6 +1168,8 @@ export const MysteryTrainEvent: React.FC<MysteryTrainEventProps> = ({
           </div>
         </div>
       )}
+
+      <RouteMapModal isOpen={routeMapOpen} onClose={() => setRouteMapOpen(false)} />
 
       {/* =========================================================================
           全72駅一覧モーダル
