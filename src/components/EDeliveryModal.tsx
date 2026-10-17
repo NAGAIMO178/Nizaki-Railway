@@ -4,6 +4,7 @@ import { EquipItem, ActiveOrder } from '../types';
 import { getSeatClassLabel, canOrderItem, canUseDelivery, getItemRestrictionLabel } from '../utils/seatUtils';
 import { handleImageError } from '../utils/imageFallback';
 import { NPointPayRow } from './NPointPayRow';
+import { withinLimits } from '../utils/cartLimits';
 import { CompletionModal, CompletionRow } from './CompletionModal';
 
 interface EDeliveryModalProps {
@@ -130,6 +131,12 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeOrder || selectedItems.length === 0 || isNotMegu || hasNoOrder || hasBlockedItems || spending) return;
+    // 数量の上限(画面で止めているが、確定の前にも確かめる)
+    const purchased: { [id: string]: number } = {};
+    (activeOrder.items || []).forEach((ci) => {
+      purchased[ci.item.id] = ci.quantity;
+    });
+    if (!withinLimits(cart, purchased)) return;
 
     if (!isLoggedIn && onRequireLogin) {
       onRequireLogin('車内デリバリーのご注文確定には、神埼IDログインが必要です。');
