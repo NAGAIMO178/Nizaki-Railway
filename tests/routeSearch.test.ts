@@ -1,6 +1,10 @@
 // 経路検索と、特急の号数の付け方を、実際のダイヤ(公開後)で動かして、いつも成り立つことを調べる。
 // 日付は、月曜の昼に固定する(自動の遅れは、日付で決まるので)。
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../src/utils/accountApi', () => ({ callGas: vi.fn(async () => ({ status: 'success' })) }));
+
+import { disruptionManager, type LineDisruption } from '../src/utils/disruptionManager';
 import { DEFAULT_ROUTE_OPTIONS, RouteOptions } from '../src/utils/routeOptions';
 import { RouteResult, searchRoutes, loadRouteStations, TRANSFER_SEC, RELAXED_TRANSFER_SEC } from '../src/utils/routeSearch';
 import { findExpressTrips, loadLineData } from '../src/utils/diaTimetable';
@@ -241,5 +245,37 @@ describe('特急の号数', () => {
     const trips = findExpressTrips(data, '特急(Nライナー)', '大宮', '東京');
     expect(trips.length).toBeGreaterThan(5);
     trips.forEach((t, i) => expect(t.trainName).toBe(`特急Nライナー ${i * 2 + 2}号`));
+  });
+});
+
+describe('直通運転: 乗り通す先の路線が運転見合わせのとき', () => {
+  const lineIds: Record<string, string> = { Y: 'kanzaki', SC: 'saichi', TC: 'tsuchiura' };
+  const suspend = (code: string): LineDisruption => ({
+    lineId: lineIds[code], lineName: code, code, statusType: 'suspended', targetDirection: 'both', maxDelayMinutes: 5,
+    durationUntil: '', section: '全線', reason: 'x', customMessage: '', useCustomMessage: false, linkToSystem: true, updatedAt: '',
+  });
+  const cases: { suspended: string; pairs: [string, string][] }[] = [
+    { suspended: 'Y', pairs: [['柏', '横浜'], ['春日部', '横浜'], ['東京', '横浜'], ['池袋', '横浜']] }, // 環状線 → 神埼線の乗り通し
+    { suspended: 'SC', pairs: [['越谷レイクタウン', '池袋'], ['横浜', '東京'], ['日立', '東京']] }, // 神埼線・土浦線 → 環状線の乗り通し
+    { suspended: 'TC', pairs: [['東京', '日立'], ['柏', '日立']] }, // 環状線 → 土浦線の乗り通し
+  ];
+
+  it('見合わせの路線に乗り通す経路は、出ない(乗り通しでも、見合わせの路線の列車に乗らない)', async () => {
+    for (const { suspended, pairs } of cases) {
+      disruptionManager.setLineDisruption(suspend(suspended));
+      try {
+        for (const [a, b] of pairs) {
+          const res = await searchRoutes(a, b, hm(13), opts(), 3);
+          res.forEach((r) => r.legs.forEach((l) => expect(l.lineCode, `${suspended}見合わせ ${a}→${b}`).not.toBe(suspended)));
+        }
+      } finally {
+        disruptionManager.clearAllDisruptions();
+      }
+    }
+  });
+
+  it('見合わせでなければ、同じ区間に、乗り通す経路が出る(上のテストが、何も調べずに通っていないことの確認)', async () => {
+    const res = await searchRoutes('東京', '日立', hm(7), opts({ maxTransfers: 0 }), 3);
+    expect(res.some((r) => r.legs.some((l) => l.through))).toBe(true);
   });
 });
