@@ -3,6 +3,7 @@ import { UtensilsCrossed, ShoppingBag, Plus, Minus, Check, ShoppingCart, Info } 
 import { EquipItem, ActiveOrder } from '../types';
 import { canOrderItem, canUseDelivery, getItemRestrictionLabel, getSeatClassLabel } from '../utils/seatUtils';
 import { handleImageError } from '../utils/imageFallback';
+import { canAddOne } from '../utils/cartLimits';
 
 interface EquipTabProps {
   items: EquipItem[];
@@ -39,6 +40,13 @@ export const EquipTab: React.FC<EquipTabProps> = ({
     (item) => selectedCategory === 'all' || item.category === selectedCategory
   );
 
+  // 購入済み（予約済み）アイテムのマップを作成
+  const purchasedItemsMap: { [key: string]: number } = {};
+  if (activeOrder && activeOrder.items) {
+    activeOrder.items.forEach((ci) => {
+      purchasedItemsMap[ci.item.id] = ci.quantity;
+    });
+  }
   const handleQuantityChange = (itemId: string, delta: number) => {
     // 座席の種類で制限された商品(めぐシート限定など)は、対象外の座席では追加できない
     const target = items.find((i) => i.id === itemId);
@@ -47,6 +55,8 @@ export const EquipTab: React.FC<EquipTabProps> = ({
     if (delta > 0 && !activeOrder) return;
     // めぐシート以外で予約している場合は、デリバリーの商品を追加できない
     if (delta > 0 && activeOrder && !canUseDelivery(activeOrder.seatType)) return;
+    // 数量の上限(すでに注文した分も数える)
+    if (delta > 0 && !canAddOne(cart, itemId, purchasedItemsMap)) return;
     const current = cart[itemId] || 0;
     const updated = Math.max(0, current + delta);
     const newCart = { ...cart };
@@ -64,13 +74,6 @@ export const EquipTab: React.FC<EquipTabProps> = ({
     return sum + (item ? item.price * (qty as number) : 0);
   }, 0);
 
-  // 購入済み（予約済み）アイテムのマップを作成
-  const purchasedItemsMap: { [key: string]: number } = {};
-  if (activeOrder && activeOrder.items) {
-    activeOrder.items.forEach((ci) => {
-      purchasedItemsMap[ci.item.id] = ci.quantity;
-    });
-  }
   const purchasedTotalCount = Object.values(purchasedItemsMap).reduce((sum, q) => sum + q, 0);
 
   return (
@@ -228,7 +231,8 @@ export const EquipTab: React.FC<EquipTabProps> = ({
                   ) : qty === 0 ? (
                     <button
                       onClick={() => handleQuantityChange(item.id, 1)}
-                      className="bg-[#EFE8FA] hover:bg-[#5B21B6] text-[#5B21B6] hover:text-white font-bold text-[10px] px-2.5 py-1 rounded-lg border border-[#5B21B6]/20 flex items-center gap-1 transition-colors cursor-pointer"
+                      disabled={!canAddOne(cart, item.id, purchasedItemsMap)}
+                      className="bg-[#EFE8FA] hover:bg-[#5B21B6] text-[#5B21B6] hover:text-white font-bold text-[10px] px-2.5 py-1 rounded-lg border border-[#5B21B6]/20 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-[#EFE8FA] disabled:hover:text-[#5B21B6]"
                     >
                       <Plus className="w-3 h-3" />
                       <span>追加</span>
@@ -246,7 +250,9 @@ export const EquipTab: React.FC<EquipTabProps> = ({
                       </span>
                       <button
                         onClick={() => handleQuantityChange(item.id, 1)}
-                        className="text-[#5B21B6] hover:text-[#221C35] p-0.5 cursor-pointer"
+                        disabled={!canAddOne(cart, item.id, purchasedItemsMap)}
+                        className="text-[#5B21B6] hover:text-[#221C35] p-0.5 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                        aria-label="1つ増やす"
                       >
                         <Plus className="w-3 h-3" />
                       </button>
