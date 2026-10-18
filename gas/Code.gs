@@ -614,6 +614,11 @@ function handleCreateReservation(sessionToken, order, awardPoints) {
     return createJsonResponse({ status: 'error', message: '予約内容が正しくありません。' });
   }
 
+  const orderLimitError = checkOrderLimits(order);
+  if (orderLimitError) {
+    return createJsonResponse({ status: 'error', code: 'order_limit', message: orderLimitError });
+  }
+
   const member = findMemberById(memberId);
   if (!member) {
     return createJsonResponse({ status: 'error', message: '会員情報が見つかりません。' });
@@ -714,6 +719,43 @@ function handleCreateReservation(sessionToken, order, awardPoints) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/**
+ * 1回の注文の上限を調べる。問題があれば、断りの文を返す(無ければ null)。
+ * 予約の登録・デリバリーの追加(同じ予約番号の更新)の、どちらも通る。ふつうの注文(駅弁数個)は、ここに届かない。
+ * 明細(items)は、公開後のアプリだけが送るので、あるときだけ調べる。
+ */
+function checkOrderLimits(order) {
+  const num = function (v) { return Number(v === undefined || v === null || v === '' ? 0 : v); };
+  const total = num(order.totalPrice);
+  const pointsUsed = num(order.pointsUsed);
+  const discount = num(order.itemDiscount);
+  if (!isFinite(total) || !isFinite(pointsUsed) || !isFinite(discount) || total < 0 || pointsUsed < 0 || discount < 0) {
+    return '予約内容が正しくありません。';
+  }
+  if (total + pointsUsed > MAX_ORDER_TOTAL) {
+    return '1回の注文の合計は、' + MAX_ORDER_TOTAL.toLocaleString() + '円までです。';
+  }
+  if (discount > MAX_ORDER_TOTAL) return '予約内容が正しくありません。';
+  if (order.items === undefined || order.items === null) return null;
+  if (!Array.isArray(order.items) || order.items.length > MAX_ORDER_QUANTITY) {
+    return '1回の注文は、合わせて' + MAX_ORDER_QUANTITY + '個までです。';
+  }
+  let quantitySum = 0;
+  let itemsTotal = 0;
+  for (let i = 0; i < order.items.length; i++) {
+    const it = order.items[i];
+    const q = it ? num(it.quantity) : 0;
+    const price = it ? num(it.price) : 0;
+    if (!isFinite(q) || !isFinite(price) || q < 0 || price < 0 || Math.floor(q) !== q) return '予約内容が正しくありません。';
+    if (q > MAX_ITEM_QUANTITY) return '1つの商品は、' + MAX_ITEM_QUANTITY + '個までです。';
+    quantitySum += q;
+    itemsTotal += price * q;
+  }
+  if (quantitySum > MAX_ORDER_QUANTITY) return '1回の注文は、合わせて' + MAX_ORDER_QUANTITY + '個までです。';
+  if (itemsTotal > MAX_ORDER_TOTAL + discount) return '1回の注文の合計は、' + MAX_ORDER_TOTAL.toLocaleString() + '円までです。';
+  return null;
 }
 
 /**
@@ -1219,6 +1261,10 @@ const RESERVATION_POINT_MIN = 50;
 const POINT_BASIS_CAP = 100000;          // 1つの予約で、ポイントを計算する合計金額の上限
 const DAILY_RESERVATION_POINT_CAP = 3000; // 1会員が、予約で付くポイントを、1日(日本時間)に受け取れる上限
 const MAX_ACTIVE_RESERVATIONS = 20;       // 1会員の、まだ乗っていない(取消でない)予約の上限
+// 1回の注文(予約・デリバリーの追加)の上限。超える申告は、予約の保存ごと断る(画面にも同じ上限を置く)
+const MAX_ORDER_TOTAL = 50000;  // 合計金額(N-POINTで払った分を含む)
+const MAX_ITEM_QUANTITY = 9;    // 1商品の個数
+const MAX_ORDER_QUANTITY = 20;  // 1注文の個数の合計
 const HISTORY_LIMIT = 30;
 const ORDER_HISTORY_LIMIT = 30;
 const RIDE_LOG_LIMIT = 500; // マイレージ・乗車記録に使う、乗車済みの予約の上限(新しい順)
@@ -1617,7 +1663,7 @@ function handleSpendPoints(sessionToken, orderId, rawPoints, rawTitle) {
     return createJsonResponse({ status: 'error', message: '予約内容が正しくありません。' });
   }
   const points = Math.floor(Number(rawPoints));
-  if (!(points >= 1) || points > 1000000) {
+  if (!(points >= 1) || points > MAX_ORDER_TOTAL) {
     return createJsonResponse({ status: 'error', message: '使うポイントが正しくありません。' });
   }
   return withScriptLock(function () {
