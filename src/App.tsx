@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useState } from 'react';
+import React, { lazy, useState } from 'react';
 import { ShoppingBag } from 'lucide-react';
 import { PhoneContainer } from './components/PhoneContainer';
 import { Header } from './components/Header';
@@ -9,6 +9,7 @@ import { FooterNav } from './components/FooterNav';
 import type { ReservationPreset } from './components/ReservationTab';
 import { MenuDrawer } from './components/MenuDrawer';
 import { LazyOnOpen } from './components/LazyOnOpen';
+import { LazyBoundary } from './components/LazyBoundary';
 import { LaunchWelcome, LAUNCH_BONUS_ID, WelcomeStep } from './components/LaunchWelcome';
 import { MOCK_LINES, MOCK_EQUIP_ITEMS } from './data/mockData';
 import { POINT_CODES, normalizePointCode } from './data/pointCodes';
@@ -544,10 +545,8 @@ export default function App() {
     setIsMyPageOpen(step === 'mileage' && member);
     setIsNPointModalOpen(step === 'save' && member);
     if (step === 'route') {
-      loadTimetableTab().then((m) => {
-        m.presetTimetableMode('route');
-        setActiveTab('timetable');
-      });
+      // 読み込めなかったときも、時刻表を開く(失敗の表示が出る)
+      loadTimetableTab().then((m) => m.presetTimetableMode('route')).catch(() => {}).finally(() => setActiveTab('timetable'));
     } else if (step === 'delay') {
       setActiveTab('settings');
       window.setTimeout(() => document.getElementById('delay-setting')?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 200);
@@ -834,7 +833,7 @@ export default function App() {
         {/* Tab 2: 列車位置 */}
         {activeTab === 'location' && (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-28 md:pb-12">
-            <Suspense fallback={<TabFallback />}>
+            <LazyBoundary fallback={<TabFallback />}>
               <TrainLocationTab
                 onOpenReservation={(preset) => {
                   setReservationPreset(preset);
@@ -842,15 +841,15 @@ export default function App() {
                   setActiveTab('reservation');
                 }}
               />
-            </Suspense>
+            </LazyBoundary>
           </div>
         )}
 
         {/* Tab 3: 時刻表 */}
         {activeTab === 'timetable' && (
-          <Suspense fallback={<TabFallback />}>
+          <LazyBoundary fallback={<TabFallback />}>
             <TimetableTab />
-          </Suspense>
+          </LazyBoundary>
         )}
 
         {/* Tab 4: 予約(特急券・座席 / デリバリー) */}
@@ -878,7 +877,7 @@ export default function App() {
               </div>
             </div>
 
-            <Suspense fallback={<TabFallback />}>
+            <LazyBoundary fallback={<TabFallback />}>
               {reservationView === 'ticket' ? (
                 <ReservationTab
                   preset={reservationPreset}
@@ -906,14 +905,14 @@ export default function App() {
                   }}
                 />
               )}
-            </Suspense>
+            </LazyBoundary>
           </div>
         )}
 
         {/* イベント */}
         {activeTab === 'events' && (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-28 md:pb-12">
-            <Suspense fallback={<TabFallback />}>
+            <LazyBoundary fallback={<TabFallback />}>
               {cloudOn && !cloud.ready ? (
                 <div className="text-center text-xs text-[#857D99] py-10">読み込み中…</div>
               ) : (
@@ -924,14 +923,14 @@ export default function App() {
                   cloudMode={cloudOn}
                 />
               )}
-            </Suspense>
+            </LazyBoundary>
           </div>
         )}
 
         {/* 設定(下のタブには出さず、ヘッダーのメニューから開く) */}
         {activeTab === 'settings' && (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-28 md:pb-12">
-            <Suspense fallback={<TabFallback />}>
+            <LazyBoundary fallback={<TabFallback />}>
               <SettingsTab
                 nPointBalance={shownBalance}
                 registeredStations={registeredStations}
@@ -948,7 +947,7 @@ export default function App() {
                 onLogout={handleLogout}
                 onOpenMyPage={() => setIsMyPageOpen(true)}
               />
-            </Suspense>
+            </LazyBoundary>
           </div>
         )}
       </main>

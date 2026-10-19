@@ -1,4 +1,5 @@
-import React, { Suspense, lazy, useState, useEffect } from 'react';
+import React, { lazy, useState, useEffect } from 'react';
+import { LazyBoundary } from './LazyBoundary';
 import { 
   Sparkles, Train, Award, Gem, 
   ArrowRight, ArrowLeft, RotateCcw, CheckCircle2, 
@@ -369,13 +370,13 @@ export const EventsTab: React.FC<EventsTabProps> = ({
         />
 
         <div className="relative z-10 animate-fadeIn">
-          <Suspense fallback={null}>
+          <LazyBoundary>
             <MysteryTrainApp 
               onAddNPoints={onAddNPoints}
               onExit={() => handleSelectEvent('portal')}
               posterImageUrl={customPosterUrl || undefined}
             />
-          </Suspense>
+          </LazyBoundary>
         </div>
       </div>
     );
@@ -409,13 +410,13 @@ export const EventsTab: React.FC<EventsTabProps> = ({
           )}
         </div>
 
-        <Suspense fallback={null}>
+        <LazyBoundary>
           <MysteryTrainEvent 
             onAddNPoints={onAddNPoints}
             cloudMode={cloudMode}
             onBack={() => handleSelectEvent('portal')}
           />
-        </Suspense>
+        </LazyBoundary>
       </div>
     </div>
   );
