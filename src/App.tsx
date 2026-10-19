@@ -1,4 +1,4 @@
-import React, { lazy, useState } from 'react';
+import React, { useState } from 'react';
 import { ShoppingBag } from 'lucide-react';
 import { PhoneContainer } from './components/PhoneContainer';
 import { Header } from './components/Header';
@@ -10,6 +10,7 @@ import type { ReservationPreset } from './components/ReservationTab';
 import { MenuDrawer } from './components/MenuDrawer';
 import { LazyOnOpen } from './components/LazyOnOpen';
 import { LazyBoundary } from './components/LazyBoundary';
+import { lazyScreen, prefetchScreens } from './utils/lazyScreen';
 import { LaunchWelcome, LAUNCH_BONUS_ID, WelcomeStep } from './components/LaunchWelcome';
 import { MOCK_LINES, MOCK_EQUIP_ITEMS } from './data/mockData';
 import { POINT_CODES, normalizePointCode } from './data/pointCodes';
@@ -26,27 +27,20 @@ import { useReservationWatcher } from './utils/useReservationWatcher';
 import { computeMileage, Mileage } from './utils/mileage';
 import { TabType, ActiveOrder, EquipItem, PointHistoryItem, UserProfile, OrderHistoryItem } from './types';
 
-// 起動に要らない画面は、開くときに読み込む(最初のホームを早く出すため)
-const lazyNamed = <T extends React.ComponentType<any>>(load: () => Promise<Record<string, any>>, name: string) =>
-  lazy(() => load().then((m) => ({ default: m[name] as T })));
-const loadTrainLocationTab = () => import('./components/TrainLocationTab');
+// 起動に要らない画面は、開くときに読み込む(最初のホームを早く出すため)。先読みは、下の useEffect
 const loadTimetableTab = () => import('./components/TimetableTab');
-const loadReservationTab = () => import('./components/ReservationTab');
-const loadEquipTab = () => import('./components/EquipTab');
-const loadEventsTab = () => import('./components/EventsTab');
-const loadSettingsTab = () => import('./components/SettingsTab');
-const TrainLocationTab = lazyNamed<typeof import('./components/TrainLocationTab').TrainLocationTab>(loadTrainLocationTab, 'TrainLocationTab');
-const TimetableTab = lazyNamed<typeof import('./components/TimetableTab').TimetableTab>(loadTimetableTab, 'TimetableTab');
-const ReservationTab = lazyNamed<typeof import('./components/ReservationTab').ReservationTab>(loadReservationTab, 'ReservationTab');
-const EquipTab = lazyNamed<typeof import('./components/EquipTab').EquipTab>(loadEquipTab, 'EquipTab');
-const EventsTab = lazyNamed<typeof import('./components/EventsTab').EventsTab>(loadEventsTab, 'EventsTab');
-const SettingsTab = lazyNamed<typeof import('./components/SettingsTab').SettingsTab>(loadSettingsTab, 'SettingsTab');
-const EDeliveryModal = lazyNamed<typeof import('./components/EDeliveryModal').EDeliveryModal>(() => import('./components/EDeliveryModal'), 'EDeliveryModal');
-const NPointModal = lazyNamed<typeof import('./components/NPointModal').NPointModal>(() => import('./components/NPointModal'), 'NPointModal');
-const RouteMapModal = lazyNamed<typeof import('./components/RouteMapModal').RouteMapModal>(() => import('./components/RouteMapModal'), 'RouteMapModal');
-const QRCodeModal = lazyNamed<typeof import('./components/QRCodeModal').QRCodeModal>(() => import('./components/QRCodeModal'), 'QRCodeModal');
-const LoginModal = lazyNamed<typeof import('./components/LoginModal').LoginModal>(() => import('./components/LoginModal'), 'LoginModal');
-const MyPageModal = lazyNamed<typeof import('./components/MyPageModal').MyPageModal>(() => import('./components/MyPageModal'), 'MyPageModal');
+const TrainLocationTab = lazyScreen<typeof import('./components/TrainLocationTab').TrainLocationTab>(() => import('./components/TrainLocationTab'), 'TrainLocationTab');
+const TimetableTab = lazyScreen<typeof import('./components/TimetableTab').TimetableTab>(loadTimetableTab, 'TimetableTab');
+const ReservationTab = lazyScreen<typeof import('./components/ReservationTab').ReservationTab>(() => import('./components/ReservationTab'), 'ReservationTab');
+const EquipTab = lazyScreen<typeof import('./components/EquipTab').EquipTab>(() => import('./components/EquipTab'), 'EquipTab');
+const EventsTab = lazyScreen<typeof import('./components/EventsTab').EventsTab>(() => import('./components/EventsTab'), 'EventsTab');
+const SettingsTab = lazyScreen<typeof import('./components/SettingsTab').SettingsTab>(() => import('./components/SettingsTab'), 'SettingsTab');
+const EDeliveryModal = lazyScreen<typeof import('./components/EDeliveryModal').EDeliveryModal>(() => import('./components/EDeliveryModal'), 'EDeliveryModal');
+const NPointModal = lazyScreen<typeof import('./components/NPointModal').NPointModal>(() => import('./components/NPointModal'), 'NPointModal');
+const RouteMapModal = lazyScreen<typeof import('./components/RouteMapModal').RouteMapModal>(() => import('./components/RouteMapModal'), 'RouteMapModal');
+const QRCodeModal = lazyScreen<typeof import('./components/QRCodeModal').QRCodeModal>(() => import('./components/QRCodeModal'), 'QRCodeModal');
+const LoginModal = lazyScreen<typeof import('./components/LoginModal').LoginModal>(() => import('./components/LoginModal'), 'LoginModal');
+const MyPageModal = lazyScreen<typeof import('./components/MyPageModal').MyPageModal>(() => import('./components/MyPageModal'), 'MyPageModal');
 
 // 画面を読み込んでいるあいだの表示(イベントの読み込み中と同じ書き方)
 const TabFallback = () => <div className="text-center text-xs text-[#857D99] py-10">読み込み中…</div>;
@@ -107,21 +101,11 @@ const readStoredOrder = (email?: string | null): { order: ActiveOrder | null; ex
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>('home');
 
-  // ホームを出したあと、手が空いたときに、ほかの画面を先に読み込んでおく(開いたときにすぐ出る)
-  React.useEffect(() => {
-    const prefetch = () => {
-      [loadReservationTab, loadEquipTab, loadTrainLocationTab, loadTimetableTab, loadEventsTab, loadSettingsTab].forEach((load) => {
-        load().catch(() => {});
-      });
-    };
-    const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void };
-    if (w.requestIdleCallback) {
-      const id = w.requestIdleCallback(prefetch, { timeout: 4000 });
-      return () => w.cancelIdleCallback?.(id);
-    }
-    const id = window.setTimeout(prefetch, 2000);
-    return () => window.clearTimeout(id);
-  }, []);
+  // ホームを出したあと、手が空いたときに、ほかの画面を裏で読み込んでおく(開いたときに待たずに出る)。管理者画面とミステリーは、使う人が少ないので、先読みしない
+  React.useEffect(
+    () => prefetchScreens([ReservationTab, EventsTab, TimetableTab, TrainLocationTab, EquipTab, SettingsTab, LoginModal, MyPageModal, NPointModal, RouteMapModal, EDeliveryModal, QRCodeModal]),
+    [],
+  );
   // 予約タブの中の切り替え(特急券・座席 / デリバリー)と、ヘッダーのメニュー
   const [reservationView, setReservationView] = useState<'ticket' | 'delivery'>('ticket');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
