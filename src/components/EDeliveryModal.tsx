@@ -358,6 +358,10 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
                           <div className="flex items-center gap-2.5 min-w-0">
                             <img
                               src={item.image}
+                              width={640}
+                              height={349}
+                              loading="lazy"
+                              decoding="async"
                               alt=""
                               referrerPolicy="no-referrer"
                               className="w-10 h-10 object-cover rounded-lg shrink-0 border border-emerald-100 text-[0px]"
@@ -404,6 +408,10 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
                           <div className="flex items-center gap-2.5 min-w-0 flex-1">
                             <img
                               src={item.image}
+                              width={640}
+                              height={349}
+                              loading="lazy"
+                              decoding="async"
                               alt=""
                               referrerPolicy="no-referrer"
                               className="w-10 h-10 object-cover rounded-lg shrink-0 border border-[#E6E2EE] text-[0px]"

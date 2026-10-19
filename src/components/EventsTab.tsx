@@ -1,15 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { Suspense, lazy, useState, useEffect } from 'react';
 import { 
   Sparkles, Train, Award, Gem, 
   ArrowRight, ArrowLeft, RotateCcw, CheckCircle2, 
   Layers, Info, Image as ImageIcon, Calendar, MapPin,
   ChevronRight, Clock, Star
 } from 'lucide-react';
-import { MysteryTrainApp } from './MysteryTrainApp';
-import { MysteryTrainEvent } from './MysteryTrainEvent';
 import { KANZAKI_ALL_STATIONS_72 } from '../data/mysteryTrainData';
 import { DigitalStampRallyBanner } from './DigitalStampRallyBanner';
 import { isLaunched } from '../utils/launch';
+
+// 謎解きの本体は大きいので、そのイベントを開くときに読み込む
+const MysteryTrainApp = lazy(() => import('./MysteryTrainApp').then((m) => ({ default: m.MysteryTrainApp })));
+const MysteryTrainEvent = lazy(() => import('./MysteryTrainEvent').then((m) => ({ default: m.MysteryTrainEvent })));
 
 interface EventsTabProps {
   onAddNPoints?: (points: number, title?: string, type?: 'stamp' | 'coupon') => void;
@@ -367,11 +369,13 @@ export const EventsTab: React.FC<EventsTabProps> = ({
         />
 
         <div className="relative z-10 animate-fadeIn">
-          <MysteryTrainApp 
-            onAddNPoints={onAddNPoints}
-            onExit={() => handleSelectEvent('portal')}
-            posterImageUrl={customPosterUrl || undefined}
-          />
+          <Suspense fallback={null}>
+            <MysteryTrainApp 
+              onAddNPoints={onAddNPoints}
+              onExit={() => handleSelectEvent('portal')}
+              posterImageUrl={customPosterUrl || undefined}
+            />
+          </Suspense>
         </div>
       </div>
     );
@@ -405,11 +409,13 @@ export const EventsTab: React.FC<EventsTabProps> = ({
           )}
         </div>
 
-        <MysteryTrainEvent 
-          onAddNPoints={onAddNPoints}
-          cloudMode={cloudMode}
-          onBack={() => handleSelectEvent('portal')}
-        />
+        <Suspense fallback={null}>
+          <MysteryTrainEvent 
+            onAddNPoints={onAddNPoints}
+            cloudMode={cloudMode}
+            onBack={() => handleSelectEvent('portal')}
+          />
+        </Suspense>
       </div>
     </div>
   );

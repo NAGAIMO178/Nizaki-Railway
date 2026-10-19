@@ -40,9 +40,10 @@ export default defineConfig(() => {
       cssMinify: true,
       rollupOptions: {
         output: {
-          manualChunks: {
-            vendor: ['react', 'react-dom'],
-            icons: ['lucide-react'],
+          // 変わらない部品は別ファイルにして、アプリを更新しても取り直さずに済むようにする
+          manualChunks(id: string) {
+            if (/node_modules\/(react|react-dom|scheduler)\//.test(id)) return 'vendor';
+            if (id.includes('node_modules/lucide-react/')) return 'icons';
           },
         },
       },
