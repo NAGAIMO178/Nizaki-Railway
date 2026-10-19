@@ -6,6 +6,10 @@ import './index.css';
 import { registerServiceWorker } from './utils/pushNotification';
 import { sendAccessPing } from './utils/accountApi';
 import { systemLogger } from './utils/systemLogger';
+import { installPreloadErrorReload } from './utils/preloadReload';
+
+// 画面のファイルが取れなかったとき(更新の直後など)、1回だけ自動で再読み込みする
+installPreloadErrorReload();
 
 // Initialize System Error Logger & Diagnostics
 systemLogger.init();

@@ -168,6 +168,10 @@ export const EquipTab: React.FC<EquipTabProps> = ({
               <div className="relative shrink-0 w-20 h-20 rounded-xl overflow-hidden bg-gray-100 border border-[#E6E2EE] flex items-center justify-center">
                 <img
                   src={item.image}
+                  width={640}
+                  height={349}
+                  loading="lazy"
+                  decoding="async"
                   alt=""
                   referrerPolicy="no-referrer"
                   className="w-full h-full object-cover block text-[0px]"

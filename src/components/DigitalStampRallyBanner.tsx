@@ -16,6 +16,10 @@ export const DigitalStampRallyBanner: React.FC<DigitalStampRallyBannerProps> = (
         alt="神埼公式企画 デジタルスタンプラリー 東の都の雅石 〜坂東平野 判じ物絵図〜"
         className="w-full h-full object-cover object-center block select-none"
         referrerPolicy="no-referrer"
+        width={1280}
+        height={720}
+        loading="lazy"
+        decoding="async"
       />
     </div>
   );

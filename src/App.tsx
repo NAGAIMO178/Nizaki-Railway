@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { lazy, useState } from 'react';
 import { ShoppingBag } from 'lucide-react';
 import { PhoneContainer } from './components/PhoneContainer';
 import { Header } from './components/Header';
@@ -6,19 +6,10 @@ import { StatusCard } from './components/StatusCard';
 import { MyStationCard } from './components/MyStationCard';
 import { MyStationRegisterCard, RegisterableStation, REGISTERABLE_LINES } from './components/MyStationRegisterCard';
 import { FooterNav } from './components/FooterNav';
-import { TrainLocationTab } from './components/TrainLocationTab';
-import { TimetableTab, presetTimetableMode } from './components/TimetableTab';
-import { ReservationTab, ReservationPreset } from './components/ReservationTab';
-import { EquipTab } from './components/EquipTab';
-import { EventsTab } from './components/EventsTab';
-import { SettingsTab } from './components/SettingsTab';
-import { EDeliveryModal } from './components/EDeliveryModal';
-import { NPointModal } from './components/NPointModal';
-import { RouteMapModal } from './components/RouteMapModal';
-import { QRCodeModal } from './components/QRCodeModal';
-import { LoginModal } from './components/LoginModal';
-import { MyPageModal } from './components/MyPageModal';
+import type { ReservationPreset } from './components/ReservationTab';
 import { MenuDrawer } from './components/MenuDrawer';
+import { LazyOnOpen } from './components/LazyOnOpen';
+import { LazyBoundary } from './components/LazyBoundary';
 import { LaunchWelcome, LAUNCH_BONUS_ID, WelcomeStep } from './components/LaunchWelcome';
 import { MOCK_LINES, MOCK_EQUIP_ITEMS } from './data/mockData';
 import { POINT_CODES, normalizePointCode } from './data/pointCodes';
@@ -34,6 +25,31 @@ import { useDelayWatcher } from './utils/useDelayWatcher';
 import { useReservationWatcher } from './utils/useReservationWatcher';
 import { computeMileage, Mileage } from './utils/mileage';
 import { TabType, ActiveOrder, EquipItem, PointHistoryItem, UserProfile, OrderHistoryItem } from './types';
+
+// 起動に要らない画面は、開くときに読み込む(最初のホームを早く出すため)
+const lazyNamed = <T extends React.ComponentType<any>>(load: () => Promise<Record<string, any>>, name: string) =>
+  lazy(() => load().then((m) => ({ default: m[name] as T })));
+const loadTrainLocationTab = () => import('./components/TrainLocationTab');
+const loadTimetableTab = () => import('./components/TimetableTab');
+const loadReservationTab = () => import('./components/ReservationTab');
+const loadEquipTab = () => import('./components/EquipTab');
+const loadEventsTab = () => import('./components/EventsTab');
+const loadSettingsTab = () => import('./components/SettingsTab');
+const TrainLocationTab = lazyNamed<typeof import('./components/TrainLocationTab').TrainLocationTab>(loadTrainLocationTab, 'TrainLocationTab');
+const TimetableTab = lazyNamed<typeof import('./components/TimetableTab').TimetableTab>(loadTimetableTab, 'TimetableTab');
+const ReservationTab = lazyNamed<typeof import('./components/ReservationTab').ReservationTab>(loadReservationTab, 'ReservationTab');
+const EquipTab = lazyNamed<typeof import('./components/EquipTab').EquipTab>(loadEquipTab, 'EquipTab');
+const EventsTab = lazyNamed<typeof import('./components/EventsTab').EventsTab>(loadEventsTab, 'EventsTab');
+const SettingsTab = lazyNamed<typeof import('./components/SettingsTab').SettingsTab>(loadSettingsTab, 'SettingsTab');
+const EDeliveryModal = lazyNamed<typeof import('./components/EDeliveryModal').EDeliveryModal>(() => import('./components/EDeliveryModal'), 'EDeliveryModal');
+const NPointModal = lazyNamed<typeof import('./components/NPointModal').NPointModal>(() => import('./components/NPointModal'), 'NPointModal');
+const RouteMapModal = lazyNamed<typeof import('./components/RouteMapModal').RouteMapModal>(() => import('./components/RouteMapModal'), 'RouteMapModal');
+const QRCodeModal = lazyNamed<typeof import('./components/QRCodeModal').QRCodeModal>(() => import('./components/QRCodeModal'), 'QRCodeModal');
+const LoginModal = lazyNamed<typeof import('./components/LoginModal').LoginModal>(() => import('./components/LoginModal'), 'LoginModal');
+const MyPageModal = lazyNamed<typeof import('./components/MyPageModal').MyPageModal>(() => import('./components/MyPageModal'), 'MyPageModal');
+
+// 画面を読み込んでいるあいだの表示(イベントの読み込み中と同じ書き方)
+const TabFallback = () => <div className="text-center text-xs text-[#857D99] py-10">読み込み中…</div>;
 
 // Helper to sanitize email for storage key
 const getPointStoragePrefix = (email?: string | null) => {
@@ -90,6 +106,22 @@ const readStoredOrder = (email?: string | null): { order: ActiveOrder | null; ex
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>('home');
+
+  // ホームを出したあと、手が空いたときに、ほかの画面を先に読み込んでおく(開いたときにすぐ出る)
+  React.useEffect(() => {
+    const prefetch = () => {
+      [loadReservationTab, loadEquipTab, loadTrainLocationTab, loadTimetableTab, loadEventsTab, loadSettingsTab].forEach((load) => {
+        load().catch(() => {});
+      });
+    };
+    const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void };
+    if (w.requestIdleCallback) {
+      const id = w.requestIdleCallback(prefetch, { timeout: 4000 });
+      return () => w.cancelIdleCallback?.(id);
+    }
+    const id = window.setTimeout(prefetch, 2000);
+    return () => window.clearTimeout(id);
+  }, []);
   // 予約タブの中の切り替え(特急券・座席 / デリバリー)と、ヘッダーのメニュー
   const [reservationView, setReservationView] = useState<'ticket' | 'delivery'>('ticket');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -513,8 +545,8 @@ export default function App() {
     setIsMyPageOpen(step === 'mileage' && member);
     setIsNPointModalOpen(step === 'save' && member);
     if (step === 'route') {
-      presetTimetableMode('route');
-      setActiveTab('timetable');
+      // 読み込めなかったときも、時刻表を開く(失敗の表示が出る)
+      loadTimetableTab().then((m) => m.presetTimetableMode('route')).catch(() => {}).finally(() => setActiveTab('timetable'));
     } else if (step === 'delay') {
       setActiveTab('settings');
       window.setTimeout(() => document.getElementById('delay-setting')?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 200);
@@ -801,18 +833,24 @@ export default function App() {
         {/* Tab 2: 列車位置 */}
         {activeTab === 'location' && (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-28 md:pb-12">
-            <TrainLocationTab
-              onOpenReservation={(preset) => {
-                setReservationPreset(preset);
-                setReservationView('ticket');
-                setActiveTab('reservation');
-              }}
-            />
+            <LazyBoundary fallback={<TabFallback />}>
+              <TrainLocationTab
+                onOpenReservation={(preset) => {
+                  setReservationPreset(preset);
+                  setReservationView('ticket');
+                  setActiveTab('reservation');
+                }}
+              />
+            </LazyBoundary>
           </div>
         )}
 
         {/* Tab 3: 時刻表 */}
-        {activeTab === 'timetable' && <TimetableTab />}
+        {activeTab === 'timetable' && (
+          <LazyBoundary fallback={<TabFallback />}>
+            <TimetableTab />
+          </LazyBoundary>
+        )}
 
         {/* Tab 4: 予約(特急券・座席 / デリバリー) */}
         {activeTab === 'reservation' && (
@@ -839,71 +877,77 @@ export default function App() {
               </div>
             </div>
 
-            {reservationView === 'ticket' ? (
-              <ReservationTab
-                preset={reservationPreset}
-                activeOrder={activeOrder}
-                onOpenDeliveryCatalog={() => setReservationView('delivery')}
-                onConfirmOrder={handleConfirmOrder}
-                onCancelOrder={handleCancelOrder}
-                isLoggedIn={isLoggedIn}
-                onRequireLogin={handleRequireLogin}
-                onCouponUsed={cloudOn ? cloud.markCouponUsed : undefined}
-                pointBalance={cloudOn && cloud.ready && !cloud.error ? shownBalance : undefined}
-                onSpendPoints={cloudOn && cloud.ready && !cloud.error ? cloud.spendPoints : undefined}
-              />
-            ) : (
-              <EquipTab
-                items={MOCK_EQUIP_ITEMS}
-                cart={selectedCart}
-                onUpdateCart={setSelectedCart}
-                activeOrder={activeOrder}
-                isLoggedIn={isLoggedIn}
-                onRequireLogin={handleRequireLogin}
-                onOpenBookingModal={(initialCart) => {
-                  if (initialCart) setSelectedCart(initialCart);
-                  setIsEDeliveryModalOpen(true);
-                }}
-              />
-            )}
+            <LazyBoundary fallback={<TabFallback />}>
+              {reservationView === 'ticket' ? (
+                <ReservationTab
+                  preset={reservationPreset}
+                  activeOrder={activeOrder}
+                  onOpenDeliveryCatalog={() => setReservationView('delivery')}
+                  onConfirmOrder={handleConfirmOrder}
+                  onCancelOrder={handleCancelOrder}
+                  isLoggedIn={isLoggedIn}
+                  onRequireLogin={handleRequireLogin}
+                  onCouponUsed={cloudOn ? cloud.markCouponUsed : undefined}
+                  pointBalance={cloudOn && cloud.ready && !cloud.error ? shownBalance : undefined}
+                  onSpendPoints={cloudOn && cloud.ready && !cloud.error ? cloud.spendPoints : undefined}
+                />
+              ) : (
+                <EquipTab
+                  items={MOCK_EQUIP_ITEMS}
+                  cart={selectedCart}
+                  onUpdateCart={setSelectedCart}
+                  activeOrder={activeOrder}
+                  isLoggedIn={isLoggedIn}
+                  onRequireLogin={handleRequireLogin}
+                  onOpenBookingModal={(initialCart) => {
+                    if (initialCart) setSelectedCart(initialCart);
+                    setIsEDeliveryModalOpen(true);
+                  }}
+                />
+              )}
+            </LazyBoundary>
           </div>
         )}
 
         {/* イベント */}
         {activeTab === 'events' && (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-28 md:pb-12">
-            {cloudOn && !cloud.ready ? (
-              <div className="text-center text-xs text-[#857D99] py-10">読み込み中…</div>
-            ) : (
-              <EventsTab
-                onAddNPoints={(points, title, type) => addEventRewardOnce(points, title, type || 'stamp')}
-                isLoggedIn={isLoggedIn}
-                onRequireLogin={handleRequireLogin}
-                cloudMode={cloudOn}
-              />
-            )}
+            <LazyBoundary fallback={<TabFallback />}>
+              {cloudOn && !cloud.ready ? (
+                <div className="text-center text-xs text-[#857D99] py-10">読み込み中…</div>
+              ) : (
+                <EventsTab
+                  onAddNPoints={(points, title, type) => addEventRewardOnce(points, title, type || 'stamp')}
+                  isLoggedIn={isLoggedIn}
+                  onRequireLogin={handleRequireLogin}
+                  cloudMode={cloudOn}
+                />
+              )}
+            </LazyBoundary>
           </div>
         )}
 
         {/* 設定(下のタブには出さず、ヘッダーのメニューから開く) */}
         {activeTab === 'settings' && (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-28 md:pb-12">
-            <SettingsTab
-              nPointBalance={shownBalance}
-              registeredStations={registeredStations}
-              onUpdateRegisteredStations={setRegisteredStations}
-              onOpenNPointModal={() => setIsNPointModalOpen(true)}
-              activeOrder={activeOrder}
-              isLoggedIn={isLoggedIn}
-              currentUser={shownUser}
-              onLoginClick={() => {
-                setLoginReason('神埼IDでログインまたは新規会員登録を行います。');
-                setPendingAction(null);
-                setIsLoginModalOpen(true);
-              }}
-              onLogout={handleLogout}
-              onOpenMyPage={() => setIsMyPageOpen(true)}
-            />
+            <LazyBoundary fallback={<TabFallback />}>
+              <SettingsTab
+                nPointBalance={shownBalance}
+                registeredStations={registeredStations}
+                onUpdateRegisteredStations={setRegisteredStations}
+                onOpenNPointModal={() => setIsNPointModalOpen(true)}
+                activeOrder={activeOrder}
+                isLoggedIn={isLoggedIn}
+                currentUser={shownUser}
+                onLoginClick={() => {
+                  setLoginReason('神埼IDでログインまたは新規会員登録を行います。');
+                  setPendingAction(null);
+                  setIsLoginModalOpen(true);
+                }}
+                onLogout={handleLogout}
+                onOpenMyPage={() => setIsMyPageOpen(true)}
+              />
+            </LazyBoundary>
           </div>
         )}
       </main>
@@ -951,74 +995,86 @@ export default function App() {
       />
 
       {/* Interactive Modals */}
-      <EDeliveryModal
-        isOpen={isEDeliveryModalOpen}
-        onClose={() => setIsEDeliveryModalOpen(false)}
-        onFinish={() => setReservationView('ticket')}
-        equipItems={MOCK_EQUIP_ITEMS}
-        onConfirmOrder={handleConfirmOrder}
-        initialCart={selectedCart}
-        onCartChange={setSelectedCart}
-        activeOrder={activeOrder}
-        isLoggedIn={isLoggedIn}
-        onRequireLogin={handleRequireLogin}
-        isCouponUsed={isDeliveryCouponUsed}
-        onCouponUsed={markDeliveryCouponUsed}
-        pointBalance={cloudOn && cloud.ready && !cloud.error ? shownBalance : undefined}
-        onSpendPoints={cloudOn && cloud.ready && !cloud.error ? cloud.spendPoints : undefined}
-      />
+      <LazyOnOpen open={isEDeliveryModalOpen}>
+        <EDeliveryModal
+          isOpen={isEDeliveryModalOpen}
+          onClose={() => setIsEDeliveryModalOpen(false)}
+          onFinish={() => setReservationView('ticket')}
+          equipItems={MOCK_EQUIP_ITEMS}
+          onConfirmOrder={handleConfirmOrder}
+          initialCart={selectedCart}
+          onCartChange={setSelectedCart}
+          activeOrder={activeOrder}
+          isLoggedIn={isLoggedIn}
+          onRequireLogin={handleRequireLogin}
+          isCouponUsed={isDeliveryCouponUsed}
+          onCouponUsed={markDeliveryCouponUsed}
+          pointBalance={cloudOn && cloud.ready && !cloud.error ? shownBalance : undefined}
+          onSpendPoints={cloudOn && cloud.ready && !cloud.error ? cloud.spendPoints : undefined}
+        />
+      </LazyOnOpen>
 
-      <LoginModal
-        isOpen={isLoginModalOpen}
-        onClose={() => {
-          setIsLoginModalOpen(false);
-          setPendingAction(null);
-        }}
-        onLogin={handleLogin}
-        reason={loginReason}
-      />
+      <LazyOnOpen open={isLoginModalOpen}>
+        <LoginModal
+          isOpen={isLoginModalOpen}
+          onClose={() => {
+            setIsLoginModalOpen(false);
+            setPendingAction(null);
+          }}
+          onLogin={handleLogin}
+          reason={loginReason}
+        />
+      </LazyOnOpen>
 
-      <MyPageModal
-        isOpen={isMyPageOpen}
-        onClose={() => setIsMyPageOpen(false)}
-        currentUser={shownUser}
-        balance={shownBalance}
-        pointHistory={shownPointHistory}
-        activeOrder={activeOrder}
-        orderHistory={shownOrderHistory}
-        hideDeleteAccount={demoOn}
-        cloudMode={cloudOn}
-        mileage={mileage}
-        onLogout={handleLogout}
-        onOpenNPointModal={() => {
-          setIsMyPageOpen(false);
-          setIsNPointModalOpen(true);
-        }}
-        onOpenQRCodeModal={() => {
-          setIsMyPageOpen(false);
-          setIsQRCodeModalOpen(true);
-        }}
-      />
+      <LazyOnOpen open={isMyPageOpen}>
+        <MyPageModal
+          isOpen={isMyPageOpen}
+          onClose={() => setIsMyPageOpen(false)}
+          currentUser={shownUser}
+          balance={shownBalance}
+          pointHistory={shownPointHistory}
+          activeOrder={activeOrder}
+          orderHistory={shownOrderHistory}
+          hideDeleteAccount={demoOn}
+          cloudMode={cloudOn}
+          mileage={mileage}
+          onLogout={handleLogout}
+          onOpenNPointModal={() => {
+            setIsMyPageOpen(false);
+            setIsNPointModalOpen(true);
+          }}
+          onOpenQRCodeModal={() => {
+            setIsMyPageOpen(false);
+            setIsQRCodeModalOpen(true);
+          }}
+        />
+      </LazyOnOpen>
 
-      <NPointModal
-        isOpen={isNPointModalOpen}
-        onClose={() => setIsNPointModalOpen(false)}
-        balance={shownBalance}
-        pointHistory={shownPointHistory}
-        currentUser={shownUser}
-        onRedeemCode={redeemPointCode}
-      />
+      <LazyOnOpen open={isNPointModalOpen}>
+        <NPointModal
+          isOpen={isNPointModalOpen}
+          onClose={() => setIsNPointModalOpen(false)}
+          balance={shownBalance}
+          pointHistory={shownPointHistory}
+          currentUser={shownUser}
+          onRedeemCode={redeemPointCode}
+        />
+      </LazyOnOpen>
 
-      <RouteMapModal
-        isOpen={isRouteMapModalOpen}
-        onClose={() => setIsRouteMapModalOpen(false)}
-      />
+      <LazyOnOpen open={isRouteMapModalOpen}>
+        <RouteMapModal
+          isOpen={isRouteMapModalOpen}
+          onClose={() => setIsRouteMapModalOpen(false)}
+        />
+      </LazyOnOpen>
 
-      <QRCodeModal
-        isOpen={isQRCodeModalOpen}
-        onClose={() => setIsQRCodeModalOpen(false)}
-        activeOrder={activeOrder}
-      />
+      <LazyOnOpen open={isQRCodeModalOpen}>
+        <QRCodeModal
+          isOpen={isQRCodeModalOpen}
+          onClose={() => setIsQRCodeModalOpen(false)}
+          activeOrder={activeOrder}
+        />
+      </LazyOnOpen>
     </PhoneContainer>
   );
 }

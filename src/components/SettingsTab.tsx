@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { lazy, useState, useEffect } from 'react';
 import {
   User,
   CreditCard,
@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { UserAvatar } from './UserAvatar';
 import { MyStationRegisterCard, RegisterableStation } from './MyStationRegisterCard';
-import { AdminConsoleModal } from './AdminConsoleModal';
+import { LazyOnOpen } from './LazyOnOpen';
 import {
   isNotificationSupported,
   getNotificationPermissionState,
@@ -35,6 +35,9 @@ import {
 
 import { ActiveOrder, UserProfile } from '../types';
 import { isLaunched } from '../utils/launch';
+
+// 管理者の画面は大きいので、開くときに読み込む
+const AdminConsoleModal = lazy(() => import('./AdminConsoleModal').then((m) => ({ default: m.AdminConsoleModal })));
 import { useDelayNotifyMode, DelayNotifyMode } from '../utils/delayNotifySettings';
 
 interface SettingsTabProps {
@@ -468,10 +471,12 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       </div>
 
       {/* 管理者用システムコンソールモーダル */}
-      <AdminConsoleModal
-        isOpen={isAdminModalOpen}
-        onClose={() => setIsAdminModalOpen(false)}
-      />
+      <LazyOnOpen open={isAdminModalOpen}>
+        <AdminConsoleModal
+          isOpen={isAdminModalOpen}
+          onClose={() => setIsAdminModalOpen(false)}
+        />
+      </LazyOnOpen>
     </div>
   );
 };

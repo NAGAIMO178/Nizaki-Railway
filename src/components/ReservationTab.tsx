@@ -595,6 +595,10 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
                     >
                       <img
                         src={item.image}
+                        width={640}
+                        height={349}
+                        loading="lazy"
+                        decoding="async"
                         alt={item.name}
                         referrerPolicy="no-referrer"
                         className="w-11 h-11 object-cover rounded-lg shrink-0 border border-[#E6E2EE]"
