@@ -84,7 +84,7 @@ function doPost(e) {
       return handleVerifyTicket(json.token);
     }
     if (json.action === 'useTicket') {
-      return handleUseTicket(json.token);
+      return handleUseTicket(json.token, json.seat);
     }
 
     // ①.5 神埼ID 会員認証まわり（LINE経由の新規登録／ログイン）
@@ -655,7 +655,7 @@ function handleCreateReservation(sessionToken, order, awardPoints) {
       'LINE_USER_ID': member.lineUserId || '',
       '列車名': limitText(order.trainName, 60),
       '号車': Number(order.carNo) || '',
-      '座席番号': limitText(order.seatNo, 10),
+      '座席番号': normalizeSeatNo(order.seatNo),
       '席種': limitText(order.seatType, 20),
       '乗車駅': limitText(order.boardingStation, 30),
       '降車駅': limitText(order.destinationStation, 30),
@@ -735,6 +735,57 @@ function handleCreateReservation(sessionToken, order, awardPoints) {
   }
 }
 
+// ---- 座席番号(複数席) ----
+// 台帳の「座席番号」: 1席は '4B'、複数席は '4B,4C'(席ごとにカンマ)、自由席は '自由席' または '自由席×3'(人数)。
+// 号車は1つ(同じ号車の席だけ)。席の数 = 人数(最大 MAX_SEATS)
+const FREE_SEAT_PATTERN = /^自由席×(\d{1,3})$/;
+const STRICT_SEAT_PATTERN = /^\d{1,2}[A-D]$/;
+
+// 座席番号の文字から、席の名前の一覧を作る。自由席×3 は、自由席1・自由席2・自由席3(席ごとの利用の記録に使う)
+function parseSeats(seatNo) {
+  const text = String(seatNo === undefined || seatNo === null ? '' : seatNo).trim();
+  const free = FREE_SEAT_PATTERN.exec(text);
+  if (free) {
+    const n = Math.min(Number(free[1]), MAX_SEATS);
+    if (n <= 1) return ['自由席'];
+    const seats = [];
+    for (let i = 1; i <= n; i++) seats.push('自由席' + i);
+    return seats;
+  }
+  const seats = text.split(',').map(function (v) { return v.trim(); }).filter(function (v) { return v !== ''; });
+  return seats.length > 0 ? seats : [text];
+}
+
+// 席の数・重複・書式を調べる。問題があれば断りの文を返す(席が無い申告は、調べない)
+function checkSeats(seatNo) {
+  if (seatNo === undefined || seatNo === null || seatNo === '') return null;
+  const text = String(seatNo).trim();
+  const free = FREE_SEAT_PATTERN.exec(text);
+  if (free) {
+    const n = Number(free[1]);
+    if (n > MAX_SEATS) return '座席は、' + MAX_SEATS + '席までです。';
+    return n >= 1 ? null : '予約内容が正しくありません。';
+  }
+  const seats = text.split(',').map(function (v) { return v.trim(); }).filter(function (v) { return v !== ''; });
+  if (seats.length > MAX_SEATS) return '座席は、' + MAX_SEATS + '席までです。';
+  if (seats.length >= 2) {
+    // 複数席のときだけ、書式を決める(席ごとの利用の記録に、席の名前をそのまま使うため)
+    const seen = {};
+    for (let i = 0; i < seats.length; i++) {
+      if (!STRICT_SEAT_PATTERN.test(seats[i]) || seen[seats[i]]) return '予約内容が正しくありません。';
+      seen[seats[i]] = true;
+    }
+  }
+  return null;
+}
+
+// 台帳に書く座席番号(複数席は、空の席を除いて、カンマでつなぐ)
+function normalizeSeatNo(seatNo) {
+  const text = limitText(seatNo, 40).trim();
+  if (FREE_SEAT_PATTERN.test(text) || text.indexOf(',') === -1) return text;
+  return text.split(',').map(function (v) { return v.trim(); }).filter(function (v) { return v !== ''; }).join(',');
+}
+
 /**
  * 1回の注文の上限を調べる。問題があれば、断りの文を返す(無ければ null)。
  * 予約の登録・デリバリーの追加(同じ予約番号の更新)の、どちらも通る。ふつうの注文(駅弁数個)は、ここに届かない。
@@ -752,6 +803,8 @@ function checkOrderLimits(order) {
     return '1回の注文の合計は、' + MAX_ORDER_TOTAL.toLocaleString() + '円までです。';
   }
   if (discount > MAX_ORDER_TOTAL) return '予約内容が正しくありません。';
+  const seatError = checkSeats(order.seatNo);
+  if (seatError) return seatError;
   if (order.items === undefined || order.items === null) return null;
   if (!Array.isArray(order.items) || order.items.length > MAX_ORDER_QUANTITY) {
     return '1回の注文は、合わせて' + MAX_ORDER_QUANTITY + '個までです。';
@@ -848,16 +901,66 @@ function ticketBoardedAt(found) {
   return found.col['乗車日時'] !== undefined ? cellText(found.row[found.col['乗車日時']]) : '';
 }
 
-// 券の状態(上から順に、最初に当てはまったもの)
-function ticketState(found) {
+// 「乗車日時」列の書き方:
+//  - 1席の予約: 時刻だけ('2026/10/21 10:32:15')。昔からの書き方のまま
+//  - 複数席の予約: 利用した席だけ '席=時刻' を ';' でつなぐ('4B=2026/10/21 10:32:15;4D=...')
+//  - 昔の時刻だけが入った行は、その予約の全席が、その時刻に利用済みとして読む
+const TICKET_TIME_PATTERN = /^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2}$/;
+
+function ticketSeats(found) {
+  return parseSeats(found.row[found.col['座席番号']]);
+}
+
+// 席ごとの利用時刻({ 席: 時刻 })。利用していない席は入らない
+function ticketBoardings(found) {
+  const cell = ticketBoardedAt(found).trim();
+  const seats = ticketSeats(found);
+  const result = {};
+  if (!cell) return result;
+  if (!TICKET_TIME_PATTERN.test(cell)) {
+    cell.split(';').forEach(function (pair) {
+      const i = pair.indexOf('=');
+      if (i <= 0) return;
+      const seat = pair.slice(0, i).trim();
+      const time = pair.slice(i + 1).trim();
+      if (time && seats.indexOf(seat) !== -1) result[seat] = time;
+    });
+    if (Object.keys(result).length > 0) return result;
+  }
+  // 昔の形(時刻だけ)や、読めない文字: 今までどおり、利用済みとして扱う
+  seats.forEach(function (seat) { result[seat] = cell; });
+  return result;
+}
+
+// 予約全体の状態(取消 → 期限切れ → 別の日 → 有効)。席ごとの利用は、ここに含めない
+function reservationState(found) {
   if (String(found.row[found.col['ステータス']]) === 'キャンセル') return 'cancelled';
-  if (ticketBoardedAt(found)) return 'used';
   if (isReservationRowExpired(found.headers, found.row)) return 'expired';
   // 予約日が今日より先 = 別の日(日またぎの夜行など、予約日が過去でも、到着前なら有効)
   const date = cellText(found.row[found.col['予約日']], 'yyyy-MM-dd');
   const today = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
   if (/^\d{4}-\d{2}-\d{2}$/.test(date) && date > today) return 'otherDay';
   return 'valid';
+}
+
+// 券の状態: 取消 / 全席が利用済みなら used / それ以外は予約全体の状態
+function ticketState(found) {
+  const base = reservationState(found);
+  if (base === 'cancelled') return base;
+  const boardings = ticketBoardings(found);
+  const allUsed = ticketSeats(found).every(function (seat) { return !!boardings[seat]; });
+  return allUsed ? 'used' : base;
+}
+
+// 席ごとの状態: 取消なら全席 cancelled / 利用済みの席は used / それ以外は予約全体の状態
+function ticketSeatList(found) {
+  const base = reservationState(found);
+  const boardings = ticketBoardings(found);
+  return ticketSeats(found).map(function (seat) {
+    if (base === 'cancelled') return { seat: seat, state: 'cancelled' };
+    if (boardings[seat]) return { seat: seat, state: 'used', usedAt: boardings[seat].slice(11, 16) };
+    return { seat: seat, state: base };
+  });
 }
 
 // 検札の画面に返す項目だけを、1つずつ写す(会員ID・LINE_USER_ID・金額・明細は返さない)
@@ -881,14 +984,20 @@ function ticketResponse(found, state, extra) {
   const res = { status: 'success', state: state };
   if (found) {
     res.ticket = ticketView(found);
-    if (state === 'used') res.usedAt = ticketBoardedAt(found).slice(11, 16);
+    res.seats = ticketSeatList(found);
+    if (state === 'used') {
+      // 全席が済んだ券: いちばん遅い利用時刻
+      const boardings = ticketBoardings(found);
+      const times = Object.keys(boardings).map(function (seat) { return boardings[seat]; }).sort();
+      res.usedAt = (times.length ? times[times.length - 1] : ticketBoardedAt(found)).slice(11, 16);
+    }
   }
   Object.keys(extra || {}).forEach(function (k) { res[k] = extra[k]; });
   return createJsonResponse(res);
 }
 
 /**
- * 検札の画面: 署名を確かめ、列車・区間・座席と状態だけを返す(読むだけ。ログイン証は要らない)
+ * 検札の画面: 署名を確かめ、列車・区間・座席(席ごとの状態)と状態だけを返す(読むだけ。ログイン証は要らない)
  */
 function handleVerifyTicket(token) {
   const orderId = verifyTicketToken(token);
@@ -899,24 +1008,41 @@ function handleVerifyTicket(token) {
 }
 
 /**
- * 「利用する」: 有効な券だけを乗車済みにする。
- * 確認から書き込みまでをロックの中で行うので、同時に押しても1回だけ成功する(あとの人には used が返る)
+ * 「利用する」: 有効な券の、指定した席だけを利用済みにする(席ごと)。
+ * 確認から書き込みまでをロックの中で行うので、同じ席を同時に押しても1回だけ成功する(あとの人には、利用済みが返る)。
+ * 別の席は、それぞれ書ける(ロックの中で読み直してから足すので、先に書かれた席は消えない)。
+ * 席を省略できるのは、1席の予約だけ(昔の呼び出しと同じ)
  */
-function handleUseTicket(token) {
+function handleUseTicket(token, seat) {
   const orderId = verifyTicketToken(token);
   if (!orderId) return ticketResponse(null, 'invalid');
   return withScriptLock(function () {
     // 列が無い台帳には、ここで足す
     const found = findTicketRow(getOrCreateReservationsSheet(), orderId);
     if (!found) return ticketResponse(null, 'invalid');
-    const state = ticketState(found);
-    if (state !== 'valid') return ticketResponse(found, state);
-    const cell = found.sheet.getRange(found.rowNumber, found.col['乗車日時'] + 1);
+    if (reservationState(found) !== 'valid') return ticketResponse(found, ticketState(found));
+    const seats = ticketSeats(found);
+    let target = typeof seat === 'string' ? seat.trim() : '';
+    if (!target) {
+      if (seats.length !== 1) return createJsonResponse({ status: 'error', code: 'seat_required', message: '席を指定してください。' });
+      target = seats[0];
+    }
+    if (seats.indexOf(target) === -1) {
+      return createJsonResponse({ status: 'error', code: 'seat_not_found', message: 'この予約に、その席はありません。' });
+    }
+    const boardings = ticketBoardings(found);
+    if (boardings[target]) return ticketResponse(found, ticketState(found));
     const boardedAt = nowText();
+    let text = boardedAt;
+    if (seats.length > 1) {
+      boardings[target] = boardedAt;
+      text = seats.filter(function (s) { return !!boardings[s]; }).map(function (s) { return s + '=' + boardings[s]; }).join(';');
+    }
+    const cell = found.sheet.getRange(found.rowNumber, found.col['乗車日時'] + 1);
     cell.setNumberFormat('@');
-    cell.setValue(boardedAt);
-    found.row[found.col['乗車日時']] = boardedAt;
-    return ticketResponse(found, 'used', { justUsed: true });
+    cell.setValue(text);
+    found.row[found.col['乗車日時']] = text;
+    return ticketResponse(found, ticketState(found), { justUsed: true, usedSeat: target });
   });
 }
 
@@ -1409,7 +1535,8 @@ const POINT_BASIS_CAP = 100000;          // 1つの予約で、ポイントを�
 const DAILY_RESERVATION_POINT_CAP = 3000; // 1会員が、予約で付くポイントを、1日(日本時間)に受け取れる上限
 const MAX_ACTIVE_RESERVATIONS = 20;       // 1会員の、まだ乗っていない(取消でない)予約の上限
 // 1回の注文(予約・デリバリーの追加)の上限。超える申告は、予約の保存ごと断る(画面にも同じ上限を置く)
-const MAX_ORDER_TOTAL = 50000;  // 合計金額(N-POINTで払った分を含む)
+const MAX_ORDER_TOTAL = 100000; // 合計金額(N-POINTで払った分を含む)
+const MAX_SEATS = 6;            // 1つの予約の座席の数(人数)
 const MAX_ITEM_QUANTITY = 9;    // 1商品の個数
 const MAX_ORDER_QUANTITY = 20;  // 1注文の個数の合計
 const HISTORY_LIMIT = 30;
@@ -1865,8 +1992,12 @@ function saveReservationDetail(sheet, row, order, pointBasis) {
     col = headers.filter(function (v) { return v !== ''; }).length + 1;
     sheet.getRange(1, col).setValue('明細');
   }
+  const seatNames = parseSeats(order.seatNo);
   const items = (Array.isArray(order.items) ? order.items : []).slice(0, 20).map(function (it) {
-    return { name: limitText(it && it.name, 60), quantity: Math.floor(Number(it && it.quantity)) || 0, price: Math.floor(Number(it && it.price)) || 0 };
+    const item = { name: limitText(it && it.name, 60), quantity: Math.floor(Number(it && it.quantity)) || 0, price: Math.floor(Number(it && it.price)) || 0 };
+    const seats = sanitizeItemSeats(it && it.seats, seatNames, item.quantity);
+    if (seats) item.seats = seats;
+    return item;
   });
   const detail = {
     items: items,
@@ -1875,6 +2006,22 @@ function saveReservationDetail(sheet, row, order, pointBasis) {
     pointBasis: Math.max(0, Math.floor(Number(pointBasis)) || 0) // ポイントを計算した、いちばん大きい合計金額
   };
   sheet.getRange(row, col).setValue(JSON.stringify(detail));
+}
+
+// デリバリーの商品を、どの席に何個届けるか({ 席: 個数 })。この予約の席だけ・合計は注文の個数まで。割り振りが無い(または不正な)ときは付けない
+function sanitizeItemSeats(raw, seatNames, quantity) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const out = {};
+  let sum = 0;
+  seatNames.forEach(function (seat) {
+    if (!Object.prototype.hasOwnProperty.call(raw, seat)) return;
+    const n = Math.floor(Number(raw[seat]));
+    if (n >= 1 && sum + n <= quantity) {
+      out[seat] = n;
+      sum += n;
+    }
+  });
+  return Object.keys(out).length > 0 ? out : null;
 }
 
 // 予約の明細の列から、これまでにポイントを計算した、いちばん大きい合計金額を読む(無ければ0)

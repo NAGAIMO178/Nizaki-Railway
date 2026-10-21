@@ -113,6 +113,7 @@ interface Opt {
   dep?: string;
   arr?: string;
   boardedAt?: string;
+  seatNo?: string;
 }
 
 const put = (o: Opt = {}) => {
@@ -122,7 +123,7 @@ const put = (o: Opt = {}) => {
     LINE_USER_ID: 'U-line-secret',
     列車名: '特急めぐり3号',
     号車: 3,
-    座席番号: '5A',
+    座席番号: o.seatNo ?? '5A',
     席種: 'reserved',
     乗車駅: '神埼',
     降車駅: '東桜',
@@ -389,5 +390,202 @@ describe('QR乗車券: 予約の更新との関係', () => {
     expect(boardedAtOf()).toBe('2026/11/03 10:32:10');
     expect(gas.handleVerifyTicket(t).state).toBe('used');
     expect(gas.handleUseTicket(t).justUsed).toBeUndefined();
+  });
+});
+
+describe('QR乗車券: 複数席(席ごとの利用)', () => {
+  const T = '2026/11/03';
+  const ids = (r: { seats: { seat: string }[] }) => r.seats.map((x) => x.seat);
+  const states = (r: { seats: { state: string }[] }) => r.seats.map((x) => x.state);
+
+  it('検札の応答に、席ごとの状態(seats)と、全席の文字が入る', () => {
+    put({ seatNo: '4B,4C,4D' });
+    const r = gas.handleVerifyTicket(tokenOf());
+    expect(r.state).toBe('valid');
+    expect(r.ticket.seatNo).toBe('4B,4C,4D');
+    expect(ids(r)).toEqual(['4B', '4C', '4D']);
+    expect(states(r)).toEqual(['valid', 'valid', 'valid']);
+  });
+
+  it('1席の予約も、seats は1つ。使うと昔の形(時刻だけ)で書かれる', () => {
+    put();
+    const t = tokenOf();
+    expect(gas.handleVerifyTicket(t).seats).toEqual([{ seat: '5A', state: 'valid' }]);
+    at('2026-11-03T10:32:10+09:00');
+    const r = gas.handleUseTicket(t, '5A');
+    expect(r).toMatchObject({ state: 'used', justUsed: true, usedSeat: '5A', usedAt: '10:32' });
+    expect(boardedAtOf()).toBe(`${T} 10:32:10`);
+  });
+
+  it('席を省略した昔の呼び出しは、1席の予約なら動く', () => {
+    put();
+    expect(gas.handleUseTicket(tokenOf()).state).toBe('used');
+  });
+
+  it('利用する: 押した席だけ利用済みになり、ほかの席は有効のまま。全体は有効', () => {
+    put({ seatNo: '4B,4C,4D' });
+    const t = tokenOf();
+    at('2026-11-03T10:32:10+09:00');
+    const r = gas.handleUseTicket(t, '4C');
+    expect(r.state).toBe('valid');
+    expect(r.justUsed).toBe(true);
+    expect(r.usedSeat).toBe('4C');
+    expect(r.seats).toEqual([
+      { seat: '4B', state: 'valid' },
+      { seat: '4C', state: 'used', usedAt: '10:32' },
+      { seat: '4D', state: 'valid' },
+    ]);
+    expect(boardedAtOf()).toBe(`4C=${T} 10:32:10`);
+  });
+
+  it('同じ席を2回押しても、書き込みは1回', () => {
+    put({ seatNo: '4B,4C' });
+    const t = tokenOf();
+    events = [];
+    at('2026-11-03T10:32:10+09:00');
+    gas.handleUseTicket(t, '4B');
+    at('2026-11-03T10:40:00+09:00');
+    const second = gas.handleUseTicket(t, '4B');
+    expect(second.justUsed).toBeUndefined();
+    expect(states(second)).toEqual(['used', 'valid']);
+    expect(events.filter((e) => e.startsWith('setValue'))).toHaveLength(1);
+    expect(boardedAtOf()).toBe(`4B=${T} 10:32:10`);
+  });
+
+  it('別の席は、それぞれ書ける。両方が残り、全席が済むと全体も used(最後の時刻)', () => {
+    put({ seatNo: '4B,4C' });
+    const t = tokenOf();
+    at('2026-11-03T10:32:10+09:00');
+    gas.handleUseTicket(t, '4C');
+    at('2026-11-03T10:35:00+09:00');
+    const r = gas.handleUseTicket(t, '4B');
+    expect(r.state).toBe('used');
+    expect(r.usedAt).toBe('10:35');
+    expect(boardedAtOf()).toBe(`4B=${T} 10:35:00;4C=${T} 10:32:10`);
+    expect(gas.handleVerifyTicket(t).state).toBe('used');
+  });
+
+  it('同時に別の席を押しても、先に書かれた席を消さない(ロックの中で読み直す)', () => {
+    put({ seatNo: '4B,4C' });
+    const t = tokenOf();
+    gas.withScriptLock = (fn: () => unknown) => {
+      rows[1][col('乗車日時')] = `4B=${T} 09:00:01`; // 待っているあいだに、別の人が 4B を書き終えた
+      return fn();
+    };
+    at('2026-11-03T09:00:05+09:00');
+    const r = gas.handleUseTicket(t, '4C');
+    expect(r.state).toBe('used');
+    expect(boardedAtOf()).toBe(`4B=${T} 09:00:01;4C=${T} 09:00:05`);
+  });
+
+  it('同時に同じ席を押したときは、あとの人は書かずに利用済みを見る', () => {
+    put({ seatNo: '4B,4C' });
+    const t = tokenOf();
+    gas.withScriptLock = (fn: () => unknown) => {
+      rows[1][col('乗車日時')] = `4B=${T} 09:00:01`;
+      return fn();
+    };
+    events = [];
+    const r = gas.handleUseTicket(t, '4B');
+    expect(r.justUsed).toBeUndefined();
+    expect(r.seats[0]).toMatchObject({ seat: '4B', state: 'used', usedAt: '09:00' });
+    expect(events.filter((e) => e.startsWith('setValue'))).toEqual([]);
+  });
+
+  it('席の指定が無い(複数席)・予約にない席は、書かずに断る', () => {
+    put({ seatNo: '4B,4C' });
+    const t = tokenOf();
+    events = [];
+    expect(gas.handleUseTicket(t)).toMatchObject({ status: 'error', code: 'seat_required' });
+    expect(gas.handleUseTicket(t, '9Z')).toMatchObject({ status: 'error', code: 'seat_not_found' });
+    expect(gas.handleUseTicket(t, '4B,4C')).toMatchObject({ status: 'error', code: 'seat_not_found' });
+    expect(gas.handleUseTicket(t, 5)).toMatchObject({ status: 'error', code: 'seat_required' });
+    expect(events.filter((e) => e.startsWith('setValue'))).toEqual([]);
+    expect(boardedAtOf()).toBe('');
+  });
+
+  it('取消・期限切れ・別の列車では、どの席にも書かない。全席が同じ状態', () => {
+    put({ orderId: 'EQ-11111', seatNo: '4B,4C', date: '2026-11-04' });
+    put({ orderId: 'EQ-22222', seatNo: '4B,4C', status: 'キャンセル' });
+    put({ orderId: 'EQ-33333', seatNo: '4B,4C', date: '2026-11-02' });
+    const results = ['EQ-11111', 'EQ-22222', 'EQ-33333'].map((id) => gas.handleUseTicket(tokenOf(id), '4B'));
+    expect(results.map((r) => r.state)).toEqual(['otherDay', 'cancelled', 'expired']);
+    expect(results.map((r) => states(r))).toEqual([['otherDay', 'otherDay'], ['cancelled', 'cancelled'], ['expired', 'expired']]);
+    expect(rows.slice(1).map((r) => r[col('乗車日時')])).toEqual(['', '', '']);
+  });
+
+  it('期限をすぎたあとも、利用済みの席は used・未利用の席は expired', () => {
+    put({ seatNo: '4B,4C', boardedAt: `4B=${T} 10:32:10`, date: '2026-11-02' });
+    const r = gas.handleVerifyTicket(tokenOf());
+    expect(r.state).toBe('expired');
+    expect(states(r)).toEqual(['used', 'expired']);
+  });
+
+  it('取り消した予約は、利用済みの席も含めて cancelled', () => {
+    put({ seatNo: '4B,4C', boardedAt: `4B=${T} 10:32:10`, status: 'キャンセル' });
+    const r = gas.handleVerifyTicket(tokenOf());
+    expect(r.state).toBe('cancelled');
+    expect(states(r)).toEqual(['cancelled', 'cancelled']);
+  });
+
+  it('昔の形(時刻だけ)の行は、全席が、その時刻で利用済み', () => {
+    put({ boardedAt: `${T} 10:32:10` });
+    put({ orderId: 'EQ-22222', seatNo: '4B,4C', boardedAt: `${T} 10:32:10` });
+    const a = gas.handleVerifyTicket(tokenOf());
+    expect(a).toMatchObject({ state: 'used', usedAt: '10:32' });
+    expect(a.seats).toEqual([{ seat: '5A', state: 'used', usedAt: '10:32' }]);
+    const b = gas.handleVerifyTicket(tokenOf('EQ-22222'));
+    expect(b.state).toBe('used');
+    expect(states(b)).toEqual(['used', 'used']);
+    expect(gas.handleUseTicket(tokenOf('EQ-22222'), '4B').justUsed).toBeUndefined();
+  });
+
+  it('読めない文字が入っていても、今までどおり利用済みとして扱う。壊れた組は、読めた分だけ使う', () => {
+    put({ boardedAt: '済' });
+    expect(gas.handleVerifyTicket(tokenOf()).state).toBe('used');
+    put({ orderId: 'EQ-22222', seatNo: '4B,4C', boardedAt: `4B=${T} 10:32:10;;4C=;9Z=${T} 11:00:00;ごみ` });
+    const r = gas.handleVerifyTicket(tokenOf('EQ-22222'));
+    expect(r.state).toBe('valid');
+    expect(states(r)).toEqual(['used', 'valid']);
+  });
+
+  it('自由席×3 は、自由席1・2・3 の3席として使える', () => {
+    put({ seatNo: '自由席×3' });
+    const t = tokenOf();
+    expect(ids(gas.handleVerifyTicket(t))).toEqual(['自由席1', '自由席2', '自由席3']);
+    expect(gas.handleUseTicket(t, '自由席2').seats.map((x: { state: string }) => x.state)).toEqual(['valid', 'used', 'valid']);
+    put({ orderId: 'EQ-22222', seatNo: '自由席' });
+    expect(gas.handleUseTicket(tokenOf('EQ-22222')).state).toBe('used');
+  });
+
+  it('席ごとの記録は、デリバリーを足す更新で消えない', () => {
+    const order = {
+      orderId: 'EQ-12345', trainName: '特急めぐり3号', carNo: 1, seatNo: '3A,3B', seatType: 'megu', boardingStation: '神埼', destinationStation: '東桜',
+      totalPrice: 4100, reservedDate: '2026-11-03', departureTime: '10:15', arrivalTime: '11:40',
+    };
+    gas.handleCreateReservation('ok1', order, false);
+    const t = tokenOf();
+    at('2026-11-03T10:32:10+09:00');
+    gas.handleUseTicket(t, '3B');
+    gas.handleCreateReservation('ok1', { ...order, totalPrice: 5000 }, false);
+    expect(rows).toHaveLength(2);
+    expect(boardedAtOf()).toBe(`3B=${T} 10:32:10`);
+    expect(states(gas.handleVerifyTicket(t))).toEqual(['valid', 'used']);
+  });
+
+  it('複数席の応答にも、会員ID・LINE のID・金額・台帳の見出しが入らない', () => {
+    put({ seatNo: '4B,4C' });
+    const t = tokenOf();
+    const all = JSON.stringify([gas.handleVerifyTicket(t), gas.handleUseTicket(t, '4B'), gas.handleUseTicket(t, '4C'), gas.handleVerifyTicket(t)]);
+    for (const secret of ['M1', 'U-line-secret', '1980', '会員ID', 'LINE_USER_ID', '合計金額', 'EQ-12345']) {
+      expect(all).not.toContain(secret);
+    }
+  });
+
+  it('持ち主の getTicket にも、席ごとの状態が入る', () => {
+    put({ seatNo: '4B,4C', boardedAt: `4C=${T} 10:32:10` });
+    const r = gas.handleGetTicket('ok1', 'EQ-12345');
+    expect(r.state).toBe('valid');
+    expect(states(r)).toEqual(['valid', 'used']);
   });
 });
