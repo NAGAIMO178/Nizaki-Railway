@@ -7,6 +7,7 @@ import {
   getItemRestrictionLabel,
   getSeatClassLabel,
   getSeatClassRibbon,
+  getSeatClassRibbonName,
 } from '../src/utils/seatUtils';
 
 const item = (onlySeatTypes?: EquipItem['onlySeatTypes']) => ({ onlySeatTypes }) as EquipItem;
@@ -40,6 +41,9 @@ describe('座席の種類のきまり', () => {
   it('予約カードの帯: めぐシートだけ「（プレミアム）」が付く', () => {
     expect(getSeatClassRibbon('megu')).toBe('めぐシート（プレミアム） 予約確定');
     expect(getSeatClassRibbon('green')).toBe('あやみ+ 予約確定');
+    // 公開後の札は、席種の名前だけ(公開前の「予約確定」つきの帯は、そのまま)
+    expect(getSeatClassRibbonName('megu')).toBe('めぐシート（プレミアム）');
+    expect(getSeatClassRibbonName('green')).toBe('あやみ+');
   });
 });
 

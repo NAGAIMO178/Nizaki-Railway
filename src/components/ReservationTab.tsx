@@ -39,7 +39,7 @@ import {
   getCachedExpressData,
 } from '../utils/diaTimetable';
 import { isLaunched } from '../utils/launch';
-import { TicketSummary, ticketBadgeLabel } from '../utils/ticketApi';
+import { TicketSummary, reservationRibbon } from '../utils/ticketApi';
 import { calculateFare } from '../utils/fare';
 import { CompletionModal } from './CompletionModal';
 
@@ -493,20 +493,19 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
     setShowBookingSuccessModal(true);
   };
 
+  // 公開後の予約カードの右上の札(席種の名前。利用済みのときは、利用の状態)
+  const ribbon = reservationRibbon(activeOrder?.seatType, ticketSummary);
+
   return (
     <div className="space-y-4 text-[#221C35] max-w-md mx-auto p-4 pb-20 animate-fadeIn">
       {/* Title Header */}
-      {/* 公開後は、上の切り替えに「特急券・座席」とあるので、見出しは出さない(「予約済み」の札だけ残す) */}
-      {(!isLaunched() || activeOrder) && (
+      {/* 公開後は、上の切り替えに「特急券・座席」とあるので、見出しも「予約済み」の札も出さない(状態は、カードの右上の札に出す) */}
+      {!isLaunched() && (
         <div className="flex items-center justify-between">
-          {!isLaunched() ? (
-            <h2 className="text-base font-bold text-[#221C35] flex items-center gap-2">
-              <Ticket className="w-5 h-5 text-[#5B21B6]" />
-              <span>特急券・座席指定予約</span>
-            </h2>
-          ) : (
-            <span />
-          )}
+          <h2 className="text-base font-bold text-[#221C35] flex items-center gap-2">
+            <Ticket className="w-5 h-5 text-[#5B21B6]" />
+            <span>特急券・座席指定予約</span>
+          </h2>
           {activeOrder && (
             <span className="text-[11px] font-bold bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full flex items-center gap-1 border border-emerald-300">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
@@ -524,9 +523,21 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
           {/* Main Reserved Train & Departure Info Card */}
           <div className="bg-white rounded-2xl p-5 shadow-xs border border-[#5B21B6]/30 space-y-4 relative overflow-hidden">
             {/* Background Accent Decorative Ribbon */}
-            <div className="absolute top-0 right-0 bg-gradient-to-l from-[#5B21B6] to-[#7C3AED] text-white text-[10px] font-extrabold px-3 py-1 rounded-bl-xl shadow-xs">
-              {getSeatClassRibbon(activeOrder.seatType)}
-            </div>
+            {isLaunched() ? (
+              // 公開後: 席種の名前だけ。利用済みのときは、濃い灰色で、利用の状態に変わる
+              <div
+                className={`absolute top-0 right-0 text-white rounded-bl-xl shadow-xs ${
+                  ribbon.used ? 'bg-[#3F3A4D] text-xs font-black px-3.5 py-1.5 flex items-center gap-1' : 'bg-gradient-to-l from-[#5B21B6] to-[#7C3AED] text-[10px] font-extrabold px-3 py-1'
+                }`}
+              >
+                {ribbon.used && <Check className="w-3.5 h-3.5" strokeWidth={3} />}
+                <span>{ribbon.text}</span>
+              </div>
+            ) : (
+              <div className="absolute top-0 right-0 bg-gradient-to-l from-[#5B21B6] to-[#7C3AED] text-white text-[10px] font-extrabold px-3 py-1 rounded-bl-xl shadow-xs">
+                {getSeatClassRibbon(activeOrder.seatType)}
+              </div>
+            )}
 
             <div className="pt-1">
               <div className="text-[10px] text-[#6B6380] font-bold flex items-center gap-1.5">
@@ -558,11 +569,6 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
               <h3 className="text-base font-black text-[#5B21B6] flex items-center gap-1.5 mt-0.5">
                 <Armchair className="w-5 h-5 text-[#5B21B6]" />
                 <span>{activeOrder.trainName}</span>
-                {ticketBadgeLabel(ticketSummary) && (
-                  <span className="text-[10px] font-extrabold text-[#6B6380] bg-[#F4F3F8] border border-[#E6E2EE] px-2 py-0.5 rounded-md">
-                    {ticketBadgeLabel(ticketSummary)}
-                  </span>
-                )}
               </h3>
             </div>
 
