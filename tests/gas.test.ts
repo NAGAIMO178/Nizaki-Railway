@@ -538,7 +538,7 @@ describe('管理トークン(verifyAdminToken・setDisruptions)', () => {
   });
 });
 
-// ---- 1回の注文の上限(合計5万円・1商品9個・合計20個) ----
+// ---- 1回の注文の上限(合計10万円・1商品9個・合計20個・座席6席) ----
 describe('注文の上限(予約の登録・デリバリーの追加)', () => {
   const HEADERS = ['予約日時', '予約番号', 'LINE_USER_ID', '列車名', '号車', '座席番号', '席種', '乗車駅', '降車駅', '合計金額', 'ステータス', '会員ID', '予約日', '出発時刻', '到着時刻'];
   let grid: unknown[][];
@@ -550,8 +550,8 @@ describe('注文の上限(予約の登録・デリバリーの追加)', () => {
       appendRow: (r: unknown[]) => void grid.push([...r]),
       getLastRow: () => grid.length,
       getLastColumn: () => grid[0].length,
-      getRange: (row: number, col: number) => ({
-        getValues: () => [grid[row - 1].slice(col - 1, col)],
+      getRange: (row: number, col: number, _rows = 1, cols = 1) => ({
+        getValues: () => [grid[row - 1].slice(col - 1, col - 1 + cols)],
         setValue: (v: unknown) => void (grid[row - 1][col - 1] = v),
         setValues: (vs: unknown[][]) => vs.forEach((r, i) => r.forEach((v, j) => void (grid[row - 1 + i][col - 1 + j] = v))),
         setNumberFormat: () => undefined,
@@ -573,11 +573,11 @@ describe('注文の上限(予約の登録・デリバリーの追加)', () => {
     expect(grid.length).toBe(2);
   });
 
-  it('合計5万円までは通り、1円でも超えたら、断る(N-POINTで払った分も含めて数える)', () => {
-    expect(send({ totalPrice: 50000, items: [] }).status).toBe('success');
-    refused(send({ orderId: 'EQ-2', totalPrice: 50001, items: [] }));
-    expect(send({ orderId: 'EQ-3', totalPrice: 30000, pointsUsed: 20000, items: [] }).status).toBe('success');
-    refused(send({ orderId: 'EQ-4', totalPrice: 30000, pointsUsed: 20001, items: [] }));
+  it('合計10万円までは通り、1円でも超えたら、断る(N-POINTで払った分も含めて数える)', () => {
+    expect(send({ totalPrice: 100000, items: [] }).status).toBe('success');
+    refused(send({ orderId: 'EQ-2', totalPrice: 100001, items: [] }));
+    expect(send({ orderId: 'EQ-3', totalPrice: 60000, pointsUsed: 40000, items: [] }).status).toBe('success');
+    refused(send({ orderId: 'EQ-4', totalPrice: 60000, pointsUsed: 40001, items: [] }));
   });
 
   it('1商品は9個まで。10個は断る', () => {
@@ -618,9 +618,72 @@ describe('注文の上限(予約の登録・デリバリーの追加)', () => {
     refused(send({ orderId: 'EQ-2', totalPrice: 31637850 }, false));
   });
 
-  it('N-POINTを使う額も、1回5万円まで', () => {
-    put('welcome', 'welcome2', 200000);
-    expect(gas.handleSpendPoints('ok', 'EQ-1', 50000, 't')).toMatchObject({ status: 'success' });
-    expect(gas.handleSpendPoints('ok', 'EQ-2', 50001, 't')).toMatchObject({ status: 'error' });
+  it('N-POINTを使う額も、1回10万円まで', () => {
+    put('welcome', 'welcome2', 300000);
+    expect(gas.handleSpendPoints('ok', 'EQ-1', 100000, 't')).toMatchObject({ status: 'success' });
+    expect(gas.handleSpendPoints('ok', 'EQ-2', 100001, 't')).toMatchObject({ status: 'error' });
+  });
+
+  describe('複数席(最大6席)', () => {
+    const seatCell = () => grid[1][HEADERS.indexOf('座席番号')];
+
+    it('1席は、今までどおり保存される', () => {
+      expect(send({ seatNo: '4B', totalPrice: 2400, items: [] }).status).toBe('success');
+      expect(seatCell()).toBe('4B');
+    });
+
+    it('2〜6席は通り、座席番号は切れずにそのまま台帳に入る', () => {
+      expect(send({ seatNo: '4B,4C', totalPrice: 4800, items: [] }).status).toBe('success');
+      expect(seatCell()).toBe('4B,4C');
+      const six = '10A,10B,10C,10D,9A,9B';
+      expect(send({ orderId: 'EQ-2', seatNo: six, totalPrice: 14400, items: [] }).status).toBe('success');
+      expect(grid[2][HEADERS.indexOf('座席番号')]).toBe(six);
+    });
+
+    it('7席は断る。台帳にもポイントにも触れない', () => {
+      refused(send({ seatNo: '1A,1B,1C,1D,2A,2B,2C', totalPrice: 16800, items: [] }));
+      expect(grid.length).toBe(1);
+      expect(rows.length).toBe(2);
+    });
+
+    it('同じ席の重複・座席の形でない文字(複数席のとき)・空の席は、扱いが決まっている', () => {
+      expect(send({ seatNo: '4B,4B', totalPrice: 4800, items: [] })).toMatchObject({ status: 'error' });
+      expect(send({ seatNo: '4B,=A1', totalPrice: 4800, items: [] })).toMatchObject({ status: 'error' });
+      expect(send({ seatNo: '4B;1A=x,4C', totalPrice: 4800, items: [] })).toMatchObject({ status: 'error' });
+      expect(grid.length).toBe(1);
+      // 空の席は数えず、台帳には詰めて書く
+      expect(send({ orderId: 'EQ-2', seatNo: '4B,,4C,', totalPrice: 4800, items: [] }).status).toBe('success');
+      expect(grid[1][HEADERS.indexOf('座席番号')]).toBe('4B,4C');
+    });
+
+    it('自由席は、1人(自由席)も、人数つき(自由席×3)も通る。7人は断る', () => {
+      expect(send({ seatNo: '自由席', totalPrice: 750, items: [] }).status).toBe('success');
+      expect(send({ orderId: 'EQ-2', seatNo: '自由席×3', totalPrice: 2250, items: [] }).status).toBe('success');
+      expect(grid[2][HEADERS.indexOf('座席番号')]).toBe('自由席×3');
+      refused(send({ orderId: 'EQ-3', seatNo: '自由席×7', totalPrice: 5250, items: [] }));
+      expect(send({ orderId: 'EQ-4', seatNo: '自由席×0', totalPrice: 0, items: [] })).toMatchObject({ status: 'error' });
+    });
+
+    it('座席番号が1席でも、複数席でも、更新(デリバリーを足す)は通る', () => {
+      expect(send({ seatNo: '1A,1B', totalPrice: 4800, items: [] }).status).toBe('success');
+      expect(send({ seatNo: '1A,1B', totalPrice: 5600, items: [item(1)] }).status).toBe('success');
+      expect(grid.length).toBe(2);
+    });
+
+    it('複数席の予約のポイントは、合計の3%を1回だけ(席の数でかけ算しない)', () => {
+      expect(send({ seatNo: '1A,1B,1C', totalPrice: 7200, items: [] }).status).toBe('success');
+      expect(balance()).toBe(Math.floor(7200 * 0.03));
+    });
+
+    it('デリバリーを席ごとに割り振ると、明細に残る(席の数・個数の範囲のものだけ)', () => {
+      const send3 = (items: unknown[]) => send({ seatNo: '1A,1B,1C', totalPrice: 7200, items });
+      expect(send3([{ name: '駅弁', quantity: 3, price: 800, seats: { '1A': 1, '1C': 2, '9Z': 4 } }, { name: 'お茶', quantity: 2, price: 150, seats: { '1B': 3 } }, { name: '菓子', quantity: 1, price: 300 }]).status).toBe('success');
+      const detail = JSON.parse(String(grid[1][grid[0].indexOf('明細')]));
+      expect(detail.items).toEqual([
+        { name: '駅弁', quantity: 3, price: 800, seats: { '1A': 1, '1C': 2 } },
+        { name: 'お茶', quantity: 2, price: 150 },
+        { name: '菓子', quantity: 1, price: 300 },
+      ]);
+    });
   });
 });
