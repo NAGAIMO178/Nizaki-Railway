@@ -1,5 +1,5 @@
 import React from 'react';
-import { QrCode, Menu } from 'lucide-react';
+import { Barcode, Menu } from 'lucide-react';
 import { TabType, UserProfile } from '../types';
 import { UserAvatar } from './UserAvatar';
 
@@ -85,7 +85,7 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             )}
 
-            {/* QR Code Icon Button triggers N-POINT Modal - ログイン時のみ表示 */}
+            {/* バーコードのボタン(N-POINT 会員証を開く) - ログイン時のみ表示 */}
             {isLoggedIn && (
               <button
                 type="button"
@@ -93,7 +93,7 @@ export const Header: React.FC<HeaderProps> = ({
                 className="p-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-800 transition-all cursor-pointer border border-gray-200 flex items-center justify-center gap-1.5 h-8 sm:h-9 w-8 sm:w-9"
                 title="N-POINTを表示"
               >
-                <QrCode className="w-4 h-4 text-[#5B21B6]" />
+                <Barcode className="w-4 h-4 text-[#5B21B6]" />
               </button>
             )}
           </div>
