@@ -24,7 +24,7 @@ import { UserProfile, ActiveOrder, PointHistoryItem, AccountActivityItem, OrderH
 import { deleteAccount } from '../utils/accountApi';
 import { MileageCard } from './MileageCard';
 import type { Mileage } from '../utils/mileage';
-import { getSeatClassLabel } from '../utils/seatUtils';
+import { formatSeats, getSeatClassLabel, seatTitle } from '../utils/seatUtils';
 import { isLaunched } from '../utils/launch';
 import { calcReservationPoints } from '../utils/points';
 import { PrivacyPolicyModal } from './PrivacyPolicyModal';
@@ -108,7 +108,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
           {
             id: `act_ticket_${activeOrder.orderId}`,
             category: 'ticket' as const,
-            title: `${activeOrder.trainName} ${activeOrder.carNo}号車 ${activeOrder.seatNo}席`,
+            title: `${activeOrder.trainName} ${seatTitle(activeOrder.carNo, activeOrder.seatNo)}`,
             subtitle: `${activeOrder.boardingStation || '—'} (${activeOrder.departureTime || '—'}) → ${activeOrder.destinationStation || '—'} (${activeOrder.arrivalTime || '—'})`,
             date: '本日乗車予定',
             status: '予約確定・乗車前',
@@ -150,7 +150,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
         {
           id: `act_hist_ticket_${h.orderId}`,
           category: 'ticket',
-          title: `${h.trainName} ${h.carNo}号車 ${h.seatNo}席`,
+          title: `${h.trainName} ${seatTitle(h.carNo, h.seatNo)}`,
           subtitle: `${h.boardingStation || ''} (${h.departureTime || ''}) → ${h.destinationStation || ''} (${h.arrivalTime || ''})`,
           date,
           status: done ? '乗車済み' : 'キャンセル',
@@ -318,7 +318,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs font-extrabold text-emerald-950 truncate">
-                      {activeOrder.trainName} ({activeOrder.carNo}号車 {activeOrder.seatNo})
+                      {activeOrder.trainName} ({activeOrder.carNo}号車 {formatSeats(activeOrder.seatNo)})
                     </span>
                     <span className="text-[9px] bg-emerald-600 text-white font-bold px-1.5 py-0.2 rounded">
                       本日有効

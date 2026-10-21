@@ -35,6 +35,7 @@ import {
 
 import { ActiveOrder, UserProfile } from '../types';
 import { isLaunched } from '../utils/launch';
+import { formatSeats } from '../utils/seatUtils';
 
 // 管理者の画面は大きいので、開くときに読み込む
 const AdminConsoleModal = lazy(() => import('./AdminConsoleModal').then((m) => ({ default: m.AdminConsoleModal })));
@@ -131,7 +132,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     } else if (type === 'delivery') {
       title = '【テスト通知】車内デリバリーのお知らせ';
       body = activeOrder
-        ? `通知のテストです。ご予約席（${activeOrder.carNo}号車 ${activeOrder.seatNo}）へのお届けの通知は、このように表示されます。`
+        ? `通知のテストです。ご予約席（${activeOrder.carNo}号車 ${formatSeats(activeOrder.seatNo)}）へのお届けの通知は、このように表示されます。`
         : '通知のテストです。お届けの通知は、ご予約のお客様に表示されます。';
       tag = 'kanzaki-delivery-alert';
     } else {

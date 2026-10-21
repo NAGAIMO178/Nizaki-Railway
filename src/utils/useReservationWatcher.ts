@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ActiveOrder } from '../types';
 import { EXPRESS_TYPES, findExpressTrips, loadExpressData, resolveTrainDelay } from './diaTimetable';
 import { getNotificationPermissionState, sendLocalPushNotification } from './pushNotification';
+import { formatSeats } from './seatUtils';
 
 const SCAN_INTERVAL_MS = 30 * 1000;
 const NOTICE_SHOW_MS = 20 * 1000;
@@ -168,10 +169,10 @@ export function useReservationWatcher(opts: {
             if (minsToDep <= near && !notified.has(`remind${near}`)) {
               mark(`remind${far}`);
               mark(`remind${near}`);
-              notify('【発車のお知らせ】', `ご予約の${r.trainName}は、あと約${Math.max(1, Math.ceil(minsToDep))}分で${r.boarding}駅を発車します(${r.carNo}号車 ${r.seatNo})。`, tag('remind'));
+              notify('【発車のお知らせ】', `ご予約の${r.trainName}は、あと約${Math.max(1, Math.ceil(minsToDep))}分で${r.boarding}駅を発車します(${r.carNo}号車 ${formatSeats(r.seatNo)})。`, tag('remind'));
             } else if (minsToDep <= far && !notified.has(`remind${far}`) && !notified.has(`remind${near}`)) {
               mark(`remind${far}`);
-              notify('【発車のお知らせ】', `ご予約の${r.trainName}は、あと約${Math.ceil(minsToDep)}分で${r.boarding}駅を発車します(${r.carNo}号車 ${r.seatNo})。`, tag('remind'));
+              notify('【発車のお知らせ】', `ご予約の${r.trainName}は、あと約${Math.ceil(minsToDep)}分で${r.boarding}駅を発車します(${r.carNo}号車 ${formatSeats(r.seatNo)})。`, tag('remind'));
             }
           }
 
@@ -194,7 +195,7 @@ export function useReservationWatcher(opts: {
               }
               if (!notified.has('delivered')) {
                 mark('delivered');
-                notify('【お届け完了】', `ご予約席(${r.carNo}号車 ${r.seatNo})へ、ご注文のデリバリーをお届けしました。`, tag('delivered'));
+                notify('【お届け完了】', `ご予約席(${r.carNo}号車 ${formatSeats(r.seatNo)})へ、ご注文のデリバリーをお届けしました。`, tag('delivered'));
               }
             }
           }

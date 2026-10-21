@@ -32,7 +32,7 @@ export interface ActiveOrder {
   orderId: string;
   trainName: string; // e.g. "特急めぐり 3号"
   carNo: number;
-  seatNo: string;
+  seatNo: string; // 複数席は '4B,4C'(同じ号車の席、最大6席)。自由席の人数は '自由席×3'
   seatType?: SeatClass;
   boardingStation?: string;
   destinationStation?: string;
@@ -40,6 +40,7 @@ export interface ActiveOrder {
   arrivalTime?: string;
   reservedDate?: string; // 予約日 (YYYY-MM-DD)。到着時刻を過ぎたら自動終了する基準
   items: { item: EquipItem; quantity: number }[];
+  itemSeats?: { [itemId: string]: { [seat: string]: number } }; // デリバリーの商品ごとに、席に指定した個数(複数席のとき。指定のない分は先頭の席へ)
   totalPrice: number;
   status: 'confirmed' | 'preparing' | 'delivering' | 'delivered';
   estimatedDeliveryTime: string;
@@ -63,7 +64,7 @@ export interface OrderHistoryItem {
   arrivalTime?: string;
   reservedDate?: string;
   ticketPrice: number;
-  items: { name: string; quantity: number; price: number }[];
+  items: { name: string; quantity: number; price: number; seats?: { [seat: string]: number } }[];
   itemDiscount?: number; // デリバリーのクーポン割引の合計
   result: 'completed' | 'cancelled';
 }

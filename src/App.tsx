@@ -17,7 +17,8 @@ import { POINT_CODES, normalizePointCode } from './data/pointCodes';
 import { getLocalDateString, isOrderExpired } from './utils/orderExpiry';
 import { callGas } from './utils/accountApi';
 import { isLaunched } from './utils/launch';
-import { fetchAndCacheTicket, TicketState } from './utils/ticketApi';
+import { effectiveAllocation, splitSeats } from './utils/seatUtils';
+import { fetchAndCacheTicket, summarizeTicket, TicketSummary } from './utils/ticketApi';
 import { calcDeliveryAddPoints, calcReservationPoints } from './utils/points';
 import LaunchCountdown from './components/LaunchCountdown';
 import { useCloudAccount } from './utils/useCloudAccount';
@@ -566,7 +567,12 @@ export default function App() {
               sessionToken,
               order: {
                 ...base,
-                items: (activeOrder.items || []).map((ci) => ({ id: ci.item.id, name: ci.item.name, quantity: ci.quantity, price: ci.item.price })),
+                items: (activeOrder.items || []).map((ci) => {
+                  // 複数席の予約は、どの席に何個届けるか(指定のない分は先頭の席)も送る
+                  const seats = splitSeats(activeOrder.seatNo);
+                  const allocation = seats.length >= 2 ? effectiveAllocation(ci.quantity, seats, activeOrder.itemSeats?.[ci.item.id]) : null;
+                  return { id: ci.item.id, name: ci.item.name, quantity: ci.quantity, price: ci.item.price, ...(allocation ? { seats: allocation } : {}) };
+                }),
                 itemDiscount: activeOrder.itemDiscount || 0,
                 pointsUsed: activeOrder.pointsUsed || 0,
               },
@@ -584,15 +590,15 @@ export default function App() {
     }
   }, [activeOrder, sessionToken, currentUser?.email, cloudOn, cloud.ready, cloud.error]);
 
-  // QR乗車券の状態(公開後。予約カードの「利用済み」の札に使う)。予約が変わったときに1回取る。QR の画面を開いたときに確かめた状態も、ここへ反映する。取れなければ、札は出さない
-  const [ticketState, setTicketState] = useState<TicketState | null>(null);
+  // QR乗車券の状態(公開後。予約カードの「利用済み」「一部利用済み」の札に使う)。予約が変わったときに1回取る。QR の画面を開いたときに確かめた状態も、ここへ反映する。取れなければ、札は出さない
+  const [ticketSummary, setTicketSummary] = useState<TicketSummary | null>(null);
   const ticketOrderId = activeOrder?.orderId;
-  React.useEffect(() => setTicketState(null), [ticketOrderId]);
+  React.useEffect(() => setTicketSummary(null), [ticketOrderId]);
   React.useEffect(() => {
     if (!isLaunched() || !sessionToken || !ticketOrderId) return;
     let alive = true;
     fetchAndCacheTicket(sessionToken, ticketOrderId)
-      .then((r) => alive && setTicketState(r.state))
+      .then((r) => alive && setTicketSummary(summarizeTicket(r)))
       .catch(() => {});
     return () => {
       alive = false;
@@ -655,10 +661,21 @@ export default function App() {
       const baseTicketFee = prevOrder.totalPrice + prevDiscount - (prevOrder.items || []).reduce((sum, ci) => sum + ci.item.price * ci.quantity, 0);
       const itemDiscount = prevDiscount + (order.itemDiscount || 0);
 
+      // 席ごとの届け先(今回の分を、これまでの分に足す)
+      const mergedItemSeats: NonNullable<ActiveOrder['itemSeats']> = { ...(prevOrder.itemSeats || {}) };
+      Object.entries(order.itemSeats || {}).forEach(([itemId, alloc]) => {
+        const merged = { ...(mergedItemSeats[itemId] || {}) };
+        Object.entries(alloc).forEach(([seat, n]) => {
+          merged[seat] = (merged[seat] || 0) + n;
+        });
+        mergedItemSeats[itemId] = merged;
+      });
+
       const nextOrder: ActiveOrder = {
         ...prevOrder,
         orderId: prevOrder.orderId,
         items: mergedItems,
+        ...(Object.keys(mergedItemSeats).length > 0 ? { itemSeats: mergedItemSeats } : {}),
         itemDiscount,
         // (今回のデリバリーで使った N-POINT は、合計から引き、これまでの分に足す)
         totalPrice: Math.max(0, baseTicketFee + mergedItemTotalPrice - itemDiscount - (order.pointsUsed ?? 0)),
@@ -894,7 +911,7 @@ export default function App() {
                   pointBalance={cloudOn && cloud.ready && !cloud.error ? shownBalance : undefined}
                   onSpendPoints={cloudOn && cloud.ready && !cloud.error ? cloud.spendPoints : undefined}
                   onOpenQRCode={isLaunched() && sessionToken ? () => setIsQRCodeModalOpen(true) : undefined}
-                  ticketState={ticketState}
+                  ticketSummary={ticketSummary}
                 />
               ) : (
                 <EquipTab
@@ -1080,7 +1097,7 @@ export default function App() {
             onClose={() => setIsQRCodeModalOpen(false)}
             activeOrder={activeOrder}
             sessionToken={sessionToken}
-            onTicketState={setTicketState}
+            onTicketSummary={setTicketSummary}
           />
         ) : (
           <QRCodeModal

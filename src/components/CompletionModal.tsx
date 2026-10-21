@@ -18,7 +18,7 @@ interface CompletionModalProps {
 // 予約完了・デリバリー完了で使う、同じ作りの画面
 export const CompletionModal: React.FC<CompletionModalProps> = ({ title, orderId, rows, buttonLabel, onClose, secondary }) => (
   <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-fadeIn" role="dialog" aria-modal="true" aria-label={title}>
-    <div className="w-full max-w-sm bg-white rounded-3xl border border-[#E5E2EE] shadow-2xl p-6 text-center animate-scaleUp">
+    <div className="w-full max-w-sm max-h-[92dvh] overflow-y-auto bg-white rounded-3xl border border-[#E5E2EE] shadow-2xl p-6 text-center animate-scaleUp">
       <div className="w-14 h-14 rounded-full bg-[#EDE9FE] text-[#5B21B6] flex items-center justify-center mx-auto">
         <Check className="w-7 h-7" strokeWidth={3} />
       </div>
