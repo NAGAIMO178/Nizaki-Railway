@@ -1,4 +1,4 @@
-import { BinaryBitmap, HybridBinarizer, RGBLuminanceSource } from '@zxing/library';
+import { BinaryBitmap, DecodeHintType, HybridBinarizer, QRCodeReader, RGBLuminanceSource } from '@zxing/library';
 import type { CardContext } from '../../src/utils/cardCanvas';
 
 // 白い画素の面に、長方形を塗って、読み取りの部品に渡せる形にする(画像の canvas の代わり)。gray は 0(黒)〜255(白)
@@ -29,6 +29,10 @@ export interface DrawnText {
   align: string;
 }
 
+// QR の読み取り。画像が QR だけ(まわりに余白)のときは、位置の検出を使わずに、読む(部品の検出が、まれに失敗するため。符号の中身は、同じように確かめられる)
+export const readQr = (r: { bitmap: () => Parameters<QRCodeReader['decode']>[0] }): string =>
+  new QRCodeReader().decode(r.bitmap(), new Map<DecodeHintType, unknown>([[DecodeHintType.PURE_BARCODE, true]])).getText();
+
 // canvas の代わりに、描いた長方形と文字を記録する(券面・会員証の描画を、画素と文字の位置で確かめる)
 export class RecordingContext implements CardContext {
   fillStyle: string | CanvasGradient | CanvasPattern = '#000000';
@@ -51,10 +55,11 @@ export class RecordingContext implements CardContext {
   fillText(text: string, x: number, y: number) {
     this.texts.push({ text, x, y, font: this.font, align: this.textAlign });
   }
-  // 描いたものを、画素にする
-  toRaster(width: number, height: number) {
+  // 描いたものを、画素にする。region があれば、その長方形の中だけを切り出す
+  toRaster(width: number, height: number, region?: { x: number; y: number }) {
     const r = raster(width, height);
-    this.rects.forEach((q) => r.fill(q.x, q.y, q.w, q.h, q.gray));
+    const [dx, dy] = region ? [region.x, region.y] : [0, 0];
+    this.rects.forEach((q) => r.fill(q.x - dx, q.y - dy, q.w, q.h, q.gray));
     return r;
   }
 }

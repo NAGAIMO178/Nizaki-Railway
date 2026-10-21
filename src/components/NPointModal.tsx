@@ -3,6 +3,7 @@ import { X, Award, CreditCard, Sparkles, Gift, Download } from 'lucide-react';
 import { PointHistoryItem, UserProfile } from '../types';
 import { isLaunched } from '../utils/launch';
 import { memberBarcode } from '../utils/memberBarcode';
+import { EAN13_MODULES, EAN13_QUIET, ean13DigitCells } from '../utils/ean13';
 import { renderMemberCardPng } from '../utils/memberCard';
 import { saveImage } from '../utils/imageSave';
 import { ImagePreview } from './ImagePreview';
@@ -16,6 +17,12 @@ interface NPointModalProps {
   // クラウドが基準の会員は、サーバーの返事を待つので、返事が遅れて届くこともある
   onRedeemCode?: (code: string) => { ok: boolean; message: string } | Promise<{ ok: boolean; message: string }>;
 }
+
+// 会員証の EAN-13 の画面での大きさ(モジュールを1とした単位。バーの高さ・ガードの延び・数字の大きさ)
+const EAN_BAR_HEIGHT = 34;
+const EAN_GUARD_EXTRA = 4;
+const EAN_DIGIT_SIZE = 8;
+const EAN_VIEW_HEIGHT = EAN_BAR_HEIGHT + EAN_DIGIT_SIZE + 2;
 
 // 会員ランクの英字表記(カードに表示)
 const RANK_LABEL_EN: Record<string, string> = { レギュラー: 'REGULAR', ゴールド: 'GOLD', プレミアム: 'PREMIUM' };
@@ -104,19 +111,23 @@ export const NPointModal: React.FC<NPointModalProps> = ({
             {/* Main Focus: Clean White Barcode Card Container */}
             <div className="my-5 text-center bg-white p-4 rounded-xl shadow-inner relative z-10">
               {launched ? (
-                // 公開後: 会員番号を入れた、本物の Code128 バーコード(読み取りアプリで読める)
+                // 公開後: 会員番号から作った13桁の、本物の EAN-13(JAN)バーコード。下の数字は、バーコードの中身(読み取りアプリで読める)
                 barcode && (
                   <svg
-                    viewBox={`0 0 ${barcode.code.modules} 1`}
-                    preserveAspectRatio="none"
+                    viewBox={`0 0 ${EAN13_MODULES + EAN13_QUIET * 2} ${EAN_VIEW_HEIGHT}`}
                     shapeRendering="crispEdges"
                     role="img"
-                    aria-label="会員番号のバーコード"
-                    className="h-14 block mx-auto"
-                    style={{ width: barcode.code.modules * barcode.unit }}
+                    aria-label={`会員証のバーコード ${barcode.ean.digits}`}
+                    className="block mx-auto"
+                    style={{ width: (EAN13_MODULES + EAN13_QUIET * 2) * barcode.unit, height: EAN_VIEW_HEIGHT * barcode.unit }}
                   >
-                    {barcode.rects.map((r) => (
-                      <rect key={r.x} x={r.x} y={0} width={r.width} height={1} fill="#0F172A" />
+                    {barcode.ean.bars.map((b) => (
+                      <rect key={b.x} x={EAN13_QUIET + b.x} y={0} width={b.width} height={EAN_BAR_HEIGHT + (b.guard ? EAN_GUARD_EXTRA : 0)} fill="#0F172A" />
+                    ))}
+                    {ean13DigitCells(barcode.ean, EAN13_QUIET, 1).map((c, i) => (
+                      <text key={i} x={c.cx} y={EAN_BAR_HEIGHT + EAN_DIGIT_SIZE} textAnchor="middle" fontSize={EAN_DIGIT_SIZE} fontFamily="ui-monospace, Menlo, Consolas, monospace" fontWeight={600} fill="#0F172A">
+                        {c.digit}
+                      </text>
                     ))}
                   </svg>
                 )
@@ -142,9 +153,11 @@ export const NPointModal: React.FC<NPointModalProps> = ({
                   <div className="w-1.5 h-12 bg-slate-950" />
                 </div>
               )}
-              <div className="text-xs font-mono font-bold text-slate-800 mt-2 tracking-widest">
-                {currentUser?.memberId || '未ログイン'}
-              </div>
+              {!(launched && barcode) && (
+                <div className="text-xs font-mono font-bold text-slate-800 mt-2 tracking-widest">
+                  {currentUser?.memberId || '未ログイン'}
+                </div>
+              )}
               {!launched && <div className="text-[9px] text-slate-400 mt-1">※バーコードは表示イメージです（読み取りはできません）</div>}
             </div>
 
@@ -158,12 +171,9 @@ export const NPointModal: React.FC<NPointModalProps> = ({
               </div>
 
               <div className="text-right">
-                {/* 公開後は、会員番号をバーコードの下に出しているので、ここには重ねて出さない */}
-                {!launched && (
-                  <div className="text-[9px] text-slate-400 font-mono">
-                    {currentUser ? `神埼ID: ${currentUser.memberId}` : '未ログイン'}
-                  </div>
-                )}
+                <div className="text-[9px] text-slate-400 font-mono">
+                  {currentUser ? `神埼ID: ${currentUser.memberId}` : '未ログイン'}
+                </div>
                 <div className="text-[9px] text-slate-400 font-mono mt-0.5 truncate max-w-[140px]">
                   {currentUser?.email || 'ログインしてご利用ください'}
                 </div>
