@@ -4,7 +4,7 @@ import { ActiveOrder } from '../types';
 import { getSeatClassLabel } from '../utils/seatUtils';
 import { makeQrMatrix, qrSvgPath, QR_QUIET } from '../utils/qrImage';
 import { TICKET_STATE_LABEL, TicketState, fetchAndCacheTicket, readCachedTicketToken } from '../utils/ticketApi';
-import { renderTicketPng } from '../utils/ticketCard';
+import { renderTicketQrPng } from '../utils/ticketQrImage';
 import { saveImage } from '../utils/imageSave';
 import { ImagePreview } from './ImagePreview';
 import { buildTicketUrl } from '../utils/ticketToken';
@@ -60,21 +60,12 @@ export const TicketQRModal: React.FC<TicketQRModalProps> = ({ isOpen, onClose, a
     if (!activeOrder || !token || saving) return;
     setSaving(true);
     try {
-      const blob = await renderTicketPng({
-        token,
-        orderId: activeOrder.orderId,
-        trainName: activeOrder.trainName,
-        departureTime: activeOrder.departureTime,
-        boardingStation: activeOrder.boardingStation,
-        destinationStation: activeOrder.destinationStation,
-        seatText,
-        reservedDate: activeOrder.reservedDate,
-      });
-      setPreview(await saveImage(blob, `nizaki-ticket-${activeOrder.orderId}.png`));
+      const blob = await renderTicketQrPng(token);
+      setPreview(await saveImage(blob, `nizaki-qr-${activeOrder.orderId}.png`));
     } finally {
       setSaving(false);
     }
-  }, [activeOrder, token, saving, seatText]);
+  }, [activeOrder, token, saving]);
 
   if (!isOpen) return null;
 

@@ -13,7 +13,6 @@ export interface CardContext {
   fillText(text: string, x: number, y: number): void;
 }
 
-export const CARD_FONT = '"Hiragino Sans", "Noto Sans JP", "Yu Gothic", system-ui, sans-serif';
 export const CARD_MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
 // 等幅の文字の、1文字の幅(文字の大きさに対する比)の目安
 export const MONO_CHAR_RATIO = 0.62;
