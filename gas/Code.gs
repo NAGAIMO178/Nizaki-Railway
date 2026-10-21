@@ -76,6 +76,17 @@ function doPost(e) {
       return handleSaveMysteryProgress(json.sessionToken, json.progress);
     }
 
+    // ①.4 QR乗車券(検札の画面から呼ばれるので、verify・use はログイン証なし。持っているのは署名つきのトークン)
+    if (json.action === 'getTicket') {
+      return handleGetTicket(json.sessionToken, json.orderId);
+    }
+    if (json.action === 'verifyTicket') {
+      return handleVerifyTicket(json.token);
+    }
+    if (json.action === 'useTicket') {
+      return handleUseTicket(json.token);
+    }
+
     // ①.5 神埼ID 会員認証まわり（LINE経由の新規登録／ログイン）
     if (json.action === 'login') {
       return handleLogin(json.email, json.password);
@@ -486,7 +497,7 @@ function logCouponIssue(userId, course) {
 // 予約台帳の列(この順で作成。既存の台帳には不足している列だけ後ろへ追加する)
 const RESERVATION_HEADERS = [
   '予約日時', '予約番号', 'LINE_USER_ID', '列車名', '号車', '座席番号', '席種',
-  '乗車駅', '降車駅', '合計金額', 'ステータス', '会員ID', '予約日', '出発時刻', '到着時刻'
+  '乗車駅', '降車駅', '合計金額', 'ステータス', '会員ID', '予約日', '出発時刻', '到着時刻', '乗車日時'
 ];
 
 function getOrCreateReservationsSheet() {
@@ -659,6 +670,7 @@ function handleCreateReservation(sessionToken, order, awardPoints) {
     let targetRow = -1;
     let previousTotal = null; // 更新のとき、更新前の合計金額(デリバリーを足したときのポイントを求める)
     let previousBasis = 0;    // これまでに、ポイントを計算した、いちばん大きい合計金額(下げて、また上げても、二重に付かない)
+    let boardedAt = '';       // QR乗車券を「利用する」で乗車済みにした日時(更新で消すと、同じ QR がまた使えてしまう)
     for (let i = 1; i < data.length; i++) {
       if (String(data[i][col['予約番号']]) === values['予約番号']) {
         if (String(data[i][col['会員ID']]) !== memberId) {
@@ -671,6 +683,7 @@ function handleCreateReservation(sessionToken, order, awardPoints) {
         targetRow = i + 1;
         previousTotal = Number(data[i][col['合計金額']]) || 0;
         previousBasis = readPointBasis(col['明細'] !== undefined ? data[i][col['明細']] : '');
+        boardedAt = col['乗車日時'] !== undefined ? cellText(data[i][col['乗車日時']]) : '';
         break;
       }
     }
@@ -689,6 +702,7 @@ function handleCreateReservation(sessionToken, order, awardPoints) {
       }
     }
 
+    values['乗車日時'] = boardedAt;
     const row = headers.map(function (h) { return values[h] !== undefined ? sheetSafe(values[h]) : ''; });
     if (targetRow === -1) {
       sheet.appendRow(row);
@@ -697,7 +711,7 @@ function handleCreateReservation(sessionToken, order, awardPoints) {
       sheet.getRange(targetRow, 1, 1, row.length).setValues([row]);
     }
     // 日付・時刻は文字列のまま保存する(シートが日付型に変換しないように)
-    ['予約日', '出発時刻', '到着時刻'].forEach(function (h) {
+    ['予約日', '出発時刻', '到着時刻', '乗車日時'].forEach(function (h) {
       const c = headers.indexOf(h);
       if (c !== -1) {
         const cell = sheet.getRange(targetRow, c + 1);
@@ -785,6 +799,139 @@ function handleCancelReservation(sessionToken, orderId, awardPoints) {
     revokeReservationPoints(memberId, String(orderId));
   }
   return createJsonResponse({ status: 'success' });
+}
+
+// ---- QR乗車券(署名つきの URL で、検札用の画面を開く。「利用する」で乗車済みにする) ----
+// トークン = 予約番号 + '.' + 署名。署名は予約番号から、サーバーの鍵で作る(アプリは鍵を持てない)。
+// 乗車済みかどうかは、予約台帳の「乗車日時」列が決める(トークンには入れない)。
+const TICKET_SIG_LENGTH = 12;
+const TICKET_TOKEN_PATTERN = /^([A-Za-z0-9-]{3,40})\.([A-Za-z0-9_-]{12})$/;
+
+function ticketSignature(orderId) {
+  // ログイン証の署名('会員ID.期限')と区別するため、接頭辞を付ける
+  return signSessionPayload('ticket:' + orderId).slice(0, TICKET_SIG_LENGTH);
+}
+
+function safeEqual(a, b) {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+// 正しい署名なら予約番号を、そうでなければ null を返す
+function verifyTicketToken(token) {
+  if (typeof token !== 'string') return null;
+  const m = TICKET_TOKEN_PATTERN.exec(token);
+  if (!m) return null;
+  return safeEqual(ticketSignature(m[1]), m[2]) ? m[1] : null;
+}
+
+// 予約台帳から、予約番号の行を探す(無ければ null)
+function findTicketRow(sheet, orderId) {
+  if (!sheet) return null;
+  const data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return null;
+  const headers = data[0];
+  const col = {};
+  headers.forEach(function (h, i) { col[h] = i; });
+  if (col['予約番号'] === undefined) return null;
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][col['予約番号']]) === orderId) {
+      return { sheet: sheet, headers: headers, col: col, row: data[i], rowNumber: i + 1 };
+    }
+  }
+  return null;
+}
+
+function ticketBoardedAt(found) {
+  return found.col['乗車日時'] !== undefined ? cellText(found.row[found.col['乗車日時']]) : '';
+}
+
+// 券の状態(上から順に、最初に当てはまったもの)
+function ticketState(found) {
+  if (String(found.row[found.col['ステータス']]) === 'キャンセル') return 'cancelled';
+  if (ticketBoardedAt(found)) return 'used';
+  if (isReservationRowExpired(found.headers, found.row)) return 'expired';
+  // 予約日が今日より先 = 別の日(日またぎの夜行など、予約日が過去でも、到着前なら有効)
+  const date = cellText(found.row[found.col['予約日']], 'yyyy-MM-dd');
+  const today = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
+  if (/^\d{4}-\d{2}-\d{2}$/.test(date) && date > today) return 'otherDay';
+  return 'valid';
+}
+
+// 検札の画面に返す項目だけを、1つずつ写す(会員ID・LINE_USER_ID・金額・明細は返さない)
+function ticketView(found) {
+  const r = found.row;
+  const c = found.col;
+  return {
+    trainName: String(r[c['列車名']]),
+    boardingStation: String(r[c['乗車駅']]),
+    destinationStation: String(r[c['降車駅']]),
+    carNo: Number(r[c['号車']]) || 0,
+    seatNo: String(r[c['座席番号']]),
+    seatType: String(r[c['席種']]),
+    reservedDate: cellText(r[c['予約日']], 'yyyy-MM-dd'),
+    departureTime: cellText(r[c['出発時刻']], 'HH:mm'),
+    arrivalTime: cellText(r[c['到着時刻']], 'HH:mm')
+  };
+}
+
+function ticketResponse(found, state, extra) {
+  const res = { status: 'success', state: state };
+  if (found) {
+    res.ticket = ticketView(found);
+    if (state === 'used') res.usedAt = ticketBoardedAt(found).slice(11, 16);
+  }
+  Object.keys(extra || {}).forEach(function (k) { res[k] = extra[k]; });
+  return createJsonResponse(res);
+}
+
+/**
+ * 検札の画面: 署名を確かめ、列車・区間・座席と状態だけを返す(読むだけ。ログイン証は要らない)
+ */
+function handleVerifyTicket(token) {
+  const orderId = verifyTicketToken(token);
+  if (!orderId) return ticketResponse(null, 'invalid');
+  const found = findTicketRow(getDataSpreadsheet().getSheetByName(SHEET_RESERVATIONS), orderId);
+  if (!found) return ticketResponse(null, 'invalid');
+  return ticketResponse(found, ticketState(found));
+}
+
+/**
+ * 「利用する」: 有効な券だけを乗車済みにする。
+ * 確認から書き込みまでをロックの中で行うので、同時に押しても1回だけ成功する(あとの人には used が返る)
+ */
+function handleUseTicket(token) {
+  const orderId = verifyTicketToken(token);
+  if (!orderId) return ticketResponse(null, 'invalid');
+  return withScriptLock(function () {
+    // 列が無い台帳には、ここで足す
+    const found = findTicketRow(getOrCreateReservationsSheet(), orderId);
+    if (!found) return ticketResponse(null, 'invalid');
+    const state = ticketState(found);
+    if (state !== 'valid') return ticketResponse(found, state);
+    const cell = found.sheet.getRange(found.rowNumber, found.col['乗車日時'] + 1);
+    const boardedAt = nowText();
+    cell.setNumberFormat('@');
+    cell.setValue(boardedAt);
+    found.row[found.col['乗車日時']] = boardedAt;
+    return ticketResponse(found, 'used', { justUsed: true });
+  });
+}
+
+/**
+ * アプリ(ログイン中の持ち主)に、自分の予約のトークンと今の状態を返す
+ */
+function handleGetTicket(sessionToken, orderId) {
+  const a = authMember(sessionToken);
+  if (a.error) return a.error;
+  const id = String(orderId || '');
+  const notReady = createJsonResponse({ status: 'error', code: 'ticket_not_ready', message: 'この予約がまだ登録されていません。少し待って、もう一度お試しください。' });
+  if (!/^[A-Za-z0-9-]{3,40}$/.test(id)) return notReady;
+  const found = findTicketRow(getDataSpreadsheet().getSheetByName(SHEET_RESERVATIONS), id);
+  if (!found || String(found.row[found.col['会員ID']]) !== a.memberId) return notReady;
+  return ticketResponse(found, ticketState(found), { token: id + '.' + ticketSignature(id) });
 }
 
 // シート名定義（会員台帳）
