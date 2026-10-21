@@ -17,6 +17,7 @@ import { POINT_CODES, normalizePointCode } from './data/pointCodes';
 import { getLocalDateString, isOrderExpired } from './utils/orderExpiry';
 import { callGas } from './utils/accountApi';
 import { isLaunched } from './utils/launch';
+import { fetchAndCacheTicket } from './utils/ticketApi';
 import { calcDeliveryAddPoints, calcReservationPoints } from './utils/points';
 import LaunchCountdown from './components/LaunchCountdown';
 import { useCloudAccount } from './utils/useCloudAccount';
@@ -39,6 +40,7 @@ const EDeliveryModal = lazyScreen<typeof import('./components/EDeliveryModal').E
 const NPointModal = lazyScreen<typeof import('./components/NPointModal').NPointModal>(() => import('./components/NPointModal'), 'NPointModal');
 const RouteMapModal = lazyScreen<typeof import('./components/RouteMapModal').RouteMapModal>(() => import('./components/RouteMapModal'), 'RouteMapModal');
 const QRCodeModal = lazyScreen<typeof import('./components/QRCodeModal').QRCodeModal>(() => import('./components/QRCodeModal'), 'QRCodeModal');
+const TicketQRModal = lazyScreen<typeof import('./components/TicketQRModal').TicketQRModal>(() => import('./components/TicketQRModal'), 'TicketQRModal');
 const LoginModal = lazyScreen<typeof import('./components/LoginModal').LoginModal>(() => import('./components/LoginModal'), 'LoginModal');
 const MyPageModal = lazyScreen<typeof import('./components/MyPageModal').MyPageModal>(() => import('./components/MyPageModal'), 'MyPageModal');
 
@@ -103,7 +105,7 @@ export default function App() {
 
   // ホームを出したあと、手が空いたときに、ほかの画面を裏で読み込んでおく(開いたときに待たずに出る)。管理者画面とミステリーは、使う人が少ないので、先読みしない
   React.useEffect(
-    () => prefetchScreens([ReservationTab, EventsTab, TimetableTab, TrainLocationTab, EquipTab, SettingsTab, LoginModal, MyPageModal, NPointModal, RouteMapModal, EDeliveryModal, QRCodeModal]),
+    () => prefetchScreens([ReservationTab, EventsTab, TimetableTab, TrainLocationTab, EquipTab, SettingsTab, LoginModal, MyPageModal, NPointModal, RouteMapModal, EDeliveryModal, isLaunched() ? TicketQRModal : QRCodeModal]),
     [],
   );
   // 予約タブの中の切り替え(特急券・座席 / デリバリー)と、ヘッダーのメニュー
@@ -574,6 +576,8 @@ export default function App() {
         callGas('createReservation', payload)
           .then(() => {
             if (awardOnServer) void cloud.refresh(); // 付いたポイントを、画面に反映する
+            // QR乗車券のトークンを、先に受け取って端末に残す(電波の届かない場所でも、QR を出せるように)
+            if (isLaunched()) fetchAndCacheTicket(sessionToken, orderId).catch(() => {});
           })
           .catch((err) => console.warn('Failed to sync reservation:', err));
       }
@@ -874,6 +878,7 @@ export default function App() {
                   onCouponUsed={cloudOn ? cloud.markCouponUsed : undefined}
                   pointBalance={cloudOn && cloud.ready && !cloud.error ? shownBalance : undefined}
                   onSpendPoints={cloudOn && cloud.ready && !cloud.error ? cloud.spendPoints : undefined}
+                  onOpenQRCode={isLaunched() && sessionToken ? () => setIsQRCodeModalOpen(true) : undefined}
                 />
               ) : (
                 <EquipTab
@@ -1053,11 +1058,20 @@ export default function App() {
       </LazyOnOpen>
 
       <LazyOnOpen open={isQRCodeModalOpen}>
-        <QRCodeModal
-          isOpen={isQRCodeModalOpen}
-          onClose={() => setIsQRCodeModalOpen(false)}
-          activeOrder={activeOrder}
-        />
+        {isLaunched() ? (
+          <TicketQRModal
+            isOpen={isQRCodeModalOpen}
+            onClose={() => setIsQRCodeModalOpen(false)}
+            activeOrder={activeOrder}
+            sessionToken={sessionToken}
+          />
+        ) : (
+          <QRCodeModal
+            isOpen={isQRCodeModalOpen}
+            onClose={() => setIsQRCodeModalOpen(false)}
+            activeOrder={activeOrder}
+          />
+        )}
       </LazyOnOpen>
     </PhoneContainer>
   );
