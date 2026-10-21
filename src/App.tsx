@@ -17,7 +17,7 @@ import { POINT_CODES, normalizePointCode } from './data/pointCodes';
 import { getLocalDateString, isOrderExpired } from './utils/orderExpiry';
 import { callGas } from './utils/accountApi';
 import { isLaunched } from './utils/launch';
-import { fetchAndCacheTicket } from './utils/ticketApi';
+import { fetchAndCacheTicket, TicketState } from './utils/ticketApi';
 import { calcDeliveryAddPoints, calcReservationPoints } from './utils/points';
 import LaunchCountdown from './components/LaunchCountdown';
 import { useCloudAccount } from './utils/useCloudAccount';
@@ -584,6 +584,21 @@ export default function App() {
     }
   }, [activeOrder, sessionToken, currentUser?.email, cloudOn, cloud.ready, cloud.error]);
 
+  // QR乗車券の状態(公開後。予約カードの「利用済み」の札に使う)。予約が変わったとき、QR の画面を閉じたときに、1回だけ取る。取れなければ、札は出さない
+  const [ticketState, setTicketState] = useState<TicketState | null>(null);
+  const ticketOrderId = activeOrder?.orderId;
+  React.useEffect(() => setTicketState(null), [ticketOrderId]);
+  React.useEffect(() => {
+    if (!isLaunched() || !sessionToken || !ticketOrderId || isQRCodeModalOpen) return;
+    let alive = true;
+    fetchAndCacheTicket(sessionToken, ticketOrderId)
+      .then((r) => alive && setTicketState(r.state))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [sessionToken, ticketOrderId, isQRCodeModalOpen]);
+
   // ログアウト・別のアカウントでのログインのときは、そのアカウントの予約に切り替える
   React.useEffect(() => {
     const email = currentUser?.email ?? null;
@@ -879,6 +894,7 @@ export default function App() {
                   pointBalance={cloudOn && cloud.ready && !cloud.error ? shownBalance : undefined}
                   onSpendPoints={cloudOn && cloud.ready && !cloud.error ? cloud.spendPoints : undefined}
                   onOpenQRCode={isLaunched() && sessionToken ? () => setIsQRCodeModalOpen(true) : undefined}
+                  ticketState={ticketState}
                 />
               ) : (
                 <EquipTab

@@ -38,6 +38,7 @@ import {
   getCachedExpressData,
 } from '../utils/diaTimetable';
 import { isLaunched } from '../utils/launch';
+import { TICKET_STATE_LABEL, TicketState } from '../utils/ticketApi';
 import { calculateFare } from '../utils/fare';
 import { CompletionModal } from './CompletionModal';
 
@@ -65,6 +66,8 @@ interface ReservationTabProps {
   onSpendPoints?: (orderId: string, points: number, title: string) => Promise<{ ok: boolean; message: string }>;
   // QR乗車券を開く(公開後で、ログイン証のある会員だけ。渡されなければ、ボタンを出さない)
   onOpenQRCode?: () => void;
+  // QR乗車券の状態(公開後。'used' のときだけ、予約カードに「利用済み」の札を出す)
+  ticketState?: TicketState | null;
 }
 
 export const ReservationTab: React.FC<ReservationTabProps> = ({
@@ -79,6 +82,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
   pointBalance,
   onSpendPoints,
   onOpenQRCode,
+  ticketState,
 }) => {
   const [copiedCode, setCopiedCode] = useState(false);
   // N-POINT で払うか / ポイントを引いているあいだ / うまくいかなかったときの理由
@@ -539,6 +543,11 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
               <h3 className="text-base font-black text-[#5B21B6] flex items-center gap-1.5 mt-0.5">
                 <Armchair className="w-5 h-5 text-[#5B21B6]" />
                 <span>{activeOrder.trainName}</span>
+                {ticketState === 'used' && (
+                  <span className="text-[10px] font-extrabold text-[#6B6380] bg-[#F4F3F8] border border-[#E6E2EE] px-2 py-0.5 rounded-md">
+                    {TICKET_STATE_LABEL.used}
+                  </span>
+                )}
               </h3>
             </div>
 

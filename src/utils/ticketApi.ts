@@ -18,8 +18,8 @@ export interface TicketInfo {
 export interface TicketResult {
   state: TicketState;
   ticket?: TicketInfo;
-  usedAt?: string; // 乗車済みの時刻(HH:mm)
-  justUsed?: boolean; // 「利用する」で、いま乗車済みになった
+  usedAt?: string; // 利用済みにした時刻(HH:mm)
+  justUsed?: boolean; // 「利用する」で、いま利用済みになった
   token?: string; // getTicket のとき
 }
 
@@ -35,7 +35,7 @@ const call = async (action: string, payload: Record<string, unknown>): Promise<T
 // 検札の画面: 券の状態を調べる(ログイン不要)
 export const verifyTicket = (token: string) => call('verifyTicket', { token });
 
-// 検札の画面: 「利用する」(有効な券だけが、乗車済みになる)
+// 検札の画面: 「利用する」(有効な券だけが、利用済みになる)
 export const useTicket = (token: string) => call('useTicket', { token });
 
 // 持ち主: 自分の予約のトークンと、いまの状態を受け取る
@@ -70,7 +70,7 @@ export const fetchAndCacheTicket = async (sessionToken: string, orderId: string)
 
 export const TICKET_STATE_LABEL: Record<TicketState, string> = {
   valid: '有効',
-  used: '乗車済み',
+  used: '利用済み',
   expired: '期限切れ',
   otherDay: '別の列車',
   cancelled: '取消済み',
