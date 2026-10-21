@@ -1,13 +1,14 @@
-// 券面(QR乗車券)と会員証の画像(PNG)を、canvas の代わりに描いたものを記録して確かめる。
-// ① 描いた画素から、QR・バーコードが読み戻せる ② バーコードの下に、読み取る中身の文字が、画像の中に収まって入る ③ わざと壊すと、読めない
-import { BarcodeFormat, Code128Reader, DecodeHintType, QRCodeReader } from '@zxing/library';
+// QR乗車券の画像(QR だけ)と、会員証の画像(バーコードと13桁だけ)の PNG を、canvas の代わりに描いたものを記録して確かめる。
+// ① 描いた画素から、QR・バーコード(EAN-13)が読み戻せる ② 余計な文字・見出しが入らない。バーコードの下には、その13桁の数字だけが、標準の位置に入る ③ わざと壊すと、読めない
+import { BarcodeFormat, DecodeHintType, EAN13Reader } from '@zxing/library';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { MONO_CHAR_RATIO } from '../src/utils/cardCanvas';
-import { memberCardLayout, drawMemberCard } from '../src/utils/memberCard';
+import { EAN13_MODULES, ean13FromId } from '../src/utils/ean13';
+import { drawMemberCard, memberCardLayout } from '../src/utils/memberCard';
 import { needsLongPressSave } from '../src/utils/imageSave';
-import { drawTicketCard, ticketCardLayout, TicketCardData } from '../src/utils/ticketCard';
+import { drawQrImage, qrImageLayout } from '../src/utils/ticketQrImage';
 import { buildTicketUrl } from '../src/utils/ticketToken';
-import { RecordingContext, fontSize } from './helpers/raster';
+import { RecordingContext, fontSize, readQr } from './helpers/raster';
 
 // 券面の QR に入るリンクは、いま開いている場所から作る。テストでは、場所を決めておく
 beforeAll(() => {
@@ -18,143 +19,126 @@ beforeAll(() => {
 });
 
 const hints = new Map<DecodeHintType, unknown>([
-  [DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.CODE_128]],
+  [DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.EAN_13]],
   [DecodeHintType.TRY_HARDER, true],
 ]);
 
+const readEan = (r: { bitmap: () => Parameters<EAN13Reader['decode']>[0] }): string | null => {
+  try {
+    return new EAN13Reader().decode(r.bitmap(), hints).getText();
+  } catch {
+    return null;
+  }
+};
+
 const TOKEN = 'EQ-12345.AbCdEfGhIjKl';
-const ticket = (token = TOKEN): TicketCardData => ({
-  token,
-  orderId: token.split('.')[0],
-  trainName: '特急めぐり3号',
-  departureTime: '10:15',
-  boardingStation: '神埼',
-  destinationStation: '東桜',
-  seatText: '3号車 普通指定席 5A',
-  reservedDate: '2026-11-03',
-});
 
-const drawTicket = (data: TicketCardData, skip?: (i: number) => boolean) => {
-  const layout = ticketCardLayout(data);
+const drawQr = (token = TOKEN, skip?: (i: number) => boolean) => {
+  const layout = qrImageLayout(token);
   const ctx = new RecordingContext(skip);
-  drawTicketCard(ctx, data, layout);
-  return { layout, ctx };
+  drawQrImage(ctx, layout);
+  return { layout, ctx, r: ctx.toRaster(layout.size, layout.size) };
 };
 
-// 文字の左右の端(等幅の文字の幅の目安から)
-const extent = (t: { x: number; text: string; font: string; align: string }) => {
-  const w = t.text.length * fontSize(t.font) * MONO_CHAR_RATIO;
-  const left = t.align === 'center' ? t.x - w / 2 : t.x;
-  return [left, left + w];
-};
-
-describe('QR乗車券の券面(PNG)', () => {
-  it('描いた画素から、バーコードがトークンで、QR がリンクで読み戻せる', () => {
-    const { layout, ctx } = drawTicket(ticket());
-    const r = ctx.toRaster(layout.width, layout.height);
-    expect(new Code128Reader().decode(r.bitmap(), hints).getText()).toBe(TOKEN);
-    expect(new QRCodeReader().decode(r.bitmap()).getText()).toBe(buildTicketUrl(TOKEN));
+describe('QR乗車券の画像(PNG)', () => {
+  it('QR が、署名つきのリンクで読み戻せる。白地で、一辺は 800〜1100px', () => {
+    const { layout, r } = drawQr();
+    expect(readQr(r)).toBe(buildTicketUrl(TOKEN));
+    expect(layout.size).toBeGreaterThanOrEqual(800);
+    expect(layout.size).toBeLessThanOrEqual(1100);
+    expect(r.pixel(0, 0)).toBe(255);
+    expect(r.pixel(layout.size - 1, layout.size - 1)).toBe(255);
   });
 
-  it('バーコードの下に、読み取る中身(トークン)の文字が、画像の中に収まって入る', () => {
-    const { layout, ctx } = drawTicket(ticket());
-    const token = ctx.texts.find((t) => t.text === TOKEN)!;
-    expect(token).toBeDefined();
-    expect(token.font).toMatch(/ui-monospace|monospace/);
-    // バーコードの下端
-    const bars = ctx.rects.filter((q) => q.y === layout.barTop && q.h > 0);
-    const barBottom = Math.max(...bars.map((q) => q.y + q.h));
-    expect(token.y - fontSize(token.font)).toBeGreaterThanOrEqual(barBottom);
-    expect(token.y).toBeLessThan(layout.height);
-    const [left, right] = extent(token);
-    expect(left).toBeGreaterThanOrEqual(0);
-    expect(right).toBeLessThanOrEqual(layout.width);
+  it('文字も、バーコードも、見出しも入らない(QR のモジュールと白地だけ)', () => {
+    const { layout, ctx } = drawQr();
+    expect(ctx.texts).toEqual([]);
+    // 長方形は、白地1つと、QR の濃いモジュールだけ。すべて、1モジュールの正方形(整数の位置)
+    const [background, ...modules] = ctx.rects;
+    expect(background).toMatchObject({ x: 0, y: 0, w: layout.size, h: layout.size, gray: 255 });
+    expect(modules.length).toBe(layout.matrix.flat().filter(Boolean).length);
+    modules.forEach((q) => {
+      expect(q.w).toBe(layout.unit);
+      expect(q.h).toBe(layout.unit);
+      expect(q.x % layout.unit).toBe(0);
+      expect(q.y % layout.unit).toBe(0);
+      expect(q.gray).toBeLessThan(80);
+    });
   });
 
-  it('バーコードの下は、バーコード自身の中身の1行だけ。予約コードは見出しに1回だけで、バーコードの近くには置かない', () => {
-    const { layout, ctx } = drawTicket(ticket());
-    const barBottom = Math.max(...ctx.rects.filter((q) => q.y === layout.barTop && q.h > 0).map((q) => q.y + q.h));
-    const below = ctx.texts.filter((t) => t.y > barBottom);
-    expect(below.map((t) => t.text)).toEqual([TOKEN]);
-    const order = ctx.texts.filter((t) => t.text === 'EQ-12345');
-    expect(order).toHaveLength(1);
-    expect(order[0].y).toBeLessThan(150); // 見出しの中
-  });
-
-  it('いちばん長いトークンでも、文字が左右の余白の内側に収まる', () => {
-    const long = `EQ-${'9'.repeat(37)}.${'z'.repeat(12)}`;
-    const { layout, ctx } = drawTicket(ticket(long));
-    const token = ctx.texts.find((t) => t.text === long)!;
-    const [left, right] = extent(token);
-    expect(left).toBeGreaterThanOrEqual(56);
-    expect(right).toBeLessThanOrEqual(layout.width - 56);
-    const r = ctx.toRaster(layout.width, layout.height);
-    expect(new Code128Reader().decode(r.bitmap(), hints).getText()).toBe(long);
-  });
-
-  it('個人情報は入らない(文字は、列車・区間・座席・日付・予約コード・トークンだけ)', () => {
-    const { ctx } = drawTicket(ticket());
-    expect(ctx.texts.map((t) => t.text)).toEqual([
-      '神埼鉄道',
-      'QR乗車券',
-      'EQ-12345',
-      '特急めぐり3号',
-      '10:15発  2026-11-03',
-      '神埼 → 東桜',
-      '3号車 普通指定席 5A',
-      TOKEN,
-    ]);
-  });
-
-  it('わざと壊すと、バーコードが読めなくなる(または別の文字になる)', () => {
-    const { layout } = drawTicket(ticket());
-    const broken = (skipIndex: number) => {
-      const { ctx } = drawTicket(ticket(), (i) => i === skipIndex);
-      const r = ctx.toRaster(layout.width, layout.height);
-      try {
-        return new Code128Reader().decode(r.bitmap(), hints).getText();
-      } catch {
-        return null;
+  it('まわりに、4モジュール以上の白い余白がある', () => {
+    const { layout, r } = drawQr();
+    const margin = 4 * layout.unit;
+    for (let i = 0; i < layout.size; i += 3) {
+      for (let k = 0; k < margin; k += 5) {
+        expect(r.pixel(i, k)).toBe(255);
+        expect(r.pixel(i, layout.size - 1 - k)).toBe(255);
+        expect(r.pixel(k, i)).toBe(255);
+        expect(r.pixel(layout.size - 1 - k, i)).toBe(255);
       }
-    };
-    // 長方形は、背景・見出し(2つ)のあと、QR のモジュール、そのあとバーコードのバー。バーコードのバーを1本ずつ消す
-    const { ctx } = drawTicket(ticket());
-    const firstBar = ctx.rects.findIndex((q) => q.y === layout.barTop);
-    expect(firstBar).toBeGreaterThan(0);
-    for (const offset of [2, 7, 12]) expect(broken(firstBar + offset)).not.toBe(TOKEN);
+    }
+  });
+
+  it('最長のトークンでも、読み戻せる', () => {
+    const long = `EQ-${'9'.repeat(37)}.${'z'.repeat(12)}`;
+    const { r } = drawQr(long);
+    expect(readQr(r)).toBe(buildTicketUrl(long));
+  });
+
+  it('わざと壊すと(濃いモジュールを大きく欠く)、読めない(または別のリンクになる)', () => {
+    const { ctx } = drawQr();
+    const dark = ctx.rects.length - 1;
+    const broken = drawQr(TOKEN, (i) => i > 0 && i % 3 !== 0 && i < dark * 0.9).r;
+    let text: string | null;
+    try {
+      text = readQr(broken);
+    } catch {
+      text = null;
+    }
+    expect(text).not.toBe(buildTicketUrl(TOKEN));
   });
 });
+
+const barBottomOf = (ctx: RecordingContext, barTop: number) => Math.max(...ctx.rects.filter((q) => q.y === barTop && q.h > 0).map((q) => q.y + q.h));
 
 describe('会員証のバーコード(PNG)', () => {
-  const draw = (id: string) => {
-    const layout = memberCardLayout(id);
-    const ctx = new RecordingContext();
-    drawMemberCard(ctx, id, layout);
+  const draw = (id: string, skip?: (i: number) => boolean) => {
+    const layout = memberCardLayout(id)!;
+    const ctx = new RecordingContext(skip);
+    drawMemberCard(ctx, layout);
     return { layout, ctx, r: ctx.toRaster(layout.width, layout.height) };
   };
 
-  it('白地で、バーコードが会員番号で読み戻せる', () => {
+  it('白地で、バーコードが会員番号の数字から作った13桁で読み戻せる', () => {
     for (const id of ['KZ-11319', 'KZ-00000', 'KZ-99999']) {
       const { layout, r } = draw(id);
       expect(r.pixel(0, 0)).toBe(255);
       expect(r.pixel(layout.width - 1, layout.height - 1)).toBe(255);
-      expect(new Code128Reader().decode(r.bitmap(), hints).getText()).toBe(id);
+      expect(readEan(r)).toBe(ean13FromId('1', id));
     }
   });
 
-  it('バーコードの下に会員番号の文字が入り、画像の中に収まる。余白がある', () => {
+  it('バーコードの下は、その13桁の数字だけ(標準の位置)。ほかの文字は無い。余白がある', () => {
     const { layout, ctx, r } = draw('KZ-11319');
-    expect(ctx.texts).toHaveLength(1);
-    const t = ctx.texts[0];
-    expect(t.text).toBe('KZ-11319');
-    const barBottom = Math.max(...ctx.rects.filter((q) => q.gray < 60).map((q) => q.y + q.h));
-    expect(t.y - fontSize(t.font)).toBeGreaterThanOrEqual(barBottom);
-    expect(t.y).toBeLessThan(layout.height);
-    // バーコードの下は、その中身の1行だけ(ほかの文字は、どこにも無い)
-    expect(ctx.texts.map((x) => x.text)).toEqual(['KZ-11319']);
-    const [left, right] = extent(t);
-    expect(left).toBeGreaterThan(0);
-    expect(right).toBeLessThan(layout.width);
+    const digits = ean13FromId('1', 'KZ-11319')!;
+    expect(ctx.texts.map((t) => t.text).join('')).toBe(digits);
+    expect(ctx.texts).toHaveLength(13);
+    const barBottom = barBottomOf(ctx, layout.barTop);
+    const barLeft = layout.barLeft;
+    const barRight = barLeft + EAN13_MODULES * layout.unit;
+    ctx.texts.forEach((t) => {
+      expect(t.y).toBe(layout.textY);
+      expect(t.y).toBeLessThan(layout.height);
+      const w = fontSize(t.font) * MONO_CHAR_RATIO;
+      expect(t.x - w / 2).toBeGreaterThan(0);
+      expect(t.x + w / 2).toBeLessThan(layout.width);
+    });
+    expect(ctx.texts[0].x).toBeLessThan(barLeft);
+    ctx.texts.slice(1).forEach((t) => {
+      expect(t.x).toBeGreaterThan(barLeft);
+      expect(t.x).toBeLessThan(barRight);
+    });
+    expect(layout.textY - fontSize(ctx.texts[0].font)).toBeGreaterThanOrEqual(barBottom - 40);
     // 上と左右の端は、白い余白
     for (let x = 0; x < layout.width; x += 7) expect(r.pixel(x, layout.barTop - 1)).toBe(255);
     for (let y = 0; y < layout.height; y += 7) {
@@ -163,18 +147,14 @@ describe('会員証のバーコード(PNG)', () => {
     }
   });
 
-  it('わざと壊すと、読めなくなる(または別の文字になる)', () => {
-    const layout = memberCardLayout('KZ-11319');
+  it('数字の部分が取れない会員番号では、画像を作らない', () => {
+    expect(memberCardLayout('未ログイン')).toBeNull();
+    expect(memberCardLayout('KZ-1234567890')).toBeNull();
+  });
+
+  it('わざと壊すと、読めなくなる(または別の13桁になる)', () => {
     for (const skip of [3, 6, 9]) {
-      const ctx = new RecordingContext((i) => i === skip);
-      drawMemberCard(ctx, 'KZ-11319', layout);
-      let text: string | null;
-      try {
-        text = new Code128Reader().decode(ctx.toRaster(layout.width, layout.height).bitmap(), hints).getText();
-      } catch {
-        text = null;
-      }
-      expect(text).not.toBe('KZ-11319');
+      expect(readEan(draw('KZ-11319', (i) => i === skip).r)).not.toBe(ean13FromId('1', 'KZ-11319'));
     }
   });
 });
