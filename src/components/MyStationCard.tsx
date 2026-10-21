@@ -521,7 +521,7 @@ export const MyStationCard: React.FC<MyStationCardProps> = ({
                 )}
 
                 {/* Left: Line Badge, Train Type Badge, First/Last Train Badges & Destination */}
-                <div className="flex items-center gap-1 min-w-0 z-10 flex-nowrap">
+                <div className="flex items-center gap-1 min-w-0 z-10 flex-wrap">
                   {/* 路線識別バッジ */}
                   <span
                     className={`text-[9px] xs:text-[10px] font-bold px-1.5 py-0.5 rounded-md shrink-0 border border-black/10 shadow-2xs ${
