@@ -28,68 +28,58 @@ export interface DynamicDeparture {
 }
 
 // 種別ごとの指定カラーを取得する関数 (浮かない洗練されたトーン＆マナー)
-const getTrainTypeBadgeStyle = (trainType: string): { bg: string; dot: string } => {
+const getTrainTypeBadgeStyle = (trainType: string): { bg: string } => {
   if (trainType === '各停(遠距離)') {
     return {
       bg: 'bg-teal-50 text-teal-900 border border-teal-300',
-      dot: 'bg-teal-600',
     };
   }
   if (trainType === '各停' || trainType === '普通' || trainType === '各停(近距離)') {
     return {
       bg: 'bg-slate-100 text-slate-800 border border-slate-300',
-      dot: 'bg-slate-500',
     };
   }
   if (trainType === '区間快速' || trainType === '区間急行' || trainType === '区快') {
     return {
       bg: 'bg-emerald-50 text-emerald-900 border border-emerald-300',
-      dot: 'bg-emerald-600',
     };
   }
   if (trainType === '快速') {
     return {
       bg: 'bg-sky-50 text-sky-900 border border-sky-300',
-      dot: 'bg-sky-600',
     };
   }
   if (trainType === '急行') {
     return {
       bg: 'bg-orange-50 text-orange-900 border border-orange-300',
-      dot: 'bg-orange-600',
     };
   }
   if (trainType === '特別快速' || trainType === '特快') {
     return {
       bg: 'bg-amber-50 text-amber-950 border border-amber-300',
-      dot: 'bg-amber-600',
     };
   }
   if (trainType === '通勤特快' || trainType === '通特') {
     return {
       bg: 'bg-rose-100 text-rose-950 border border-rose-300',
-      dot: 'bg-rose-700',
     };
   }
   if (trainType.includes('特急') || trainType.includes('めぐり') || trainType.includes('Nライナー') || trainType.includes('サークル')) {
     return {
       bg: 'bg-purple-100 text-purple-950 border border-purple-300 font-extrabold',
-      dot: 'bg-purple-700',
     };
   }
   return {
     bg: 'bg-slate-100 text-slate-800 border border-slate-300',
-    dot: 'bg-slate-500',
   };
 };
 
 // 路線識別バッジスタイル取得関数 (神埼線・神埼高速線・埼千環状線・土浦線)
-const getLineBadgeStyle = (lineName: string): { bg: string; text: string; dot: string; border: string } => {
+const getLineBadgeStyle = (lineName: string): { bg: string; text: string; border: string } => {
   if (lineName.includes('高速') || lineName.includes('NI')) {
     return {
       bg: 'bg-blue-600 text-white',
       text: 'text-blue-600',
-      dot: 'bg-blue-400',
       border: 'border-blue-700',
     };
   }
@@ -97,7 +87,6 @@ const getLineBadgeStyle = (lineName: string): { bg: string; text: string; dot: s
     return {
       bg: 'bg-pink-600 text-white',
       text: 'text-pink-600',
-      dot: 'bg-pink-400',
       border: 'border-pink-700',
     };
   }
@@ -105,14 +94,12 @@ const getLineBadgeStyle = (lineName: string): { bg: string; text: string; dot: s
     return {
       bg: 'bg-emerald-600 text-white',
       text: 'text-emerald-600',
-      dot: 'bg-emerald-400',
       border: 'border-emerald-700',
     };
   }
   return {
     bg: 'bg-purple-600 text-white',
     text: 'text-purple-600',
-    dot: 'bg-purple-400',
     border: 'border-purple-700',
   };
 };
@@ -534,7 +521,7 @@ export const MyStationCard: React.FC<MyStationCardProps> = ({
                 )}
 
                 {/* Left: Line Badge, Train Type Badge, First/Last Train Badges & Destination */}
-                <div className="flex items-center gap-1.5 xs:gap-2 min-w-0 z-10 flex-wrap sm:flex-nowrap">
+                <div className="flex items-center gap-1 min-w-0 z-10 flex-wrap">
                   {/* 路線識別バッジ */}
                   <span
                     className={`text-[9px] xs:text-[10px] font-bold px-1.5 py-0.5 rounded-md shrink-0 border border-black/10 shadow-2xs ${
@@ -546,15 +533,12 @@ export const MyStationCard: React.FC<MyStationCardProps> = ({
 
                   {/* 種別バッジ */}
                   <span
-                    className={`text-[10px] xs:text-[11px] font-bold px-2 py-0.5 rounded-md shrink-0 whitespace-nowrap flex items-center gap-1.5 ${
+                    className={`text-[10px] xs:text-[11px] font-bold px-1.5 py-0.5 rounded-md shrink-0 whitespace-nowrap ${
                       isImminent
                         ? 'bg-white text-[#5B21B6] font-extrabold shadow-xs'
                         : typeBadgeStyle.bg
                     }`}
                   >
-                    {!isImminent && (
-                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${typeBadgeStyle.dot}`} />
-                    )}
                     {dep.trainType}
                   </span>
 
@@ -570,7 +554,7 @@ export const MyStationCard: React.FC<MyStationCardProps> = ({
                   ) : null}
                   {dep.isOrigin && (
                     <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-[#8B5CF6] text-white border border-purple-700 whitespace-nowrap shrink-0 shadow-2xs">
-                      [当駅始発]
+                      始発
                     </span>
                   )}
                   {dep.isLastTrain && (
@@ -592,7 +576,7 @@ export const MyStationCard: React.FC<MyStationCardProps> = ({
                 </div>
 
                 {/* Right: Departure Time & Congestion Icon */}
-                <div className="flex items-center gap-2 shrink-0 z-10">
+                <div className="flex items-center gap-1.5 shrink-0 z-10">
                   <div className="text-right">
                     <div
                       className={`text-xl sm:text-2xl font-bold font-mono tracking-tight ${

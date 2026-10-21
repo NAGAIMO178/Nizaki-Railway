@@ -1060,6 +1060,7 @@ export default function App() {
           hideDeleteAccount={demoOn}
           cloudMode={cloudOn}
           mileage={mileage}
+          ticketSummary={ticketSummary}
           onLogout={handleLogout}
           onOpenNPointModal={() => {
             setIsMyPageOpen(false);

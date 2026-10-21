@@ -16,7 +16,6 @@ import {
   AlertTriangle,
   X,
   CreditCard,
-  ShieldAlert,
   Tag,
   Check,
   Lock,
@@ -42,6 +41,7 @@ import { isLaunched } from '../utils/launch';
 import { TicketSummary, reservationRibbon } from '../utils/ticketApi';
 import { calculateFare } from '../utils/fare';
 import { CompletionModal } from './CompletionModal';
+import { calcCancelPenalty } from '../utils/cancelPenalty';
 
 // 列車位置の特急の詳細から、予約画面を、その列車を選んだ状態で開くための指定(公開後だけ。key が変わるたびに適用する)
 export interface ReservationPreset {
@@ -153,6 +153,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
 
   // Coupon Code State
   const [couponInput, setCouponInput] = useState('');
+  const [couponOpen, setCouponOpen] = useState(false);
   const [appliedCoupon, setAppliedCoupon] = useState<{ code: string; label: string; type?: 'ayami300' } | null>(null);
   const [couponMessage, setCouponMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -931,108 +932,120 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
 
             {/* 自由席の人数(公開後。指定席は、座席選択で選んだ席の数が人数になる) */}
             {isLaunched() && seatType === 'standard' && (
-              <div className="flex items-center justify-between rounded-xl bg-[#F4F3F8] border border-[#E6E2EE] px-3 py-2">
-                <span className="text-xs font-bold text-[#221C35]">人数</span>
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    aria-label="人数を減らす"
-                    disabled={seatCount <= 1}
-                    onClick={() => changeSeatCount(seatCount - 1)}
-                    className="w-8 h-8 rounded-lg bg-white border border-[#D1C9E3] text-[#5B21B6] font-black disabled:opacity-40 cursor-pointer"
-                  >
-                    −
-                  </button>
-                  <span className="w-6 text-center text-sm font-black font-mono text-[#221C35]">{seatCount}</span>
-                  <button
-                    type="button"
-                    aria-label="人数を増やす"
-                    disabled={seatCount >= MAX_SEATS}
-                    onClick={() => changeSeatCount(seatCount + 1)}
-                    className="w-8 h-8 rounded-lg bg-white border border-[#D1C9E3] text-[#5B21B6] font-black disabled:opacity-40 cursor-pointer"
-                  >
-                    +
-                  </button>
-                </div>
+              <div className="flex items-center justify-end gap-2">
+                <span className="text-xs font-bold text-[#6B6380]">人数</span>
+                <button
+                  type="button"
+                  aria-label="人数を減らす"
+                  disabled={seatCount <= 1}
+                  onClick={() => changeSeatCount(seatCount - 1)}
+                  className="w-7 h-7 rounded-lg bg-white border border-[#D1C9E3] text-[#5B21B6] font-black disabled:opacity-40 cursor-pointer"
+                >
+                  −
+                </button>
+                <span className="w-5 text-center text-sm font-black font-mono text-[#221C35]">{seatCount}</span>
+                <button
+                  type="button"
+                  aria-label="人数を増やす"
+                  disabled={seatCount >= maxSeats}
+                  onClick={() => changeSeatCount(seatCount + 1)}
+                  className="w-7 h-7 rounded-lg bg-white border border-[#D1C9E3] text-[#5B21B6] font-black disabled:opacity-40 cursor-pointer"
+                >
+                  +
+                </button>
               </div>
             )}
 
-            {/* クーポンコード入力セクション（UIを阻害しないコンパクトなデザイン） */}
-            <div className="pt-2 border-t border-[#E6E2EE] space-y-1.5">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] text-[#6B6380] font-medium flex items-center gap-1">
-                  <Tag className="w-3 h-3 text-[#5B21B6]" />
-                  <span>クーポンコード</span>
-                </span>
-                {appliedCoupon && (
-                  <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                    適用中
-                  </span>
-                )}
+            {/* クーポン: ふだんは折りたたむ。適用中か、開いたときだけ入力欄・内容を出す */}
+            {!appliedCoupon && !couponOpen ? (
+              <div className="pt-2 border-t border-[#E6E2EE]">
+                <button
+                  type="button"
+                  onClick={() => setCouponOpen(true)}
+                  className="inline-flex items-center gap-1 text-xs font-bold text-[#5B21B6] cursor-pointer"
+                >
+                  <Tag className="w-3.5 h-3.5" />
+                  <span>クーポンを使う</span>
+                </button>
               </div>
-
-              {appliedCoupon ? (
-                <div className="bg-emerald-50/80 border border-emerald-200 p-2.5 rounded-xl flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="text-xs font-black text-emerald-900 flex items-center gap-1">
-                      <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      <span>{appliedCoupon.code}</span>
-                    </div>
-                    <div className="text-[10px] text-emerald-700 font-medium mt-0.5">
-                      {appliedCoupon.label}
-                      {appliedCoupon.code.includes('AYAMI') && (
-                        expressType === 'ayami' && seatType === 'reserved' ? (
-                          <span className="font-bold ml-1 text-emerald-800">(特急料金 1,150円 → 850円)</span>
-                        ) : (
-                          <span className="font-bold ml-1 text-amber-700 block mt-0.5">
-                            ※「特急あやみ 普通指定席」選択時に300円引き適用
-                          </span>
-                        )
-                      )}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleRemoveCoupon}
-                    className="p-1 rounded-lg text-emerald-700 hover:bg-emerald-100 transition-all cursor-pointer text-xs font-bold shrink-0"
-                    title="クーポン解除"
-                  >
-                    解除
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      type="text"
-                      value={couponInput}
-                      onChange={(e) => {
-                        setCouponInput(e.target.value);
-                        if (couponMessage) setCouponMessage(null);
-                      }}
-                      placeholder="クーポンコードを入力"
-                      className="flex-1 bg-[#F4F3F8] border border-[#E6E2EE] rounded-xl px-3 py-1.5 text-xs font-mono font-medium text-[#221C35] focus:outline-none focus:border-[#5B21B6] placeholder:text-gray-400"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleApplyCoupon}
-                      className="bg-[#5B21B6] hover:bg-[#4C1D95] text-white text-xs font-bold px-3 py-1.5 rounded-xl transition-all cursor-pointer shrink-0 shadow-2xs"
-                    >
-                      適用
-                    </button>
-                  </div>
-                  {couponMessage && (
-                    <div
-                      className={`text-[10px] font-bold px-1 ${
-                        couponMessage.type === 'success' ? 'text-emerald-600' : 'text-rose-600'
-                      }`}
-                    >
-                      {couponMessage.text}
-                    </div>
+            ) : (
+              <div className="pt-2 border-t border-[#E6E2EE] space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-[#6B6380] font-medium flex items-center gap-1">
+                    <Tag className="w-3 h-3 text-[#5B21B6]" />
+                    <span>クーポンコード</span>
+                  </span>
+                  {appliedCoupon && (
+                    <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                      適用中
+                    </span>
                   )}
                 </div>
-              )}
-            </div>
+
+                {appliedCoupon ? (
+                  <div className="bg-emerald-50/80 border border-emerald-200 p-2.5 rounded-xl flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-xs font-black text-emerald-900 flex items-center gap-1">
+                        <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span>{appliedCoupon.code}</span>
+                      </div>
+                      <div className="text-[10px] text-emerald-700 font-medium mt-0.5">
+                        {appliedCoupon.label}
+                        {appliedCoupon.code.includes('AYAMI') && (
+                          expressType === 'ayami' && seatType === 'reserved' ? (
+                            <span className="font-bold ml-1 text-emerald-800">(特急料金 1,150円 → 850円)</span>
+                          ) : (
+                            <span className="font-bold ml-1 text-amber-700 block mt-0.5">
+                              ※「特急あやみ 普通指定席」選択時に300円引き適用
+                            </span>
+                          )
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleRemoveCoupon}
+                      className="p-1 rounded-lg text-emerald-700 hover:bg-emerald-100 transition-all cursor-pointer text-xs font-bold shrink-0"
+                      title="クーポン解除"
+                    >
+                      解除
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        value={couponInput}
+                        onChange={(e) => {
+                          setCouponInput(e.target.value);
+                          if (couponMessage) setCouponMessage(null);
+                        }}
+                        placeholder="クーポンコードを入力"
+                        className="flex-1 bg-[#F4F3F8] border border-[#E6E2EE] rounded-xl px-3 py-1.5 text-xs font-mono font-medium text-[#221C35] focus:outline-none focus:border-[#5B21B6] placeholder:text-gray-400"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleApplyCoupon}
+                        className="bg-[#5B21B6] hover:bg-[#4C1D95] text-white text-xs font-bold px-3 py-1.5 rounded-xl transition-all cursor-pointer shrink-0 shadow-2xs"
+                      >
+                        適用
+                      </button>
+                    </div>
+                    {couponMessage && (
+                      <div
+                        className={`text-[10px] font-bold px-1 ${
+                          couponMessage.type === 'success' ? 'text-emerald-600' : 'text-rose-600'
+                        }`}
+                      >
+                        {couponMessage.text}
+                      </div>
+                    )}
+                  </div>
+                )}
+            
+              </div>
+            )}
 
             {/* Price Breakdown & Total Price */}
             {(() => {
@@ -1060,47 +1073,19 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
                   )}
                   <div className="flex items-center justify-between text-[11px] text-[#6B6380]">
                     <div className="flex items-center gap-1">
-                      <span>乗車運賃 ({priceInfo.dist}km){priceInfo.count > 1 && ` ×${priceInfo.count}`}</span>
-                      {priceInfo.fareDiscount > 0 && (
-                        <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded">
-                          クーポン割引 -¥{(priceInfo.fareDiscount * priceInfo.count).toLocaleString()}
+                      <span>運賃 + 特急料金{priceInfo.count > 1 && ` ×${priceInfo.count}`}</span>
+                      {priceInfo.fare === 0 && priceInfo.initialFare > 0 && (
+                        <span className="text-[11px] bg-[#EDE9FE] text-[#5B21B6] font-bold px-1.5 py-0.5 rounded">フリーパス</span>
+                      )}
+                      {(priceInfo.fareDiscount > 0 || priceInfo.expressDiscount > 0) && (
+                        <span className="text-[11px] bg-[#EDE9FE] text-[#5B21B6] font-bold px-1.5 py-0.5 rounded">
+                          クーポン -¥{((priceInfo.fareDiscount + priceInfo.expressDiscount) * priceInfo.count).toLocaleString()}
                         </span>
                       )}
                     </div>
-                    <div className="text-right">
-                      <span className="font-mono font-bold text-[#221C35]">
-                        {priceInfo.fare === 0 && priceInfo.initialFare > 0 ? (
-                          <span className="text-emerald-600 font-black">¥0 (フリーパス無料)</span>
-                        ) : (
-                          `¥${(priceInfo.fare * priceInfo.count).toLocaleString()}`
-                        )}
-                      </span>
-                      {priceInfo.fareDiscount > 0 && priceInfo.fare > 0 && (
-                        <span className="text-[10px] text-gray-400 line-through ml-1.5 font-mono">
-                          ¥{(priceInfo.initialFare * priceInfo.count).toLocaleString()}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between text-[11px] text-[#6B6380]">
-                    <div className="flex items-center gap-1">
-                      <span>特急料金{priceInfo.count > 1 && ` ×${priceInfo.count}`}</span>
-                      {priceInfo.expressDiscount > 0 && (
-                        <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded">
-                          クーポン割引 -¥{(priceInfo.expressDiscount * priceInfo.count).toLocaleString()}
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-right">
-                      <span className="font-mono font-bold text-[#221C35]">
-                        ¥{(priceInfo.expressFee * priceInfo.count).toLocaleString()}
-                      </span>
-                      {priceInfo.expressDiscount > 0 && (
-                        <span className="text-[10px] text-gray-400 line-through ml-1.5 font-mono">
-                          ¥{(priceInfo.baseExpressFee * priceInfo.count).toLocaleString()}
-                        </span>
-                      )}
-                    </div>
+                    <span className="font-mono font-bold text-[#221C35]">
+                      ¥{((priceInfo.fare + priceInfo.expressFee) * priceInfo.count).toLocaleString()}
+                    </span>
                   </div>
                   {pointsToUse > 0 && (
                     <div className="flex items-center justify-between text-[11px] text-[#6B6380]">
@@ -1215,87 +1200,55 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
          ───────────────────────────────────────────────────────────── */}
       {isCancelModalOpen && activeOrder && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-fadeIn">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-4 shadow-2xl border border-rose-200 relative animate-scaleUp">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-4 shadow-2xl border border-[#E5E2EE] relative animate-scaleUp">
             {/* Close Cross Button */}
             <button
               onClick={() => setIsCancelModalOpen(false)}
               className="absolute top-4 right-4 p-1 rounded-full text-[#6B6380] hover:bg-[#F4F3F8] transition-all cursor-pointer"
+              aria-label="閉じる"
             >
               <X className="w-5 h-5" />
             </button>
 
-            {/* Header Icon & Warning Title */}
-            <div className="flex flex-col items-center text-center pt-2 space-y-1.5">
-              <div className="w-12 h-12 rounded-full bg-rose-100 border border-rose-200 flex items-center justify-center text-rose-600">
-                <AlertTriangle className="w-6 h-6" />
-              </div>
-              <h3 className="text-base font-extrabold text-[#221C35]">
-                特急予約・デリバリーのキャンセル
-              </h3>
-              <p className="text-xs text-[#6B6380] px-2 font-medium">
-                本当に特急予約および車内デリバリーをキャンセルしますか？
-              </p>
+            <div className="text-center pt-2 space-y-1.5">
+              <h3 className="text-base font-extrabold text-[#221C35]">特急予約・デリバリーのキャンセル</h3>
+              <p className="text-xs text-[#6B6380] font-medium">本当にキャンセルしますか？</p>
             </div>
 
-            {/* Refund & Fee Calculation Card */}
-            <div className="bg-rose-50/80 border border-rose-200 rounded-2xl p-3.5 space-y-2 text-xs">
-              <div className="text-[11px] font-bold text-rose-900 border-b border-rose-200 pb-1.5 flex items-center gap-1.5">
-                <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0" />
-                <span>自己都合キャンセル違約金・手数料請求</span>
+            <div className="bg-[#F9F8FD] border border-[#E6E2EE] rounded-2xl px-3.5 py-1 text-xs text-[#221C35]">
+              <div className="flex justify-between items-center py-2.5 border-b border-[#EFEDF5]">
+                <span className="text-[#6B6380]">ご予約列車・商品小計</span>
+                <span className="font-bold">¥{(activeOrder.totalPrice + (activeOrder.pointsUsed ?? 0)).toLocaleString()}</span>
               </div>
-
-              <div className="space-y-1.5 text-[#221C35]">
-                <div className="flex justify-between items-center text-[11px]">
-                  <span className="text-[#6B6380]">ご予約列車・商品小計:</span>
-                  <span className="font-bold">¥{(activeOrder.totalPrice + (activeOrder.pointsUsed ?? 0)).toLocaleString()}</span>
+              {(activeOrder.pointsUsed ?? 0) > 0 && (
+                <div className="flex justify-between items-center py-2.5 border-b border-[#EFEDF5]">
+                  <span className="text-[#6B6380]">うち N-POINT利用 (戻りません)</span>
+                  <span className="font-bold">{(activeOrder.pointsUsed ?? 0).toLocaleString()}pt</span>
                 </div>
-                {(activeOrder.pointsUsed ?? 0) > 0 && (
-                  <div className="flex justify-between items-center text-[11px]">
-                    <span className="text-[#6B6380]">うち N-POINT利用 (戻りません):</span>
-                    <span className="font-bold">{(activeOrder.pointsUsed ?? 0).toLocaleString()}pt</span>
-                  </div>
-                )}
-
-                <div className="flex justify-between items-center pt-1 border-t border-rose-200/80 text-rose-900 font-bold text-[11px]">
-                  <span>お客様への返金額:</span>
-                  <span className="text-rose-700 text-xs font-black">¥0（返金不可）</span>
-                </div>
-
-                <div className="flex justify-between items-center pt-1 border-t border-rose-200/80 font-bold text-rose-950">
-                  <span className="flex items-center gap-1">
-                    <span>追加徴収違約金 (1.5倍 + 手数料500円):</span>
-                  </span>
-                  <span className="font-black text-rose-600 text-sm">
-                    +¥{(Math.round((activeOrder.totalPrice + (activeOrder.pointsUsed ?? 0)) * 1.5) + 500).toLocaleString()}
-                  </span>
-                </div>
+              )}
+              <div className="flex justify-between items-center py-2.5 border-b border-[#EFEDF5]">
+                <span className="text-[#6B6380]">お客様への返金額</span>
+                <span className="font-bold">¥0（返金不可）</span>
+              </div>
+              <div className="flex justify-between items-center py-2.5">
+                <span className="text-[#6B6380]">追加徴収違約金 (1.5倍 + 手数料500円)</span>
+                <span className="font-black text-sm whitespace-nowrap shrink-0 pl-3">+¥{calcCancelPenalty(activeOrder.totalPrice, activeOrder.pointsUsed ?? 0).toLocaleString()}</span>
               </div>
             </div>
 
-            {/* Safety Notice Note */}
-            <div className="text-[10px] text-[#857D99] leading-tight space-y-1 bg-[#F9F8FD] p-2.5 rounded-xl border border-[#E6E2EE]">
-              <p>・自己都合によるキャンセルのため、購入金額の払い戻しは一切行われません。</p>
-              <p>・直前割増キャンセルペナルティとして『元料金の1.5倍＋事務手数料500円』を登録カードより自動引き落としいたします。</p>
-            </div>
-
-            {/* Modal Buttons */}
             <div className="space-y-2 pt-1">
               <button
                 onClick={handleExecuteCancellation}
-                className="w-full bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white font-bold text-xs py-3 px-4 rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                className="w-full bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white font-bold text-sm py-3 px-4 rounded-xl shadow-xs transition-all cursor-pointer"
               >
-                <AlertTriangle className="w-4 h-4 text-white shrink-0" />
-                <span>
-                  違約金を了解してキャンセル (計 ¥
-                  {(Math.round((activeOrder.totalPrice + (activeOrder.pointsUsed ?? 0)) * 1.5) + 500).toLocaleString()} 請求)
-                </span>
+                キャンセルする (違約金 ¥{calcCancelPenalty(activeOrder.totalPrice, activeOrder.pointsUsed ?? 0).toLocaleString()})
               </button>
 
               <button
                 onClick={() => setIsCancelModalOpen(false)}
-                className="w-full bg-[#F4F3F8] hover:bg-[#E6E2EE] text-[#221C35] font-bold text-xs py-2.5 px-4 rounded-xl transition-all cursor-pointer"
+                className="w-full bg-[#F4F3F8] hover:bg-[#E6E2EE] text-[#221C35] font-bold text-sm py-2.5 px-4 rounded-xl transition-all cursor-pointer"
               >
-                予約を維持する (戻る)
+                予約を維持する
               </button>
             </div>
           </div>
