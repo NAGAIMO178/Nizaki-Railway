@@ -1,27 +1,11 @@
 // 描いた QR とバーコードを、別の読み取りの部品(@zxing/library)で読み戻して、元の文字と一致することを確かめる。
 // 画面の canvas と同じ描き方(paintQr / paintCode128)に、画素を塗る関数を渡して、読み取りを確かめる。
-import {
-  BarcodeFormat,
-  BinaryBitmap,
-  Code128Reader,
-  DecodeHintType,
-  HybridBinarizer,
-  QRCodeReader,
-  RGBLuminanceSource,
-} from '@zxing/library';
+import { BarcodeFormat, Code128Reader, DecodeHintType, QRCodeReader } from '@zxing/library';
 import { describe, expect, it } from 'vitest';
 import { CODE128_PATTERNS, CODE128_QUIET, CODE128_STOP, encodeCode128B, paintCode128 } from '../src/utils/code128';
 import { QR_QUIET, makeQrMatrix, paintQr, qrSvgPath } from '../src/utils/qrImage';
 import { buildTicketUrl } from '../src/utils/ticketToken';
-
-const raster = (width: number, height: number) => {
-  const px = new Uint8ClampedArray(width * height).fill(255);
-  const fill = (x: number, y: number, w: number, h: number) => {
-    for (let j = y; j < y + h; j++) for (let i = x; i < x + w; i++) px[j * width + i] = 0;
-  };
-  const bitmap = () => new BinaryBitmap(new HybridBinarizer(new RGBLuminanceSource(px, width, height)));
-  return { fill, bitmap };
-};
+import { raster } from './helpers/raster';
 
 const TOKEN = 'EQ-12345.AbCdEfGh_-Ij';
 const LOCATION = { origin: 'https://example.github.io', pathname: '/Nizaki-Railway/' };
