@@ -1,12 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowUpDown, Search, RefreshCw, SlidersHorizontal, ChevronRight, ChevronDown, Plus, X } from 'lucide-react';
+import { ArrowUpDown, Search, RefreshCw, SlidersHorizontal, ChevronDown, Plus, X } from 'lucide-react';
 import { REGISTERABLE_LINES } from './MyStationRegisterCard';
 import { RouteFilterSheet } from './RouteFilterSheet';
 import { RouteDetail } from './RouteDetail';
 import { ArrivalTimeSheet } from './ArrivalTimeSheet';
 import { ArrivalResults } from './ArrivalResults';
-import { formatDiaTime } from '../utils/diaTimetable';
-import { crowdInfo } from '../utils/crowd';
+import { RouteCard } from './RouteCard';
 import { loadRouteStations, searchRoutes, RouteResult } from '../utils/routeSearch';
 import { planArrival, ArrivalPlan, ArrivalOption } from '../utils/arrivalPlan';
 import { isLaunched } from '../utils/launch';
@@ -39,8 +38,6 @@ const toServiceSec = (text: string): number | null => {
 };
 
 const dayLabelOf = (d: Date = new Date()): string => `${d.getMonth() + 1}月${d.getDate()}日(${'日月火水木金土'[d.getDay()]})`;
-
-const timeLabel = (sec: number): string => formatDiaTime(sec);
 
 // 出発・到着・経由の駅の組み合わせが、探せる形か。だめなら、その理由
 const checkStations = (fromV: string, toV: string, chosen: string[]): string | null => {
@@ -463,88 +460,9 @@ export const RouteSearch: React.FC = () => {
             </div>
           )}
 
-          {results.map((r, i) => {
-            const first = r.legs[0];
-            // 乗換の警告: 遅れで間に合わない乗換があれば、それを。無ければ、余裕が少ない乗換を
-            const failConn = r.connections.find((c) => c.level === 'fail');
-            const tightConn = failConn ? undefined : r.connections.find((c) => c.level === 'tight');
-            return (
-              <button
-                type="button"
-                key={`${r.depSec}-${r.arrSec}`}
-                onClick={() => setDetailIdx(i)}
-                className="w-full text-left bg-white border border-[#E6E2EE] rounded-2xl shadow-xs overflow-hidden hover:border-[#C4B5FD] active:bg-[#F9F8FD] transition-colors cursor-pointer"
-              >
-                <div className="px-3.5 pt-3 pb-2 flex items-end justify-between gap-2">
-                  <div>
-                    <div className="text-[11px] font-bold text-[#857D99]">
-                      候補 {i + 1}
-                      {r.delayed && <span className="ml-1.5 text-rose-700">遅れあり</span>}
-                    </div>
-                    <div className={`text-2xl font-black font-mono leading-tight ${r.delayed ? 'text-rose-600' : 'text-[#221C35]'}`}>
-                      {timeLabel(r.depSec)} <span className="text-[#B4ADC4]">→</span> {timeLabel(r.arrSec)}
-                      {r.arrSec >= DAY && <span className="ml-1 text-[11px] font-bold text-[#857D99]">翌</span>}
-                    </div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <div className="text-sm font-black text-[#5B21B6]">{r.minutes}分</div>
-                    <div className="text-[11px] text-[#857D99]">乗換 {r.transfers}回</div>
-                  </div>
-                </div>
-
-                <div className="px-3.5 pb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[#6B6380]">
-                  <span>
-                    運賃 <span className="font-bold text-[#221C35]">¥{r.fare.toLocaleString()}</span>
-                  </span>
-                  <span>営業キロ {r.km.toFixed(1)}km</span>
-                  {r.hasPaid && <span className="font-bold text-amber-600">特急券が別に必要</span>}
-                  {failConn && <span className="font-bold text-rose-600">遅れで{failConn.station}の乗換に間に合いません</span>}
-                  {tightConn && (
-                    <span className="font-bold text-amber-600">
-                      {tightConn.station}の乗換は余裕が少なめ(待ち{Math.round(tightConn.gapMin)}分)
-                    </span>
-                  )}
-                  {options.sortBy === 'safe' && !failConn && !tightConn && r.risk < 0.01 && (
-                    <span className="font-bold text-emerald-700">遅れに強い</span>
-                  )}
-                </div>
-
-                <div className="border-t border-[#EFEDF5] px-3.5 py-2.5 flex items-center gap-2">
-                  <div className="flex-1 min-w-0 space-y-1">
-                    {r.legs.map((leg, k) => (
-                      <div key={`${leg.trainNo}-${k}`} className="flex items-center gap-2 text-[11px] text-[#221C35]">
-                        <span className="w-1.5 h-4 rounded-full shrink-0" style={{ backgroundColor: lineColor(leg.lineCode) }} />
-                        {leg.through && <span className="shrink-0 text-[11px] font-bold text-[#5B21B6] bg-[#EFE8FA] px-1 py-px rounded">直通</span>}
-                        <span className="font-bold truncate">{leg.lineName}</span>
-                        <span className={`shrink-0 ${leg.paid ? 'text-amber-600 font-bold' : 'text-[#857D99]'}`}>{leg.typeAbbr}</span>
-                        {leg.crowd && crowdInfo(leg.crowd) && (
-                          <span
-                            className="shrink-0 text-[11px] font-black px-1 py-px rounded border border-black/10 whitespace-nowrap"
-                            style={{ background: crowdInfo(leg.crowd)!.color, color: crowdInfo(leg.crowd)!.text }}
-                          >
-                            {crowdInfo(leg.crowd)!.short}
-                          </span>
-                        )}
-                        <span className="text-[#857D99] truncate">
-                          {leg.from} {timeLabel(leg.depSec)} → {leg.to} {timeLabel(leg.arrSec)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-[#B4ADC4] shrink-0" />
-                </div>
-                <span className="sr-only">{first.from}から詳細を見る</span>
-              </button>
-            );
-          })}
-
-          {results.length > 0 && (
-            <div className="text-[11px] text-[#857D99] leading-relaxed px-1">
-              {results.some((x) => x.crowd) && '色つきの言葉は、混雑の目安です(模擬)。乗っている区間で、いちばん混むところを出しています。'}
-              タップすると、詳細(停車駅・運賃の内訳)が見られます。乗換は{options.relaxedTransfer ? '8' : '4'}分以上で乗り継げる列車を探しています。運賃は、全区間の営業キロを合わせて計算した普通運賃です。
-              {usedRealtime ? '遅れは、検索した時点のものです。' : '表示は予定の時刻で、遅れは反映されていません。'}
-            </div>
-          )}
+          {results.map((r, i) => (
+            <RouteCard key={`${r.depSec}-${r.arrSec}`} result={r} index={i} lineColor={lineColor} onOpen={() => setDetailIdx(i)} />
+          ))}
         </div>
       )}
 
