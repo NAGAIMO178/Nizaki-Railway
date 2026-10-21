@@ -26,6 +26,7 @@ import { MileageCard } from './MileageCard';
 import type { Mileage } from '../utils/mileage';
 import { formatSeats, getSeatClassLabel, seatTitle } from '../utils/seatUtils';
 import { isLaunched } from '../utils/launch';
+import { TicketSummary, ticketBadgeLabel } from '../utils/ticketApi';
 import { calcReservationPoints } from '../utils/points';
 import { PrivacyPolicyModal } from './PrivacyPolicyModal';
 
@@ -46,6 +47,8 @@ interface MyPageModalProps {
   cloudMode?: boolean;
   // マイレージと乗車記録(公開後のクラウドの会員だけ)
   mileage?: Mileage | null;
+  // QR乗車券の状態(公開後。予約のバナーに、「利用済み」の札を出す)
+  ticketSummary?: TicketSummary | null;
 }
 
 export const MyPageModal: React.FC<MyPageModalProps> = ({
@@ -62,7 +65,9 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
   hideDeleteAccount = false,
   cloudMode = false,
   mileage = null,
+  ticketSummary = null,
 }) => {
+  const ticketLabel = ticketBadgeLabel(ticketSummary);
   const [activeHistoryTab, setActiveHistoryTab] = useState<'all' | 'ticket' | 'delivery' | 'event' | 'point'>('all');
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [isPolicyOpen, setIsPolicyOpen] = useState(false);
@@ -310,23 +315,24 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
 
           {/* Active Order Quick Banner if available */}
           {activeOrder && (
-            <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-xl p-3 flex items-center justify-between">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-9 h-9 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0">
-                  <Ticket className="w-5 h-5" />
+            <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-xl p-3 flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                <Ticket className="w-5 h-5" />
+              </div>
+              <div className="min-w-0 flex-1 space-y-0.5">
+                <div className="text-xs font-extrabold text-emerald-950 truncate">{activeOrder.trainName}</div>
+                <div className="text-[11px] text-emerald-800 font-medium truncate">
+                  {activeOrder.boardingStation} → {activeOrder.destinationStation} ({activeOrder.departureTime}発)
                 </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-extrabold text-emerald-950 truncate">
-                      {activeOrder.trainName} ({activeOrder.carNo}号車 {formatSeats(activeOrder.seatNo)})
-                    </span>
-                    <span className="text-[9px] bg-emerald-600 text-white font-bold px-1.5 py-0.2 rounded">
-                      本日有効
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-emerald-800 font-medium">
-                    {activeOrder.boardingStation} → {activeOrder.destinationStation} ({activeOrder.departureTime}発)
-                  </div>
+                <div className="flex items-center gap-1.5 text-[11px] text-emerald-800 font-medium">
+                  <span className="truncate">
+                    {activeOrder.carNo}号車 {formatSeats(activeOrder.seatNo)}
+                  </span>
+                  {ticketLabel ? (
+                    <span className="shrink-0 text-[11px] bg-[#3F3A4D] text-white font-bold px-1.5 py-0.5 rounded">{ticketLabel}</span>
+                  ) : (
+                    <span className="shrink-0 text-[11px] bg-emerald-600 text-white font-bold px-1.5 py-0.5 rounded">本日有効</span>
+                  )}
                 </div>
               </div>
               <button
