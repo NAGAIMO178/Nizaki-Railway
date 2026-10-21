@@ -266,7 +266,7 @@ describe('QR乗車券: 状態', () => {
     expect(stateOf()).toBe('cancelled');
   });
 
-  it('乗車済みは used(時刻つき)。期限をすぎても used', () => {
+  it('利用済みは used(時刻つき)。期限をすぎても used', () => {
     put({ boardedAt: '2026/11/03 10:32:10' });
     const v = gas.handleVerifyTicket(tokenOf());
     expect(v.state).toBe('used');
@@ -282,7 +282,7 @@ describe('QR乗車券: 状態', () => {
 });
 
 describe('QR乗車券: 利用する', () => {
-  it('有効な券を乗車済みにする。ロックの中で書く', () => {
+  it('有効な券を利用済みにする。ロックの中で書く', () => {
     put();
     const t = tokenOf();
     events = [];
@@ -379,7 +379,7 @@ describe('QR乗車券: 予約の更新との関係', () => {
     expect(gas.handleVerifyTicket(tokenOf()).state).toBe('valid');
   });
 
-  it('乗車済みのあとで予約を更新(デリバリーを足す)しても、乗車日時は消えない', () => {
+  it('利用済みのあとで予約を更新(デリバリーを足す)しても、乗車日時は消えない', () => {
     gas.handleCreateReservation('ok1', order(), false);
     const t = tokenOf();
     at('2026-11-03T10:32:10+09:00');

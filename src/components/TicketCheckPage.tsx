@@ -38,7 +38,7 @@ export const TicketCheckPage: React.FC<{ token: string }> = ({ token }) => {
     try {
       setView({ kind: 'result', result: await useTicket(token) });
     } catch (err) {
-      // 応答が届かなかったかもしれない。状態を取り直す(乗車済みになっていれば、そう出る)
+      // 応答が届かなかったかもしれない。状態を取り直す(利用済みになっていれば、そう出る)
       try {
         const result = await verifyTicket(token);
         setView({ kind: 'result', result });
