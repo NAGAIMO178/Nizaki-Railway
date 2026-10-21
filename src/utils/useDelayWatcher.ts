@@ -1,6 +1,7 @@
 // 遅れの見張り(NIZAKI 2.0。公開後だけ働く)。
 // 列車位置タブを開いていなくても、アプリを開いていれば、全路線・両方面の列車の遅れを見張って、知らせる。
-//  - 同じ列車は、同じ日に1回だけ知らせる(再読み込みしても、重ねて知らせない)。
+//  - 同じ列車は、同じ遅れ分数なら、同じ日に1回だけ知らせる(再読み込みしても、重ねて知らせない)。遅れの分数が変われば、知らせ直す。
+//  - 路線・種別・行き先・遅れ分数が同じ列車は、1本にまとめて知らせる(文面が同じ知らせを、重ねて出さない)。決まりは delayNotifyPlan.ts。
 //  - 路線ごとに、続けて知らせない時間(クールダウン)を置く。
 //  - アプリを開いた直後に、すでに遅れている列車が2本以上あるときは、まとめて1回だけ知らせる。
 //  - アプリを閉じているあいだは、知らせられない(ブラウザの仕組みによる)。
@@ -8,9 +9,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { computeLiveTrains, getCachedLineData, loadLineData, normalizeStationName } from './diaTimetable';
 import { DelayNotifyMode } from './delayNotifySettings';
 import { getNotificationPermissionState, sendLocalPushNotification } from './pushNotification';
+import { markNotified, NotifiedState, NotifyCandidate, planNotification } from './delayNotifyPlan';
 
 const SCAN_INTERVAL_MS = 30 * 1000;
-const LINE_COOLDOWN_MS = 15 * 60 * 1000; // 同じ路線で、続けて知らせない時間
 const NOTICE_SHOW_MS = 20 * 1000; // 画面の帯を出しておく時間
 const MYSTATION_WINDOW_MIN = 60; // 「マイ駅に関係する」: この分数以内に、マイ駅に着く(通る)予定
 const PAST_GRACE_MIN = 5; // 着く時刻をこの分数すぎても、まだ「関係する」とみなす
@@ -31,30 +32,39 @@ export interface DelayNotice {
   text: string;
 }
 
-interface DelayedTrain {
-  key: string; // 日付と列車ID
-  lineId: string;
-  lineName: string;
-  text: string;
+interface DelayedTrain extends NotifyCandidate {
   stopNames: string[];
   stopTimes: string[];
 }
 
 const todayKey = (now: Date): string => `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
 
-const readNotified = (day: string): Set<string> => {
+const readNotified = (day: string): NotifiedState => {
+  const state: NotifiedState = { keys: new Set<string>(), contents: new Map<string, number>() };
   try {
     const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-    if (raw && raw.day === day && Array.isArray(raw.keys)) return new Set<string>(raw.keys);
+    if (raw && raw.day === day) {
+      if (Array.isArray(raw.keys)) raw.keys.forEach((k: unknown) => typeof k === 'string' && state.keys.add(k));
+      if (raw.contents && typeof raw.contents === 'object') {
+        Object.entries(raw.contents as Record<string, unknown>).forEach(([k, v]) => typeof v === 'number' && state.contents.set(k, v));
+      }
+    }
   } catch {
     // 読めなければ、なし
   }
-  return new Set<string>();
+  return state;
 };
 
-const writeNotified = (day: string, keys: Set<string>) => {
+const writeNotified = (day: string, state: NotifiedState) => {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ day, keys: Array.from(keys).slice(-300) }));
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        day,
+        keys: Array.from(state.keys).slice(-300),
+        contents: Object.fromEntries(Array.from(state.contents).slice(-100)),
+      })
+    );
   } catch {
     // 保存できなくても、この画面を開いているあいだは、重ねて知らせない
   }
@@ -127,7 +137,8 @@ export function useDelayWatcher(opts: {
           for (const t of computeLiveTrains(data, line.id, direction, nowMs)) {
             if (t.delayMinutes < MIN_DELAY_MIN || t.delayMinutes >= SUSPENDED_DELAY) continue;
             delayed.push({
-              key: `${day}|${t.id}`,
+              key: `${day}|${t.id}|${t.delayMinutes}`,
+              contentKey: `${line.id}|${t.trainType}|${t.destination}|${t.delayMinutes}`,
               lineId: line.id,
               lineName: line.name,
               text: `${line.name} ${t.trainType}（${t.destination}行）で約 ${t.delayMinutes} 分の遅れが発生しています。`,
@@ -152,28 +163,28 @@ export function useDelayWatcher(opts: {
           })
         );
       }
-      const fresh = candidates.filter((d) => !notified.has(d.key));
+      const plan = planNotification({
+        candidates,
+        state: notified,
+        lastByLine: lastByLineRef.current,
+        nowMs,
+        firstScan: !firstScanDoneRef.current,
+      });
+      firstScanDoneRef.current = true;
+      if (plan.kind === 'none') return;
 
-      // アプリを開いた直後: すでに遅れている列車が2本以上なら、まとめて1回だけ知らせる
-      if (!firstScanDoneRef.current) {
-        firstScanDoneRef.current = true;
-        if (fresh.length >= 2) {
-          fresh.forEach((d) => notified.add(d.key));
-          writeNotified(day, notified);
-          const lines = Array.from(new Set(fresh.map((d) => d.lineName))).join('・');
-          notify('【列車遅延】', `現在、${fresh.length}本の列車で遅れが出ています（${lines}）。`, 'delay-summary');
-          fresh.forEach((d) => (lastByLineRef.current[d.lineId] = nowMs));
-          return;
-        }
+      if (plan.kind === 'summary') {
+        markNotified(notified, plan.trains, nowMs);
+        writeNotified(day, notified);
+        notify('【列車遅延】', `現在、${plan.trains.length}本の列車で遅れが出ています（${plan.lineNames.join('・')}）。`, 'delay-summary');
+        plan.trains.forEach((d) => (lastByLineRef.current[d.lineId] = nowMs));
+        return;
       }
 
-      // 1回の確認で、知らせるのは1本だけ。路線ごとのクールダウン中の路線は、あとで知らせる
-      const next = fresh.find((d) => nowMs - (lastByLineRef.current[d.lineId] ?? 0) >= LINE_COOLDOWN_MS);
-      if (!next) return;
-      notified.add(next.key);
+      markNotified(notified, plan.group, nowMs);
       writeNotified(day, notified);
-      lastByLineRef.current[next.lineId] = nowMs;
-      notify(`【列車遅延発生】${next.lineName}`, next.text, `delay-${next.key}`);
+      lastByLineRef.current[plan.train.lineId] = nowMs;
+      notify(`【列車遅延発生】${plan.train.lineName}`, plan.train.text, `delay-${plan.train.contentKey}`);
     };
 
     // 4路線のダイヤを読み込んでから、見張りを始める
