@@ -584,12 +584,12 @@ export default function App() {
     }
   }, [activeOrder, sessionToken, currentUser?.email, cloudOn, cloud.ready, cloud.error]);
 
-  // QR乗車券の状態(公開後。予約カードの「利用済み」の札に使う)。予約が変わったとき、QR の画面を閉じたときに、1回だけ取る。取れなければ、札は出さない
+  // QR乗車券の状態(公開後。予約カードの「利用済み」の札に使う)。予約が変わったときに1回取る。QR の画面を開いたときに確かめた状態も、ここへ反映する。取れなければ、札は出さない
   const [ticketState, setTicketState] = useState<TicketState | null>(null);
   const ticketOrderId = activeOrder?.orderId;
   React.useEffect(() => setTicketState(null), [ticketOrderId]);
   React.useEffect(() => {
-    if (!isLaunched() || !sessionToken || !ticketOrderId || isQRCodeModalOpen) return;
+    if (!isLaunched() || !sessionToken || !ticketOrderId) return;
     let alive = true;
     fetchAndCacheTicket(sessionToken, ticketOrderId)
       .then((r) => alive && setTicketState(r.state))
@@ -597,7 +597,7 @@ export default function App() {
     return () => {
       alive = false;
     };
-  }, [sessionToken, ticketOrderId, isQRCodeModalOpen]);
+  }, [sessionToken, ticketOrderId]);
 
   // ログアウト・別のアカウントでのログインのときは、そのアカウントの予約に切り替える
   React.useEffect(() => {
@@ -1080,6 +1080,7 @@ export default function App() {
             onClose={() => setIsQRCodeModalOpen(false)}
             activeOrder={activeOrder}
             sessionToken={sessionToken}
+            onTicketState={setTicketState}
           />
         ) : (
           <QRCodeModal

@@ -8,16 +8,18 @@ import { renderTicketQrPng } from '../utils/ticketQrImage';
 import { saveImage } from '../utils/imageSave';
 import { ImagePreview } from './ImagePreview';
 import { buildTicketUrl } from '../utils/ticketToken';
+import { shouldDrawQr, ticketQrPhase } from '../utils/ticketQrPhase';
 
 interface TicketQRModalProps {
   isOpen: boolean;
   onClose: () => void;
   activeOrder?: ActiveOrder | null;
   sessionToken?: string;
+  onTicketState?: (state: TicketState) => void; // 確かめた状態を、予約カードの「利用済み」の札にも使う
 }
 
 // 公開後の QR乗車券: 本物の QR(読み取ると、検札の画面が開く)と、画像での保存
-export const TicketQRModal: React.FC<TicketQRModalProps> = ({ isOpen, onClose, activeOrder, sessionToken }) => {
+export const TicketQRModal: React.FC<TicketQRModalProps> = ({ isOpen, onClose, activeOrder, sessionToken, onTicketState }) => {
   const orderId = activeOrder?.orderId;
   const [token, setToken] = useState<string | null>(null);
   const [state, setState] = useState<TicketState | null>(null);
@@ -26,15 +28,17 @@ export const TicketQRModal: React.FC<TicketQRModalProps> = ({ isOpen, onClose, a
   const [preview, setPreview] = useState<string | null>(null); // ダウンロードできない場所(LINE 内など)で、画像を表示する
   const [reload, setReload] = useState(0);
 
-  // 端末に残したトークンがあれば、すぐ QR を出す。サーバーには、いまの状態を聞く
+  // 開くたびに、まず状態をサーバーに聞く。届くまで、QR は出さない(利用済みの QR が、一瞬でも見えないように)。
+  // 通信できなかったときだけ、端末に残した署名で QR を出す
   useEffect(() => {
+    setToken(null);
+    setState(null);
+    setFailed(false);
     if (!isOpen || !orderId) return;
     const cached = readCachedTicketToken(orderId);
     setToken(cached);
-    setState(null);
-    setFailed(false);
     if (!sessionToken) {
-      if (!cached) setFailed(true);
+      setFailed(true);
       return;
     }
     let alive = true;
@@ -43,21 +47,25 @@ export const TicketQRModal: React.FC<TicketQRModalProps> = ({ isOpen, onClose, a
         if (!alive) return;
         setToken(r.token ?? cached);
         setState(r.state);
+        onTicketState?.(r.state);
       })
       .catch(() => {
-        if (alive && !cached) setFailed(true);
+        if (alive) setFailed(true);
       });
     return () => {
       alive = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, orderId, sessionToken, reload]);
 
-  const matrix = useMemo(() => (token ? makeQrMatrix(buildTicketUrl(token)) : null), [token]);
+  const phase = ticketQrPhase({ state, failed, token });
+  const drawQr = shouldDrawQr(phase);
+  const matrix = useMemo(() => (drawQr && token ? makeQrMatrix(buildTicketUrl(token)) : null), [drawQr, token]);
 
   const seatText = activeOrder ? `${activeOrder.carNo}号車 ${getSeatClassLabel(activeOrder.seatType)} ${activeOrder.seatNo}` : '';
 
   const handleSave = useCallback(async () => {
-    if (!activeOrder || !token || saving) return;
+    if (!activeOrder || !token || !drawQr || saving) return;
     setSaving(true);
     try {
       const blob = await renderTicketQrPng(token);
@@ -65,11 +73,10 @@ export const TicketQRModal: React.FC<TicketQRModalProps> = ({ isOpen, onClose, a
     } finally {
       setSaving(false);
     }
-  }, [activeOrder, token, saving]);
+  }, [activeOrder, token, drawQr, saving]);
 
   if (!isOpen) return null;
 
-  const dimmed = state !== null && state !== 'valid';
   const box = matrix ? matrix.length + QR_QUIET * 2 : 0;
 
   return (
@@ -123,13 +130,15 @@ export const TicketQRModal: React.FC<TicketQRModalProps> = ({ isOpen, onClose, a
           <div className="bg-[#221C35] rounded-2xl p-5 text-white text-center space-y-3 shadow-inner">
             <div className="relative bg-white rounded-2xl inline-block shadow-lg border-2 border-[#8B5CF6] overflow-hidden">
               {matrix ? (
-                <svg viewBox={`0 0 ${box} ${box}`} className={`w-44 h-44 block transition-opacity ${dimmed ? 'opacity-15' : ''}`} shapeRendering="crispEdges" role="img" aria-label="QR乗車券">
+                <svg viewBox={`0 0 ${box} ${box}`} className="w-44 h-44 block" shapeRendering="crispEdges" role="img" aria-label="QR乗車券">
                   <rect width={box} height={box} fill="#FFFFFF" />
                   <path transform={`translate(${QR_QUIET} ${QR_QUIET})`} d={qrSvgPath(matrix)} fill="#221C35" />
                 </svg>
               ) : (
-                <div className="w-44 h-44 flex items-center justify-center text-xs font-bold text-[#857D99]">
-                  {failed ? (
+                <div className="w-44 h-44 flex items-center justify-center text-xs font-bold text-[#857D99] bg-[#F4F3F8]">
+                  {phase === 'blocked' && state ? (
+                    <span className="text-2xl font-black text-[#221C35]">{TICKET_STATE_LABEL[state]}</span>
+                  ) : phase === 'failed' ? (
                     <button
                       type="button"
                       onClick={() => setReload((n) => n + 1)}
@@ -138,16 +147,12 @@ export const TicketQRModal: React.FC<TicketQRModalProps> = ({ isOpen, onClose, a
                       もう一度
                     </button>
                   ) : (
-                    '準備しています…'
+                    <span className="animate-pulse">確認しています…</span>
                   )}
                 </div>
               )}
-              {dimmed && state && (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-lg font-black text-[#221C35] bg-white/90 border border-[#E6E2EE] rounded-xl px-4 py-1.5">{TICKET_STATE_LABEL[state]}</span>
-                </div>
-              )}
             </div>
+            {phase === 'unverified' && <div className="text-[11px] font-bold text-[#DDD6FE]">状態を確認できませんでした</div>}
             <div className="text-[11px] font-mono font-bold text-[#DDD6FE] tracking-wider">{activeOrder.orderId}</div>
           </div>
         )}
@@ -156,7 +161,7 @@ export const TicketQRModal: React.FC<TicketQRModalProps> = ({ isOpen, onClose, a
           <button
             type="button"
             onClick={handleSave}
-            disabled={!token || saving}
+            disabled={!matrix || saving}
             className="w-full bg-[#EFE8FA] hover:bg-[#E0D5F5] disabled:opacity-50 text-[#5B21B6] font-bold text-xs py-3 rounded-xl border border-[#DDD6FE] transition-all cursor-pointer flex items-center justify-center gap-1.5"
           >
             <Download className="w-4 h-4" />
