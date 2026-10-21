@@ -23,7 +23,8 @@ import {
   QrCode,
 } from 'lucide-react';
 import { ActiveOrder, EquipItem } from '../types';
-import { getSeatClassLabel, getSeatClassRibbon, canUseDelivery } from '../utils/seatUtils';
+import { getSeatClassLabel, getSeatClassRibbon, canUseDelivery, MAX_SEATS, freeSeatNo, hasSeatList, seatCountOf, seatLabel, formatSeats } from '../utils/seatUtils';
+import { DeliverySeatList, SeatList } from './SeatList';
 import { MOCK_EQUIP_ITEMS } from '../data/mockData';
 import { SeatSelectionModal } from './SeatSelectionModal';
 import { NPointPayRow } from './NPointPayRow';
@@ -38,7 +39,7 @@ import {
   getCachedExpressData,
 } from '../utils/diaTimetable';
 import { isLaunched } from '../utils/launch';
-import { TICKET_STATE_LABEL, TicketState } from '../utils/ticketApi';
+import { TicketSummary, ticketBadgeLabel } from '../utils/ticketApi';
 import { calculateFare } from '../utils/fare';
 import { CompletionModal } from './CompletionModal';
 
@@ -66,8 +67,8 @@ interface ReservationTabProps {
   onSpendPoints?: (orderId: string, points: number, title: string) => Promise<{ ok: boolean; message: string }>;
   // QR乗車券を開く(公開後で、ログイン証のある会員だけ。渡されなければ、ボタンを出さない)
   onOpenQRCode?: () => void;
-  // QR乗車券の状態(公開後。'used' のときだけ、予約カードに「利用済み」の札を出す)
-  ticketState?: TicketState | null;
+  // QR乗車券の状態(公開後。全席が利用済み、または一部だけ利用済みのときに、予約カードに札を出す)
+  ticketSummary?: TicketSummary | null;
 }
 
 export const ReservationTab: React.FC<ReservationTabProps> = ({
@@ -82,7 +83,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
   pointBalance,
   onSpendPoints,
   onOpenQRCode,
-  ticketState,
+  ticketSummary,
 }) => {
   const [copiedCode, setCopiedCode] = useState(false);
   // N-POINT で払うか / ポイントを引いているあいだ / うまくいかなかったときの理由
@@ -145,6 +146,10 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
     ? getExpressStations(lineData, expressConfig.typeName).map((n) => `${n}駅`)
     : [boardingStation, destinationStation];
   const [seatType, setSeatType] = useState<'standard' | 'reserved' | 'green' | 'premium' | 'megu'>('reserved');
+  // 席の数(=人数。公開後だけ複数)。指定席は座席選択で選んだ席の数、自由席は人数のボタンで決める。運賃・特急料金・クーポン割引は、この人数ぶん
+  const [seatCount, setSeatCount] = useState(1);
+  const maxSeats = isLaunched() ? MAX_SEATS : 1;
+  React.useEffect(() => setSeatCount(1), [seatType]);
 
   // Coupon Code State
   const [couponInput, setCouponInput] = useState('');
@@ -329,7 +334,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
     lineData ? getTripDistanceKm(lineData, stripEki(start), stripEki(end)) : 0;
 
   // 座席料金・普通運賃計算ヘルパー
-  const calculateTicketPrice = () => {
+  const calculateTicketPrice = (count: number = seatCount) => {
     const dist = calculateDistance(boardingStation, destinationStation);
     const baseFare = calculateFare(dist);
 
@@ -372,8 +377,17 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
       baseExpressFee,
       expressDiscount,
       expressFee,
-      total: fare + expressFee,
+      count,
+      total: (fare + expressFee) * count, // 運賃・特急料金・クーポン割引は、人数ぶん
     };
+  };
+
+  // 席の数(人数)を変える。N-POINTを上限まで使う設定のときは、新しい合計に合わせる
+  const changeSeatCount = (n: number) => {
+    if (usePoints && canUsePoints && pointsAmount >= Math.min(pointBalance ?? 0, calculateTicketPrice(seatCount).total)) {
+      setPointsAmount(Math.min(pointBalance ?? 0, calculateTicketPrice(n).total));
+    }
+    setSeatCount(n);
   };
 
   // Open Seat Selection Modal or Direct Booking for Unreserved Seat
@@ -386,7 +400,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
         if (seatType === 'standard') {
           handleConfirmSeatSelection({
             carNo: 6,
-            seatNo: '自由席',
+            seatNo: freeSeatNo(seatCount),
             isSpecialCar: false,
             specialCarFee: 0,
           });
@@ -400,7 +414,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
     if (seatType === 'standard') {
       handleConfirmSeatSelection({
         carNo: 6,
-        seatNo: '自由席',
+        seatNo: freeSeatNo(seatCount),
         isSpecialCar: false,
         specialCarFee: 0,
       });
@@ -426,11 +440,11 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
     }
 
     const items: { item: EquipItem; quantity: number }[] = [];
-    const prices = calculateTicketPrice();
+    const prices = calculateTicketPrice(Math.min(seatCountOf(seatNo), maxSeats));
     const arrivalTime = currentTrainInfo.arrTime;
     const trainName = currentTrainInfo.trainName;
 
-    const finalTotalPrice = prices.fare + prices.expressFee + (isSpecialCar ? specialCarFee : 0);
+    const finalTotalPrice = prices.total + (isSpecialCar ? specialCarFee : 0);
     const orderId = `EQ-${Math.floor(10000 + Math.random() * 90000)}`;
 
     // N-POINT で払うときは、予約を確定する前に、サーバーでポイントを引く(引けなければ、予約しない)
@@ -474,6 +488,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
     }
 
     setUsePoints(false);
+    setSeatCount(1);
     onConfirmOrder(newOrder);
     setShowBookingSuccessModal(true);
   };
@@ -543,9 +558,9 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
               <h3 className="text-base font-black text-[#5B21B6] flex items-center gap-1.5 mt-0.5">
                 <Armchair className="w-5 h-5 text-[#5B21B6]" />
                 <span>{activeOrder.trainName}</span>
-                {ticketState === 'used' && (
+                {ticketBadgeLabel(ticketSummary) && (
                   <span className="text-[10px] font-extrabold text-[#6B6380] bg-[#F4F3F8] border border-[#E6E2EE] px-2 py-0.5 rounded-md">
-                    {TICKET_STATE_LABEL.used}
+                    {ticketBadgeLabel(ticketSummary)}
                   </span>
                 )}
               </h3>
@@ -586,11 +601,21 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
               </div>
 
               {/* Car & Seat Number */}
-              <div className="pt-2 border-t border-[#E6E2EE] flex items-center justify-between text-xs">
-                <span className="text-[#6B6380] font-medium">ご着席位置</span>
-                <span className="font-extrabold text-[#221C35] bg-white px-2.5 py-1 rounded-lg border border-[#D1C9E3]">
-                  {activeOrder.carNo}号車 ({getSeatClassLabel(activeOrder.seatType)}) {activeOrder.seatNo}（窓側）
-                </span>
+              <div className="pt-2 border-t border-[#E6E2EE] flex items-start justify-between gap-3 text-xs">
+                <span className="text-[#6B6380] font-medium py-1">ご着席位置</span>
+                {hasSeatList(activeOrder.seatNo) ? (
+                  <div className="min-w-0 flex flex-col items-end gap-1">
+                    <span className="font-extrabold text-[#221C35]">
+                      {activeOrder.carNo}号車 ({getSeatClassLabel(activeOrder.seatType)})
+                    </span>
+                    <SeatList seatNo={activeOrder.seatNo} className="justify-end" />
+                  </div>
+                ) : (
+                  <span className="font-extrabold text-[#221C35] bg-white px-2.5 py-1 rounded-lg border border-[#D1C9E3] min-w-0 break-words">
+                    {activeOrder.carNo}号車 ({getSeatClassLabel(activeOrder.seatType)}) {formatSeats(activeOrder.seatNo)}
+                    {seatCountOf(activeOrder.seatNo) === 1 && '（窓側）'}
+                  </span>
+                )}
               </div>
             </div>
 
@@ -640,6 +665,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
                       </span>
                     </div>
                   ))}
+                  <DeliverySeatList order={activeOrder} className="bg-[#F9F8FD] p-2.5 rounded-xl border border-[#E6E2EE]" />
                 </div>
               ) : (
                 <div className="p-3.5 rounded-xl bg-[#F9F8FD] border border-dashed border-[#D1C9E3] text-center space-y-2">
@@ -897,6 +923,34 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
               )}
             </div>
 
+            {/* 自由席の人数(公開後。指定席は、座席選択で選んだ席の数が人数になる) */}
+            {isLaunched() && seatType === 'standard' && (
+              <div className="flex items-center justify-between rounded-xl bg-[#F4F3F8] border border-[#E6E2EE] px-3 py-2">
+                <span className="text-xs font-bold text-[#221C35]">人数</span>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    aria-label="人数を減らす"
+                    disabled={seatCount <= 1}
+                    onClick={() => changeSeatCount(seatCount - 1)}
+                    className="w-8 h-8 rounded-lg bg-white border border-[#D1C9E3] text-[#5B21B6] font-black disabled:opacity-40 cursor-pointer"
+                  >
+                    −
+                  </button>
+                  <span className="w-6 text-center text-sm font-black font-mono text-[#221C35]">{seatCount}</span>
+                  <button
+                    type="button"
+                    aria-label="人数を増やす"
+                    disabled={seatCount >= MAX_SEATS}
+                    onClick={() => changeSeatCount(seatCount + 1)}
+                    className="w-8 h-8 rounded-lg bg-white border border-[#D1C9E3] text-[#5B21B6] font-black disabled:opacity-40 cursor-pointer"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* クーポンコード入力セクション（UIを阻害しないコンパクトなデザイン） */}
             <div className="pt-2 border-t border-[#E6E2EE] space-y-1.5">
               <div className="flex items-center justify-between">
@@ -1000,10 +1054,10 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
                   )}
                   <div className="flex items-center justify-between text-[11px] text-[#6B6380]">
                     <div className="flex items-center gap-1">
-                      <span>乗車運賃 ({priceInfo.dist}km)</span>
+                      <span>乗車運賃 ({priceInfo.dist}km){priceInfo.count > 1 && ` ×${priceInfo.count}`}</span>
                       {priceInfo.fareDiscount > 0 && (
                         <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded">
-                          クーポン割引 -¥{priceInfo.fareDiscount.toLocaleString()}
+                          クーポン割引 -¥{(priceInfo.fareDiscount * priceInfo.count).toLocaleString()}
                         </span>
                       )}
                     </div>
@@ -1012,32 +1066,32 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
                         {priceInfo.fare === 0 && priceInfo.initialFare > 0 ? (
                           <span className="text-emerald-600 font-black">¥0 (フリーパス無料)</span>
                         ) : (
-                          `¥${priceInfo.fare.toLocaleString()}`
+                          `¥${(priceInfo.fare * priceInfo.count).toLocaleString()}`
                         )}
                       </span>
                       {priceInfo.fareDiscount > 0 && priceInfo.fare > 0 && (
                         <span className="text-[10px] text-gray-400 line-through ml-1.5 font-mono">
-                          ¥{priceInfo.initialFare.toLocaleString()}
+                          ¥{(priceInfo.initialFare * priceInfo.count).toLocaleString()}
                         </span>
                       )}
                     </div>
                   </div>
                   <div className="flex items-center justify-between text-[11px] text-[#6B6380]">
                     <div className="flex items-center gap-1">
-                      <span>特急料金</span>
+                      <span>特急料金{priceInfo.count > 1 && ` ×${priceInfo.count}`}</span>
                       {priceInfo.expressDiscount > 0 && (
                         <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded">
-                          クーポン割引 -¥{priceInfo.expressDiscount.toLocaleString()}
+                          クーポン割引 -¥{(priceInfo.expressDiscount * priceInfo.count).toLocaleString()}
                         </span>
                       )}
                     </div>
                     <div className="text-right">
                       <span className="font-mono font-bold text-[#221C35]">
-                        ¥{priceInfo.expressFee.toLocaleString()}
+                        ¥{(priceInfo.expressFee * priceInfo.count).toLocaleString()}
                       </span>
                       {priceInfo.expressDiscount > 0 && (
                         <span className="text-[10px] text-gray-400 line-through ml-1.5 font-mono">
-                          ¥{priceInfo.baseExpressFee.toLocaleString()}
+                          ¥{(priceInfo.baseExpressFee * priceInfo.count).toLocaleString()}
                         </span>
                       )}
                     </div>
@@ -1133,7 +1187,10 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
       {/* Seat Selection Modal */}
       <SeatSelectionModal
         isOpen={isSeatSelectionModalOpen}
-        onClose={() => setIsSeatSelectionModalOpen(false)}
+        onClose={() => {
+          setIsSeatSelectionModalOpen(false);
+          changeSeatCount(1);
+        }}
         expressType={expressType}
         trainName={currentTrainInfo?.trainName ?? ''}
         departureTime={currentTrainInfo?.depTime ?? ''}
@@ -1142,6 +1199,8 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
         initialSeatType={seatType}
         basePrice={calculateTicketPrice().total}
         pointsUsed={usePoints && canUsePoints ? Math.min(pointsAmount, pointBalance ?? 0, calculateTicketPrice().total) : 0}
+        maxSeats={maxSeats}
+        onSeatCountChange={changeSeatCount}
         onConfirmSeat={handleConfirmSeatSelection}
       />
 
@@ -1260,7 +1319,19 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
           rows={[
             { label: '列車', value: `${activeOrder.trainName} ${activeOrder.departureTime || '—'}発` },
             { label: '区間', value: `${activeOrder.boardingStation || '—'} → ${activeOrder.destinationStation || '—'}` },
-            { label: '座席', value: `${activeOrder.carNo}号車 ${getSeatClassLabel(activeOrder.seatType)} ${activeOrder.seatNo}` },
+            {
+              label: '座席',
+              value: hasSeatList(activeOrder.seatNo) ? (
+                <>
+                  <span className="block">
+                    {activeOrder.carNo}号車 {getSeatClassLabel(activeOrder.seatType)}
+                  </span>
+                  <SeatList seatNo={activeOrder.seatNo} className="justify-end mt-1" />
+                </>
+              ) : (
+                seatLabel(activeOrder)
+              ),
+            },
             ...(activeOrder.items && activeOrder.items.length > 0
               ? [{ label: '車内デリバリー', value: activeOrder.items.map((ci) => ci.item.name).join('、') }]
               : []),

@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { X, QrCode, Download } from 'lucide-react';
 import { ActiveOrder } from '../types';
-import { getSeatClassLabel } from '../utils/seatUtils';
+import { getSeatClassLabel, hasSeatList, seatLabel } from '../utils/seatUtils';
+import { SeatList } from './SeatList';
 import { makeQrMatrix, qrSvgPath, QR_QUIET } from '../utils/qrImage';
-import { TICKET_STATE_LABEL, TicketState, fetchAndCacheTicket, readCachedTicketToken } from '../utils/ticketApi';
+import { TICKET_STATE_LABEL, TicketSeat, TicketSummary, fetchAndCacheTicket, readCachedTicketToken, summarizeTicket, ticketBadgeLabel, ticketSeatsOf, TicketState } from '../utils/ticketApi';
 import { renderTicketQrPng } from '../utils/ticketQrImage';
 import { saveImage } from '../utils/imageSave';
 import { ImagePreview } from './ImagePreview';
@@ -15,14 +16,15 @@ interface TicketQRModalProps {
   onClose: () => void;
   activeOrder?: ActiveOrder | null;
   sessionToken?: string;
-  onTicketState?: (state: TicketState) => void; // 確かめた状態を、予約カードの「利用済み」の札にも使う
+  onTicketSummary?: (summary: TicketSummary) => void; // 確かめた状態を、予約カードの札(利用済み・一部利用済み)にも使う
 }
 
 // 公開後の QR乗車券: 本物の QR(読み取ると、検札の画面が開く)と、画像での保存
-export const TicketQRModal: React.FC<TicketQRModalProps> = ({ isOpen, onClose, activeOrder, sessionToken, onTicketState }) => {
+export const TicketQRModal: React.FC<TicketQRModalProps> = ({ isOpen, onClose, activeOrder, sessionToken, onTicketSummary }) => {
   const orderId = activeOrder?.orderId;
   const [token, setToken] = useState<string | null>(null);
   const [state, setState] = useState<TicketState | null>(null);
+  const [seats, setSeats] = useState<TicketSeat[]>([]); // 席ごとの状態(複数席の予約で、利用済みの席を示す)
   const [failed, setFailed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [preview, setPreview] = useState<string | null>(null); // ダウンロードできない場所(LINE 内など)で、画像を表示する
@@ -33,6 +35,7 @@ export const TicketQRModal: React.FC<TicketQRModalProps> = ({ isOpen, onClose, a
   useEffect(() => {
     setToken(null);
     setState(null);
+    setSeats([]);
     setFailed(false);
     if (!isOpen || !orderId) return;
     const cached = readCachedTicketToken(orderId);
@@ -47,7 +50,8 @@ export const TicketQRModal: React.FC<TicketQRModalProps> = ({ isOpen, onClose, a
         if (!alive) return;
         setToken(r.token ?? cached);
         setState(r.state);
-        onTicketState?.(r.state);
+        setSeats(ticketSeatsOf(r));
+        onTicketSummary?.(summarizeTicket(r));
       })
       .catch(() => {
         if (alive) setFailed(true);
@@ -62,7 +66,8 @@ export const TicketQRModal: React.FC<TicketQRModalProps> = ({ isOpen, onClose, a
   const drawQr = shouldDrawQr(phase);
   const matrix = useMemo(() => (drawQr && token ? makeQrMatrix(buildTicketUrl(token)) : null), [drawQr, token]);
 
-  const seatText = activeOrder ? `${activeOrder.carNo}号車 ${getSeatClassLabel(activeOrder.seatType)} ${activeOrder.seatNo}` : '';
+  const summary = state ? summarizeTicket({ state, seats }) : null;
+  const badge = ticketBadgeLabel(summary);
 
   const handleSave = useCallback(async () => {
     if (!activeOrder || !token || !drawQr || saving) return;
@@ -81,7 +86,7 @@ export const TicketQRModal: React.FC<TicketQRModalProps> = ({ isOpen, onClose, a
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-fadeIn">
-      <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-4 shadow-2xl border border-[#E0D7F3] relative animate-scaleUp text-[#221C35]">
+      <div className="bg-white rounded-3xl max-w-sm w-full max-h-[92dvh] overflow-y-auto p-5 space-y-4 shadow-2xl border border-[#E0D7F3] relative animate-scaleUp text-[#221C35]">
         <button
           onClick={onClose}
           className="absolute top-4 right-4 p-1.5 rounded-xl text-[#6B6380] hover:bg-[#F4F3F8] transition-all cursor-pointer border border-transparent hover:border-[#E6E2EE]"
@@ -116,9 +121,18 @@ export const TicketQRModal: React.FC<TicketQRModalProps> = ({ isOpen, onClose, a
                   {activeOrder.boardingStation || '—'} → {activeOrder.destinationStation || '—'}
                 </span>
               </div>
-              <div className="flex justify-between items-center text-xs">
-                <span className="text-[#6B6380]">着席指定:</span>
-                <span className="font-extrabold text-[#5B21B6]">{seatText}</span>
+              <div className="flex justify-between items-start gap-3 text-xs">
+                <span className="text-[#6B6380] shrink-0">着席指定:</span>
+                {hasSeatList(activeOrder.seatNo) ? (
+                  <div className="min-w-0 flex flex-col items-end gap-1 text-right">
+                    <span className="font-extrabold text-[#5B21B6]">
+                      {activeOrder.carNo}号車 {getSeatClassLabel(activeOrder.seatType)}
+                    </span>
+                    <SeatList seatNo={activeOrder.seatNo} usedSeats={seats.filter((x) => x.state === 'used').map((x) => x.seat)} className="justify-end" />
+                  </div>
+                ) : (
+                  <span className="font-extrabold text-[#5B21B6] text-right min-w-0 break-words">{seatLabel(activeOrder)}</span>
+                )}
               </div>
             </div>
           ) : (
@@ -152,6 +166,7 @@ export const TicketQRModal: React.FC<TicketQRModalProps> = ({ isOpen, onClose, a
                 </div>
               )}
             </div>
+            {badge && state === 'valid' && <div className="text-[11px] font-bold text-[#DDD6FE]">{badge}</div>}
             {phase === 'unverified' && <div className="text-[11px] font-bold text-[#DDD6FE]">状態を確認できませんでした</div>}
             <div className="text-[11px] font-mono font-bold text-[#DDD6FE] tracking-wider">{activeOrder.orderId}</div>
           </div>

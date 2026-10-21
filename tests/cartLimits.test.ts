@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { canAddOne, withinLimits, MAX_PER_ITEM, MAX_TOTAL_QUANTITY } from '../src/utils/cartLimits';
+import { canAddOne, withinLimits, exceedsOrderTotal, MAX_ORDER_TOTAL, MAX_PER_ITEM, MAX_TOTAL_QUANTITY } from '../src/utils/cartLimits';
 
 describe('デリバリーの数量の上限', () => {
   it('1つの商品は、9個まで', () => {
@@ -30,5 +30,17 @@ describe('デリバリーの数量の上限', () => {
     expect(withinLimits({ a: 1.5 })).toBe(false);
     expect(withinLimits({ a: -1 })).toBe(false);
     expect(withinLimits({ a: Number.NaN })).toBe(false);
+  });
+});
+
+describe('1回の注文の合計の上限(10万円)', () => {
+  it('サーバー(gas/Code.gs の MAX_ORDER_TOTAL)と同じ数字', () => {
+    expect(MAX_ORDER_TOTAL).toBe(100000);
+  });
+
+  it('いまの予約の合計に足して、10万円までは追加できる。1円でも超えたら止める', () => {
+    expect(exceedsOrderTotal(30000, 70000)).toBe(false);
+    expect(exceedsOrderTotal(30000, 70001)).toBe(true);
+    expect(exceedsOrderTotal(0, 100000)).toBe(false);
   });
 });

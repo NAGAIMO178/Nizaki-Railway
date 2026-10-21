@@ -17,3 +17,9 @@ export const canAddOne = (cart: Quantities, itemId: string, purchased: Quantitie
 export const withinLimits = (cart: Quantities, purchased: Quantities = {}): boolean =>
   Object.entries(cart).every(([id, n]) => Number.isInteger(n) && n >= 0 && n + (purchased[id] || 0) <= MAX_PER_ITEM) &&
   sum(cart) + sum(purchased) <= MAX_TOTAL_QUANTITY;
+
+// 1回の注文(予約+デリバリーの合計。N-POINTで払った分も含む)の上限。サーバー(gas/Code.gs の MAX_ORDER_TOTAL)と同じ数字
+export const MAX_ORDER_TOTAL = 100000;
+
+// いまの予約の合計に、これから追加する金額を足すと、上限を超えるか
+export const exceedsOrderTotal = (currentTotal: number, addition: number): boolean => currentTotal + addition > MAX_ORDER_TOTAL;

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { X, Armchair, Check } from 'lucide-react';
-import { getTodayDateString, generateOccupiedSeats, isTodayWeekend } from '../utils/seatUtils';
+import { getTodayDateString, generateOccupiedSeats, isTodayWeekend, MAX_SEATS } from '../utils/seatUtils';
+import { pickDefaultSeat, sortSeats, toggleSeat } from '../utils/seatPick';
 
 interface SeatSelectionModalProps {
   isOpen: boolean;
@@ -13,6 +14,8 @@ interface SeatSelectionModalProps {
   initialSeatType?: 'standard' | 'reserved' | 'green' | 'premium' | 'megu';
   basePrice: number;
   pointsUsed?: number; // N-POINT で払う額(あれば、お支払い額から引いて見せる)
+  maxSeats?: number; // 1つの予約で選べる席の数(既定は1席。公開後は複数席)。basePrice は、選んだ席の数ぶんの合計
+  onSeatCountChange?: (count: number) => void; // 選んだ席の数が変わったとき(予約画面の金額に反映する)
   onConfirmSeat: (selection: {
     carNo: number;
     seatNo: string;
@@ -32,6 +35,8 @@ export const SeatSelectionModal: React.FC<SeatSelectionModalProps> = ({
   initialSeatType = 'reserved',
   basePrice,
   pointsUsed = 0,
+  maxSeats = 1,
+  onSeatCountChange,
   onConfirmSeat,
 }) => {
   const isSpecialSeatType =
@@ -55,7 +60,8 @@ export const SeatSelectionModal: React.FC<SeatSelectionModalProps> = ({
   }, [isSpecialSeatType, expressType]);
 
   const [selectedCarNo, setSelectedCarNo] = useState<number>(availableCars[0]);
-  const [selectedSeatId, setSelectedSeatId] = useState<string>('');
+  const [selectedSeats, setSelectedSeats] = useState<string[]>([]);
+  const multi = maxSeats > 1;
 
   const todayStr = useMemo(() => getTodayDateString(), []);
   const isWeekend = useMemo(() => isTodayWeekend(), []);
@@ -70,29 +76,24 @@ export const SeatSelectionModal: React.FC<SeatSelectionModalProps> = ({
     );
   }, [todayStr, expressType, trainName, selectedCarNo]);
 
-  // 初期選択席: 既定席が埋まっていれば、その号車の最初の空席を選ぶ(満席なら空文字)
-  const pickDefaultSeat = (carNo: number): string => {
-    const isCarSpecial = carNo === 1;
-    const occupied = generateOccupiedSeats(todayStr, `${expressType}_${trainName}`, carNo, isCarSpecial);
-    const preferred = isCarSpecial ? '3A' : '4B';
-    if (!occupied.includes(preferred)) return preferred;
-    const rows = isCarSpecial ? 8 : 10;
-    const cols = isCarSpecial ? ['A', 'B', 'C'] : ['A', 'B', 'C', 'D'];
-    for (let r = 1; r <= rows; r++) {
-      for (const c of cols) {
-        if (!occupied.includes(`${r}${c}`)) return `${r}${c}`;
-      }
-    }
-    return '';
+  // 初期選択席: 既定席が埋まっていれば、その号車の最初の空席を選ぶ(満席なら選ばない)
+  const defaultSeats = (carNo: number): string[] => {
+    const seat = pickDefaultSeat(generateOccupiedSeats(todayStr, `${expressType}_${trainName}`, carNo, carNo === 1), carNo === 1);
+    return seat ? [seat] : [];
   };
 
   useEffect(() => {
     if (isOpen) {
       const defaultCar = availableCars[0];
       setSelectedCarNo(defaultCar);
-      setSelectedSeatId(pickDefaultSeat(defaultCar));
+      setSelectedSeats(defaultSeats(defaultCar));
     }
   }, [isOpen, availableCars]);
+
+  // 選んだ席の数を、予約画面へ伝える(金額が席の数ぶんになる)
+  useEffect(() => {
+    if (isOpen) onSeatCountChange?.(Math.max(1, selectedSeats.length));
+  }, [isOpen, selectedSeats.length]);
 
   const isSpecialCar = selectedCarNo === 1;
 
@@ -100,19 +101,20 @@ export const SeatSelectionModal: React.FC<SeatSelectionModalProps> = ({
 
   const handleCarChange = (carNo: number) => {
     setSelectedCarNo(carNo);
-    setSelectedSeatId(pickDefaultSeat(carNo));
+    setSelectedSeats(defaultSeats(carNo));
   };
 
   const handleSeatClick = (seatId: string) => {
     if (currentOccupied.includes(seatId)) return;
-    setSelectedSeatId(seatId);
+    setSelectedSeats((prev) => toggleSeat(prev, seatId, maxSeats));
   };
 
   const handleConfirm = () => {
-    if (!selectedSeatId || currentOccupied.includes(selectedSeatId)) return;
+    const seats = sortSeats(selectedSeats, isSpecialCar);
+    if (seats.length === 0 || seats.some((seat) => currentOccupied.includes(seat))) return;
     onConfirmSeat({
       carNo: selectedCarNo,
-      seatNo: selectedSeatId,
+      seatNo: seats.join(','),
       isSpecialCar,
       specialCarFee: 0,
     });
@@ -231,7 +233,7 @@ export const SeatSelectionModal: React.FC<SeatSelectionModalProps> = ({
                       <div className="flex-1">
                         <SeatButton
                           seatId={seatA}
-                          isSelected={selectedSeatId === seatA}
+                          isSelected={selectedSeats.includes(seatA)}
                           isOccupied={currentOccupied.includes(seatA)}
                           onClick={() => handleSeatClick(seatA)}
                         />
@@ -244,13 +246,13 @@ export const SeatSelectionModal: React.FC<SeatSelectionModalProps> = ({
                       <div className="flex-2 grid grid-cols-2 gap-1">
                         <SeatButton
                           seatId={seatB}
-                          isSelected={selectedSeatId === seatB}
+                          isSelected={selectedSeats.includes(seatB)}
                           isOccupied={currentOccupied.includes(seatB)}
                           onClick={() => handleSeatClick(seatB)}
                         />
                         <SeatButton
                           seatId={seatC}
-                          isSelected={selectedSeatId === seatC}
+                          isSelected={selectedSeats.includes(seatC)}
                           isOccupied={currentOccupied.includes(seatC)}
                           onClick={() => handleSeatClick(seatC)}
                         />
@@ -285,13 +287,13 @@ export const SeatSelectionModal: React.FC<SeatSelectionModalProps> = ({
                       <div className="flex-1 grid grid-cols-2 gap-1">
                         <SeatButton
                           seatId={seatA}
-                          isSelected={selectedSeatId === seatA}
+                          isSelected={selectedSeats.includes(seatA)}
                           isOccupied={currentOccupied.includes(seatA)}
                           onClick={() => handleSeatClick(seatA)}
                         />
                         <SeatButton
                           seatId={seatB}
-                          isSelected={selectedSeatId === seatB}
+                          isSelected={selectedSeats.includes(seatB)}
                           isOccupied={currentOccupied.includes(seatB)}
                           onClick={() => handleSeatClick(seatB)}
                         />
@@ -304,13 +306,13 @@ export const SeatSelectionModal: React.FC<SeatSelectionModalProps> = ({
                       <div className="flex-1 grid grid-cols-2 gap-1">
                         <SeatButton
                           seatId={seatC}
-                          isSelected={selectedSeatId === seatC}
+                          isSelected={selectedSeats.includes(seatC)}
                           isOccupied={currentOccupied.includes(seatC)}
                           onClick={() => handleSeatClick(seatC)}
                         />
                         <SeatButton
                           seatId={seatD}
-                          isSelected={selectedSeatId === seatD}
+                          isSelected={selectedSeats.includes(seatD)}
                           isOccupied={currentOccupied.includes(seatD)}
                           onClick={() => handleSeatClick(seatD)}
                         />
@@ -326,8 +328,11 @@ export const SeatSelectionModal: React.FC<SeatSelectionModalProps> = ({
         {/* Footer Confirm */}
         <div className="border-t border-gray-100 pt-2 space-y-2 shrink-0">
           <div className="flex items-center justify-between text-xs">
-            <span className="text-gray-500">
-              指定席: <strong className="text-gray-900">{selectedCarNo}号車 {selectedSeatId}</strong>
+            <span className="text-gray-500 min-w-0">
+              指定席{multi && ` (${selectedSeats.length}/${Math.min(maxSeats, MAX_SEATS)}席)`}:{' '}
+              <strong className="text-gray-900 inline-block align-top max-h-12 overflow-y-auto break-words">
+                {selectedCarNo}号車 {sortSeats(selectedSeats, isSpecialCar).join('・')}
+              </strong>
             </span>
             <span className="text-right">
               <span className="block font-bold text-gray-900 text-sm">¥{(basePrice - pointsUsed).toLocaleString()}</span>
@@ -339,11 +344,19 @@ export const SeatSelectionModal: React.FC<SeatSelectionModalProps> = ({
 
           <button
             onClick={handleConfirm}
-            disabled={!selectedSeatId}
+            disabled={selectedSeats.length === 0}
             className="w-full bg-gray-900 hover:bg-black text-white font-bold text-xs py-2.5 px-3 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Check className="w-4 h-4 text-white" />
-            <span>{selectedSeatId ? `${selectedCarNo}号車 ${selectedSeatId} で座席確定` : `${selectedCarNo}号車は満席です`}</span>
+            <span>
+              {selectedSeats.length === 1
+                ? `${selectedCarNo}号車 ${selectedSeats[0]} で座席確定`
+                : selectedSeats.length > 1
+                ? `${selectedCarNo}号車 ${selectedSeats.length}席で座席確定`
+                : multi && currentOccupied.length < (isSpecialCar ? 24 : 40)
+                ? '席を選んでください'
+                : `${selectedCarNo}号車は満席です`}
+            </span>
           </button>
         </div>
       </div>

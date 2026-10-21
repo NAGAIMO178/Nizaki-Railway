@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { X, UtensilsCrossed, Check, ShoppingBag, AlertCircle, Tag } from 'lucide-react';
 import { EquipItem, ActiveOrder } from '../types';
-import { getSeatClassLabel, canOrderItem, canUseDelivery, getItemRestrictionLabel } from '../utils/seatUtils';
+import { getSeatClassLabel, canOrderItem, canUseDelivery, getItemRestrictionLabel, effectiveAllocation, formatSeats, seatDisplayName, splitSeats } from '../utils/seatUtils';
 import { handleImageError } from '../utils/imageFallback';
 import { NPointPayRow } from './NPointPayRow';
-import { withinLimits } from '../utils/cartLimits';
+import { exceedsOrderTotal, MAX_ORDER_TOTAL, withinLimits } from '../utils/cartLimits';
+import { isLaunched } from '../utils/launch';
 import { CompletionModal, CompletionRow } from './CompletionModal';
+import { DeliverySeatList } from './SeatList';
 
 interface EDeliveryModalProps {
   isOpen: boolean;
@@ -42,6 +44,8 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
   onSpendPoints,
 }) => {
   const [cart, setCart] = useState<{ [key: string]: number }>(() => initialCart || {});
+  // 複数席の予約で、商品ごとに、先頭の席以外へ届ける個数({ 商品: { 席: 個数 } })。指定のない分は、先頭の席へ届ける
+  const [seatAlloc, setSeatAlloc] = useState<{ [itemId: string]: { [seat: string]: number } }>({});
 
   // Coupon state for delivery
   const [couponCodeInput, setCouponCodeInput] = useState('');
@@ -51,6 +55,7 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
   React.useEffect(() => {
     if (isOpen) {
       setCart(initialCart || {});
+      setSeatAlloc({});
     }
   }, [isOpen, initialCart, activeOrder]);
 
@@ -92,6 +97,22 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
 
   const rawTotalPrice = selectedItems.reduce((sum, ci) => sum + ci.item.price * ci.quantity, 0);
 
+  // 複数席の予約(公開後): 商品ごとに、どの席に何個届けるか
+  const seats = activeOrder ? splitSeats(activeOrder.seatNo) : [];
+  const multiSeat = isLaunched() && seats.length >= 2;
+  const allocationOf = (itemId: string, quantity: number) => effectiveAllocation(quantity, seats, seatAlloc[itemId]);
+  const changeSeatQuantity = (itemId: string, quantity: number, seat: string, delta: number) => {
+    const current = allocationOf(itemId, quantity);
+    const others = seats.slice(1).reduce((sum, st) => sum + (st === seat ? 0 : current[st] || 0), 0);
+    const next = Math.max(0, Math.min((current[seat] || 0) + delta, quantity - others));
+    const explicit: { [seat: string]: number } = {};
+    seats.slice(1).forEach((st) => {
+      const n = st === seat ? next : current[st] || 0;
+      if (n > 0) explicit[st] = n;
+    });
+    setSeatAlloc((prev) => ({ ...prev, [itemId]: explicit }));
+  };
+
   // 1品割引計算 (最も高額な1品をクーポンの割引率で割引)
   let discountAmount = 0;
   if (appliedDeliveryCoupon && selectedItems.length > 0) {
@@ -102,6 +123,8 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
   }
 
   const finalTotalPrice = Math.max(0, rawTotalPrice - discountAmount);
+  // 1回の注文の合計(特急券+デリバリー。N-POINTで払った分も含む)の上限。超える追加は、押す前に止める
+  const overOrderTotal = isLaunched() && !!activeOrder && exceedsOrderTotal(activeOrder.totalPrice + (activeOrder.pointsUsed ?? 0), finalTotalPrice);
   const pointsMax = Math.min(pointBalance ?? 0, finalTotalPrice);
   const pointsToUse = usePoints && canUsePoints ? Math.min(pointsAmount, pointsMax) : 0;
 
@@ -130,7 +153,7 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeOrder || selectedItems.length === 0 || isNotMegu || hasNoOrder || hasBlockedItems || spending) return;
+    if (!activeOrder || selectedItems.length === 0 || isNotMegu || hasNoOrder || hasBlockedItems || overOrderTotal || spending) return;
     // 数量の上限(画面で止めているが、確定の前にも確かめる)
     const purchased: { [id: string]: number } = {};
     (activeOrder.items || []).forEach((ci) => {
@@ -169,9 +192,13 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
 
     // 予約済みの内容に、今回追加する商品だけを載せる(アプリ側で既存の注文に合算する)
     // (pointsUsed は、今回の分だけ。予約の特急券で使った分は、アプリ側で足し合わせる)
+    // 複数席: 今回の商品を、席ごとに何個届けるか(指定のない分は先頭の席)
+    const itemSeats: NonNullable<ActiveOrder['itemSeats']> = {};
+    if (multiSeat) selectedItems.forEach((ci) => (itemSeats[ci.item.id] = allocationOf(ci.item.id, ci.quantity)));
     const newOrder: ActiveOrder = {
       ...activeOrder,
       items: selectedItems,
+      ...(multiSeat ? { itemSeats } : {}),
       totalPrice: finalTotalPrice - pointsToUse,
       itemDiscount: discountAmount,
       pointsUsed: pointsToUse,
@@ -183,7 +210,17 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
       orderId: activeOrder.orderId,
       rows: [
         { label: '商品', value: selectedItems.map((ci) => `${ci.item.name} ×${ci.quantity}`).join('、') },
-        { label: 'お届け先', value: `${activeOrder.carNo}号車 ${activeOrder.seatNo}` },
+        {
+          label: 'お届け先',
+          value: multiSeat ? (
+            <>
+              <span className="block">{activeOrder.carNo}号車</span>
+              <DeliverySeatList order={{ seatNo: activeOrder.seatNo, items: selectedItems, itemSeats }} className="mt-1 text-left" />
+            </>
+          ) : (
+            `${activeOrder.carNo}号車 ${formatSeats(activeOrder.seatNo)}`
+          ),
+        },
         { label: '合計', value: `¥${finalTotalPrice.toLocaleString()}` },
         ...(pointsToUse > 0 ? [{ label: 'N-POINT', value: `−${pointsToUse.toLocaleString()}pt` }] : []),
       ],
@@ -242,7 +279,7 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
                   <div className="space-y-0.5">
                     <div className="font-extrabold text-xs text-rose-950">めぐシート以外にはデリバリーできません</div>
                     <div className="text-[11px] leading-snug text-rose-800">
-                      現在ご予約中の座席は<strong className="underline decoration-rose-400">【{getSeatClassLabel(activeOrder?.seatType)} ({activeOrder?.carNo}号車 {activeOrder?.seatNo})】</strong>です。車内デリバリーはめぐシート専用サービスのため、購入確定はできません。
+                      現在ご予約中の座席は<strong className="underline decoration-rose-400">【{getSeatClassLabel(activeOrder?.seatType)} ({activeOrder?.carNo}号車 {activeOrder ? formatSeats(activeOrder.seatNo) : ''})】</strong>です。車内デリバリーはめぐシート専用サービスのため、購入確定はできません。
                     </div>
                   </div>
                 </div>
@@ -323,12 +360,18 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
 
                     <div>
                       <label className="text-[10px] font-bold text-[#6B6380] block mb-1 whitespace-nowrap">座席番号</label>
-                      <input
-                        type="text"
-                        readOnly
-                        value={activeOrder ? activeOrder.seatNo : '—'}
-                        className="w-full bg-white border border-[#D1C9E3] rounded-xl px-3 py-2 text-xs text-[#221C35] font-bold shadow-2xs"
-                      />
+                      {multiSeat && activeOrder ? (
+                        <div className="w-full bg-white border border-[#D1C9E3] rounded-xl px-3 py-2 text-xs text-[#221C35] font-bold shadow-2xs break-words max-h-20 overflow-y-auto">
+                          {formatSeats(activeOrder.seatNo)}
+                        </div>
+                      ) : (
+                        <input
+                          type="text"
+                          readOnly
+                          value={activeOrder ? formatSeats(activeOrder.seatNo) : '—'}
+                          className="w-full bg-white border border-[#D1C9E3] rounded-xl px-3 py-2 text-xs text-[#221C35] font-bold shadow-2xs"
+                        />
+                      )}
                     </div>
                   </div>
                 </div>
@@ -381,6 +424,7 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
                           </div>
                         </div>
                       ))}
+                      {multiSeat && <DeliverySeatList order={activeOrder} className="bg-white p-2.5 rounded-xl border border-emerald-200/80" />}
                     </div>
                   </div>
                 )}
@@ -441,6 +485,59 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
                   )}
                 </div>
               </div>
+
+              {/* 複数席: どの席に届けるか(指定のない分は、先頭の席へ) */}
+              {multiSeat && selectedItems.length > 0 && (
+                <div className="bg-[#F9F8FD] p-3.5 rounded-2xl border border-[#E6E2EE] space-y-2.5">
+                  <div className="font-extrabold text-[#5B21B6] text-xs">どの席にしますか?</div>
+                  <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                    {selectedItems.map(({ item, quantity }) => {
+                      const alloc = allocationOf(item.id, quantity);
+                      const assigned = seats.slice(1).reduce((sum, st) => sum + (alloc[st] || 0), 0);
+                      return (
+                        <div key={item.id} className="bg-white p-2.5 rounded-xl border border-[#D1C9E3] space-y-1.5">
+                          <div className="text-xs font-bold text-[#221C35] truncate">
+                            {item.name} ×{quantity}
+                          </div>
+                          <div className="grid grid-cols-2 gap-1.5">
+                            {seats.map((seat, i) => (
+                              <div key={seat} className="flex items-center justify-between gap-1 rounded-lg bg-[#F4F3F8] px-2 py-1">
+                                <span className="font-mono font-bold text-[11px] text-[#5B21B6]">{seatDisplayName(seat)}</span>
+                                {i === 0 ? (
+                                  <span className="font-mono font-black text-xs text-[#221C35] pr-1">{alloc[seat] || 0}</span>
+                                ) : (
+                                  <span className="flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      aria-label={`${seat} を減らす`}
+                                      disabled={(alloc[seat] || 0) <= 0}
+                                      onClick={() => changeSeatQuantity(item.id, quantity, seat, -1)}
+                                      className="w-6 h-6 rounded-md bg-white border border-[#D1C9E3] text-[#5B21B6] font-black text-xs disabled:opacity-40 cursor-pointer"
+                                    >
+                                      −
+                                    </button>
+                                    <span className="w-4 text-center font-mono font-black text-xs text-[#221C35]">{alloc[seat] || 0}</span>
+                                    <button
+                                      type="button"
+                                      aria-label={`${seat} を増やす`}
+                                      disabled={assigned >= quantity}
+                                      onClick={() => changeSeatQuantity(item.id, quantity, seat, 1)}
+                                      className="w-6 h-6 rounded-md bg-white border border-[#D1C9E3] text-[#5B21B6] font-black text-xs disabled:opacity-40 cursor-pointer"
+                                    >
+                                      +
+                                    </button>
+                                  </span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[10px] text-[#6B6380]">指定しない分は、{seatDisplayName(seats[0])} へお届けします</p>
+                </div>
+              )}
 
               {/* Coupon Section for Delivery */}
               <div className="bg-[#F9F8FD] p-3.5 rounded-2xl border border-[#E6E2EE] space-y-2">
@@ -528,6 +625,11 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
                   {spendError}
                 </div>
               )}
+              {overOrderTotal && (
+                <div className="text-[11px] font-bold text-rose-600 bg-rose-50 rounded-xl px-3 py-2" role="alert">
+                  1回の注文は、特急券と合わせて{MAX_ORDER_TOTAL.toLocaleString()}円までです
+                </div>
+              )}
 
               {/* Step 3: Total & Order Submit Button */}
               <div className="pt-3 border-t border-[#E6E2EE] flex items-center justify-between gap-3 text-xs sm:text-sm">
@@ -554,7 +656,7 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
 
                 <button
                   type="submit"
-                  disabled={selectedItems.length === 0 || isNotMegu || hasNoOrder || hasBlockedItems || spending}
+                  disabled={selectedItems.length === 0 || isNotMegu || hasNoOrder || hasBlockedItems || overOrderTotal || spending}
                   className="bg-[#5B21B6] hover:bg-[#4C1D95] disabled:opacity-40 text-white font-extrabold text-xs sm:text-sm py-3 px-5 rounded-xl shadow-md flex items-center justify-center gap-2 cursor-pointer transition-all whitespace-nowrap shrink-0"
                 >
                   <ShoppingBag className="w-4 h-4 text-white shrink-0" />
@@ -565,6 +667,8 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
                       ? 'めぐシートの予約が必要'
                       : hasBlockedItems
                       ? '注文できない商品があります'
+                      : overOrderTotal
+                      ? '上限を超えるため注文できません'
                       : selectedItems.length === 0
                       ? '商品を選択してください'
                       : activeOrder && activeOrder.items && activeOrder.items.length > 0
