@@ -1,4 +1,6 @@
 import { callGas } from './accountApi';
+import { getSeatClassRibbonName } from './seatUtils';
+import type { SeatClass } from '../types';
 
 // サーバー(gas/Code.gs)の QR乗車券の応答
 export type TicketState = 'valid' | 'used' | 'expired' | 'otherDay' | 'cancelled' | 'invalid';
@@ -110,4 +112,10 @@ export const ticketBadgeLabel = (summary: TicketSummary | null | undefined): str
   if (summary.state === 'used') return TICKET_STATE_LABEL.used;
   if (summary.state === 'valid' && summary.used > 0 && summary.used < summary.total) return `一部${TICKET_STATE_LABEL.used}(${summary.used}/${summary.total})`;
   return null;
+};
+
+// 公開後の予約カードの右上の札: 利用済み(一部だけなら「一部利用済み(2/3)」)のときは、その状態を濃い灰色で。そうでなければ、席種の名前だけ(「予約確定」は出さない)
+export const reservationRibbon = (seatType: SeatClass | undefined, summary: TicketSummary | null | undefined): { text: string; used: boolean } => {
+  const used = ticketBadgeLabel(summary);
+  return used ? { text: used, used: true } : { text: getSeatClassRibbonName(seatType), used: false };
 };

@@ -35,7 +35,12 @@ export function getItemRestrictionLabel(item: EquipItem): string {
 
 // 予約カードの帯に出す文言(めぐシートだけ「（プレミアム）」を付ける従来の表記)
 export function getSeatClassRibbon(seatType?: SeatClass): string {
-  return `${seatType === 'megu' ? 'めぐシート（プレミアム）' : getSeatClassLabel(seatType)} 予約確定`;
+  return `${getSeatClassRibbonName(seatType)} 予約確定`;
+}
+
+// 予約カードの帯の、席種の名前だけ(公開後は、「予約確定」は付けない)
+export function getSeatClassRibbonName(seatType?: SeatClass): string {
+  return seatType === 'megu' ? 'めぐシート（プレミアム）' : getSeatClassLabel(seatType);
 }
 
 // ---- 複数席(1つの予約に、同じ号車の席を最大6席) ----

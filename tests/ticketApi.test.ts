@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { TICKET_STATE_LABEL, fetchAndCacheTicket, readCachedTicketToken, summarizeTicket, ticketBadgeLabel, ticketSeatsOf, useTicket } from '../src/utils/ticketApi';
+import { TICKET_STATE_LABEL, fetchAndCacheTicket, readCachedTicketToken, reservationRibbon, summarizeTicket, ticketBadgeLabel, ticketSeatsOf, useTicket } from '../src/utils/ticketApi';
 
 const realFetch = globalThis.fetch;
 let reply: unknown;
@@ -85,5 +85,38 @@ describe('席ごとの利用', () => {
   it('1席の予約の札は、これまでどおり(利用済みだけ)', () => {
     expect(ticketBadgeLabel(summarizeTicket({ state: 'used', ticket: { ...info, seatNo: '5A' } }))).toBe('利用済み');
     expect(ticketBadgeLabel(summarizeTicket({ state: 'valid', ticket: { ...info, seatNo: '5A' } }))).toBeNull();
+  });
+});
+
+describe('予約カードの右上の札(公開後)', () => {
+  const seats = (...states: ('valid' | 'used')[]) => states.map((state, i) => ({ seat: `4${'BCD'[i]}`, state }));
+
+  it('使っていないときは、席種の名前だけ。「予約確定」「予約済み」は出さない', () => {
+    for (const seatType of ['megu', 'green', 'premium', 'reserved', 'standard', undefined] as const) {
+      for (const summary of [null, undefined, summarizeTicket({ state: 'valid', seats: seats('valid', 'valid') })]) {
+        const r = reservationRibbon(seatType, summary);
+        expect(r.used).toBe(false);
+        expect(r.text).not.toMatch(/予約確定|予約済み|利用済み/);
+      }
+    }
+    expect(reservationRibbon('megu', null).text).toBe('めぐシート（プレミアム）');
+    expect(reservationRibbon('reserved', null).text).toBe('普通指定席');
+  });
+
+  it('利用済みのときは、札が「利用済み」に変わる(席種の名前は出さない)', () => {
+    const r = reservationRibbon('megu', summarizeTicket({ state: 'used', seats: seats('used', 'used') }));
+    expect(r).toEqual({ text: '利用済み', used: true });
+  });
+
+  it('一部だけ利用済みなら「一部利用済み(2/3)」', () => {
+    const r = reservationRibbon('green', summarizeTicket({ state: 'valid', seats: seats('used', 'used', 'valid') }));
+    expect(r).toEqual({ text: '一部利用済み(2/3)', used: true });
+  });
+
+  it('取消済み・期限切れなどは、利用済みの札にはならない(席種の名前のまま)', () => {
+    for (const state of ['cancelled', 'expired', 'otherDay', 'invalid'] as const) {
+      const r = reservationRibbon('reserved', summarizeTicket({ state, seats: seats('valid', 'valid') }));
+      expect(r).toEqual({ text: '普通指定席', used: false });
+    }
   });
 });
