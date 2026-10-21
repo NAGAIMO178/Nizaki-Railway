@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { X, Award, CreditCard, Sparkles, Gift } from 'lucide-react';
 import { PointHistoryItem, UserProfile } from '../types';
+import { isLaunched } from '../utils/launch';
+import { memberBarcode } from '../utils/memberBarcode';
 
 interface NPointModalProps {
   isOpen: boolean;
@@ -27,6 +29,10 @@ export const NPointModal: React.FC<NPointModalProps> = ({
   const [redeemResult, setRedeemResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   if (!isOpen) return null;
+
+  // 公開後は、会員証のバーコードが本物(置ける幅は、カードの内側から余白を引いた分)
+  const launched = isLaunched();
+  const barcode = launched ? memberBarcode(currentUser?.memberId, 250) : null;
 
   const handleRedeem = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -80,31 +86,49 @@ export const NPointModal: React.FC<NPointModalProps> = ({
 
             {/* Main Focus: Clean White Barcode Card Container */}
             <div className="my-5 text-center bg-white p-4 rounded-xl shadow-inner relative z-10">
-              {/* Simulated Crisp Barcode */}
-              <div className="h-14 w-full bg-white flex items-center justify-center gap-1 font-mono text-[10px] text-slate-900 tracking-widest select-none overflow-hidden p-1">
-                <div className="w-1.5 h-12 bg-slate-950" />
-                <div className="w-3 h-12 bg-slate-950" />
-                <div className="w-1 h-12 bg-slate-950" />
-                <div className="w-2 h-12 bg-slate-950" />
-                <div className="w-1 h-12 bg-slate-950" />
-                <div className="w-3.5 h-12 bg-slate-950" />
-                <div className="w-1.5 h-12 bg-slate-950" />
-                <div className="w-1 h-12 bg-slate-950" />
-                <div className="w-3 h-12 bg-slate-950" />
-                <div className="w-1.5 h-12 bg-slate-950" />
-                <div className="w-2.5 h-12 bg-slate-950" />
-                <div className="w-1 h-12 bg-slate-950" />
-                <div className="w-3 h-12 bg-slate-950" />
-                <div className="w-1.5 h-12 bg-slate-950" />
-                <div className="w-2 h-12 bg-slate-950" />
-                <div className="w-1 h-12 bg-slate-950" />
-                <div className="w-3.5 h-12 bg-slate-950" />
-                <div className="w-1.5 h-12 bg-slate-950" />
-              </div>
+              {launched ? (
+                // 公開後: 会員番号を入れた、本物の Code128 バーコード(読み取りアプリで読める)
+                barcode && (
+                  <svg
+                    viewBox={`0 0 ${barcode.code.modules} 1`}
+                    preserveAspectRatio="none"
+                    shapeRendering="crispEdges"
+                    role="img"
+                    aria-label="会員番号のバーコード"
+                    className="h-14 block mx-auto"
+                    style={{ width: barcode.code.modules * barcode.unit }}
+                  >
+                    {barcode.rects.map((r) => (
+                      <rect key={r.x} x={r.x} y={0} width={r.width} height={1} fill="#0F172A" />
+                    ))}
+                  </svg>
+                )
+              ) : (
+                <div className="h-14 w-full bg-white flex items-center justify-center gap-1 font-mono text-[10px] text-slate-900 tracking-widest select-none overflow-hidden p-1">
+                  <div className="w-1.5 h-12 bg-slate-950" />
+                  <div className="w-3 h-12 bg-slate-950" />
+                  <div className="w-1 h-12 bg-slate-950" />
+                  <div className="w-2 h-12 bg-slate-950" />
+                  <div className="w-1 h-12 bg-slate-950" />
+                  <div className="w-3.5 h-12 bg-slate-950" />
+                  <div className="w-1.5 h-12 bg-slate-950" />
+                  <div className="w-1 h-12 bg-slate-950" />
+                  <div className="w-3 h-12 bg-slate-950" />
+                  <div className="w-1.5 h-12 bg-slate-950" />
+                  <div className="w-2.5 h-12 bg-slate-950" />
+                  <div className="w-1 h-12 bg-slate-950" />
+                  <div className="w-3 h-12 bg-slate-950" />
+                  <div className="w-1.5 h-12 bg-slate-950" />
+                  <div className="w-2 h-12 bg-slate-950" />
+                  <div className="w-1 h-12 bg-slate-950" />
+                  <div className="w-3.5 h-12 bg-slate-950" />
+                  <div className="w-1.5 h-12 bg-slate-950" />
+                </div>
+              )}
               <div className="text-xs font-mono font-bold text-slate-800 mt-2 tracking-widest">
                 {currentUser?.memberId || '未ログイン'}
               </div>
-              <div className="text-[9px] text-slate-400 mt-1">※バーコードは表示イメージです（読み取りはできません）</div>
+              {!launched && <div className="text-[9px] text-slate-400 mt-1">※バーコードは表示イメージです（読み取りはできません）</div>}
             </div>
 
             {/* Card Footer Info */}
