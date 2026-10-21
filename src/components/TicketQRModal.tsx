@@ -4,7 +4,9 @@ import { ActiveOrder } from '../types';
 import { getSeatClassLabel } from '../utils/seatUtils';
 import { makeQrMatrix, qrSvgPath, QR_QUIET } from '../utils/qrImage';
 import { TICKET_STATE_LABEL, TicketState, fetchAndCacheTicket, readCachedTicketToken } from '../utils/ticketApi';
-import { renderTicketPng, saveImage } from '../utils/ticketCard';
+import { renderTicketPng } from '../utils/ticketCard';
+import { saveImage } from '../utils/imageSave';
+import { ImagePreview } from './ImagePreview';
 import { buildTicketUrl } from '../utils/ticketToken';
 
 interface TicketQRModalProps {
@@ -21,6 +23,7 @@ export const TicketQRModal: React.FC<TicketQRModalProps> = ({ isOpen, onClose, a
   const [state, setState] = useState<TicketState | null>(null);
   const [failed, setFailed] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [preview, setPreview] = useState<string | null>(null); // ダウンロードできない場所(LINE 内など)で、画像を表示する
   const [reload, setReload] = useState(0);
 
   // 端末に残したトークンがあれば、すぐ QR を出す。サーバーには、いまの状態を聞く
@@ -67,7 +70,7 @@ export const TicketQRModal: React.FC<TicketQRModalProps> = ({ isOpen, onClose, a
         seatText,
         reservedDate: activeOrder.reservedDate,
       });
-      await saveImage(blob, `nizaki-ticket-${activeOrder.orderId}.png`);
+      setPreview(await saveImage(blob, `nizaki-ticket-${activeOrder.orderId}.png`));
     } finally {
       setSaving(false);
     }
@@ -179,6 +182,7 @@ export const TicketQRModal: React.FC<TicketQRModalProps> = ({ isOpen, onClose, a
           閉じる
         </button>
       </div>
+      {preview && <ImagePreview url={preview} onClose={() => setPreview(null)} />}
     </div>
   );
 };

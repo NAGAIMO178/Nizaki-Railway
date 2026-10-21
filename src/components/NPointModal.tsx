@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
-import { X, Award, CreditCard, Sparkles, Gift } from 'lucide-react';
+import { X, Award, CreditCard, Sparkles, Gift, Download } from 'lucide-react';
 import { PointHistoryItem, UserProfile } from '../types';
 import { isLaunched } from '../utils/launch';
 import { memberBarcode } from '../utils/memberBarcode';
+import { renderMemberCardPng } from '../utils/memberCard';
+import { saveImage } from '../utils/imageSave';
+import { ImagePreview } from './ImagePreview';
 
 interface NPointModalProps {
   isOpen: boolean;
@@ -27,12 +30,26 @@ export const NPointModal: React.FC<NPointModalProps> = ({
 }) => {
   const [redeemInput, setRedeemInput] = useState('');
   const [redeemResult, setRedeemResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [preview, setPreview] = useState<string | null>(null); // ダウンロードできない場所(LINE 内など)で、画像を表示する
 
   if (!isOpen) return null;
 
   // 公開後は、会員証のバーコードが本物(置ける幅は、カードの内側から余白を引いた分)
   const launched = isLaunched();
   const barcode = launched ? memberBarcode(currentUser?.memberId, 250) : null;
+
+  // 会員証のバーコードを、画像(PNG)として保存する(公開後)
+  const handleSaveBarcode = async () => {
+    const memberId = currentUser?.memberId;
+    if (!memberId || saving) return;
+    setSaving(true);
+    try {
+      setPreview(await saveImage(await renderMemberCardPng(memberId), `nizaki-card-${memberId}.png`));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleRedeem = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -151,6 +168,18 @@ export const NPointModal: React.FC<NPointModalProps> = ({
             </div>
           </div>
 
+          {barcode && (
+            <button
+              type="button"
+              onClick={handleSaveBarcode}
+              disabled={saving}
+              className="w-full bg-[#EFE8FA] hover:bg-[#E0D5F5] disabled:opacity-50 text-[#5B21B6] font-bold text-xs py-3 rounded-xl border border-[#DDD6FE] transition-all cursor-pointer flex items-center justify-center gap-1.5"
+            >
+              <Download className="w-4 h-4" />
+              <span>{saving ? '作っています…' : '画像で保存'}</span>
+            </button>
+          )}
+
           {/* コードでポイントを受け取る */}
           {onRedeemCode && (
             <form onSubmit={handleRedeem} className="bg-[#F9F8FD] p-4 rounded-2xl border border-[#E6E2EE] space-y-2">
@@ -220,6 +249,7 @@ export const NPointModal: React.FC<NPointModalProps> = ({
           </div>
         </div>
       </div>
+      {preview && <ImagePreview url={preview} onClose={() => setPreview(null)} />}
     </div>
   );
 };
