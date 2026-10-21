@@ -33,8 +33,7 @@ export interface TicketCardLayout {
   barUnit: number;
   barBox: number;
   barTop: number;
-  tokenY: number; // バーコードの下の、読み取る中身の文字(トークン)の基準線
-  orderIdY: number;
+  tokenY: number; // バーコードの下の、読み取る中身の文字(トークン)の基準線。バーコードの下は、この1行だけ
 }
 
 // 券面の画像(PNG)の配置
@@ -47,8 +46,7 @@ export const ticketCardLayout = (data: TicketCardData): TicketCardLayout => {
   const barBox = (code.modules + CODE128_QUIET * 2) * barUnit;
   const barTop = QR_TOP + qrBox + 56;
   const tokenY = barTop + BAR_HEIGHT + 44;
-  const orderIdY = tokenY + 62;
-  return { width: W, height: orderIdY + 60, matrix, qrUnit, qrBox, code, barUnit, barBox, barTop, tokenY, orderIdY };
+  return { width: W, height: tokenY + 60, matrix, qrUnit, qrBox, code, barUnit, barBox, barTop, tokenY };
 };
 
 // 券面を描く。名前・メール・会員IDは入れない
@@ -70,6 +68,8 @@ export const drawTicketCard = (ctx: CardContext, data: TicketCardData, layout: T
   ctx.fillRect(0, 0, W2, 150);
   text('神埼鉄道', MARGIN, 66, 30, '#DDD6FE');
   text('QR乗車券', MARGIN, 120, 52, '#FFFFFF', 900);
+  // 予約コードは、見出しに1回だけ(バーコードの下には、バーコードの中身の1行だけを置く)
+  text(data.orderId, W2 - MARGIN, 120, 36, '#FFFFFF', 700, 'right', CARD_MONO);
 
   // 列車・区間・座席
   const dep = data.departureTime ? `${data.departureTime}発` : '';
@@ -92,10 +92,9 @@ export const drawTicketCard = (ctx: CardContext, data: TicketCardData, layout: T
   ctx.fillStyle = DARK;
   paintCode128((x, y, w, h) => ctx.fillRect(x, y, w, h), code, barLeft + CODE128_QUIET * barUnit, barTop, barUnit, BAR_HEIGHT);
   text(data.token, W2 / 2, layout.tokenY, fitMonoSize(data.token.length, W2 - MARGIN * 2, 28), MUTED, 600, 'center', CARD_MONO);
-  text(data.orderId, W2 / 2, layout.orderIdY, 32, DARK, 700, 'center');
 };
 
-// 券面の画像(PNG)。列車・区間・座席・予約コードと、QR、バーコード(と、その中身の文字)だけ
+// 券面の画像(PNG)。列車・区間・座席・予約コードと、QR、バーコード(と、その下の中身の文字)だけ
 export const renderTicketPng = (data: TicketCardData): Promise<Blob> => {
   const layout = ticketCardLayout(data);
   return renderPng(layout.width, layout.height, (ctx) => drawTicketCard(ctx, data, layout));

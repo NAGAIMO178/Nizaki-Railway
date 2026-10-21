@@ -69,10 +69,16 @@ describe('QR乗車券の券面(PNG)', () => {
     const [left, right] = extent(token);
     expect(left).toBeGreaterThanOrEqual(0);
     expect(right).toBeLessThanOrEqual(layout.width);
-    // 予約コードは、その下
-    const order = ctx.texts.find((t) => t.text === 'EQ-12345')!;
-    expect(order.y).toBeGreaterThan(token.y);
-    expect(order.y).toBeLessThan(layout.height);
+  });
+
+  it('バーコードの下は、バーコード自身の中身の1行だけ。予約コードは見出しに1回だけで、バーコードの近くには置かない', () => {
+    const { layout, ctx } = drawTicket(ticket());
+    const barBottom = Math.max(...ctx.rects.filter((q) => q.y === layout.barTop && q.h > 0).map((q) => q.y + q.h));
+    const below = ctx.texts.filter((t) => t.y > barBottom);
+    expect(below.map((t) => t.text)).toEqual([TOKEN]);
+    const order = ctx.texts.filter((t) => t.text === 'EQ-12345');
+    expect(order).toHaveLength(1);
+    expect(order[0].y).toBeLessThan(150); // 見出しの中
   });
 
   it('いちばん長いトークンでも、文字が左右の余白の内側に収まる', () => {
@@ -91,12 +97,12 @@ describe('QR乗車券の券面(PNG)', () => {
     expect(ctx.texts.map((t) => t.text)).toEqual([
       '神埼鉄道',
       'QR乗車券',
+      'EQ-12345',
       '特急めぐり3号',
       '10:15発  2026-11-03',
       '神埼 → 東桜',
       '3号車 普通指定席 5A',
       TOKEN,
-      'EQ-12345',
     ]);
   });
 
@@ -144,6 +150,8 @@ describe('会員証のバーコード(PNG)', () => {
     const barBottom = Math.max(...ctx.rects.filter((q) => q.gray < 60).map((q) => q.y + q.h));
     expect(t.y - fontSize(t.font)).toBeGreaterThanOrEqual(barBottom);
     expect(t.y).toBeLessThan(layout.height);
+    // バーコードの下は、その中身の1行だけ(ほかの文字は、どこにも無い)
+    expect(ctx.texts.map((x) => x.text)).toEqual(['KZ-11319']);
     const [left, right] = extent(t);
     expect(left).toBeGreaterThan(0);
     expect(right).toBeLessThan(layout.width);

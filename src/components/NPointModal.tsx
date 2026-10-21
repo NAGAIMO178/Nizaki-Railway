@@ -158,9 +158,12 @@ export const NPointModal: React.FC<NPointModalProps> = ({
               </div>
 
               <div className="text-right">
-                <div className="text-[9px] text-slate-400 font-mono">
-                  {currentUser ? `神埼ID: ${currentUser.memberId}` : '未ログイン'}
-                </div>
+                {/* 公開後は、会員番号をバーコードの下に出しているので、ここには重ねて出さない */}
+                {!launched && (
+                  <div className="text-[9px] text-slate-400 font-mono">
+                    {currentUser ? `神埼ID: ${currentUser.memberId}` : '未ログイン'}
+                  </div>
+                )}
                 <div className="text-[9px] text-slate-400 font-mono mt-0.5 truncate max-w-[140px]">
                   {currentUser?.email || 'ログインしてご利用ください'}
                 </div>
