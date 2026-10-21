@@ -26,6 +26,13 @@ export const isLaunched = (): boolean => {
   return LAUNCH_AT !== null && Date.now() >= Date.parse(LAUNCH_AT);
 };
 
+// 公開日が決まっていないあいだ(作業中)だけ、リンクに「公開後の画面を見る」指定を付ける。
+// QR乗車券のリンクを、別の端末の標準カメラで読んで確かめられるようにするため。公開日が入ったあとは、何も付けない
+export const withPreviewFlag = (url: URL): URL => {
+  if (LAUNCH_AT === null) url.searchParams.set('preview', '1');
+  return url;
+};
+
 // 公開記念ボーナスの案内を出す期間か(公開日が決まっていないあいだの作業用リンクでは、常に出す)
 export const isLaunchBonusOpen = (): boolean => {
   if (!isLaunched()) return false;

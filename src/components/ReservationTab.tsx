@@ -20,6 +20,7 @@ import {
   Tag,
   Check,
   Lock,
+  QrCode,
 } from 'lucide-react';
 import { ActiveOrder, EquipItem } from '../types';
 import { getSeatClassLabel, getSeatClassRibbon, canUseDelivery } from '../utils/seatUtils';
@@ -62,6 +63,8 @@ interface ReservationTabProps {
   // N-POINT で払う(1pt=1円。公開後で、クラウドが基準の会員だけ。渡されなければ、使う欄を出さない)
   pointBalance?: number;
   onSpendPoints?: (orderId: string, points: number, title: string) => Promise<{ ok: boolean; message: string }>;
+  // QR乗車券を開く(公開後で、ログイン証のある会員だけ。渡されなければ、ボタンを出さない)
+  onOpenQRCode?: () => void;
 }
 
 export const ReservationTab: React.FC<ReservationTabProps> = ({
@@ -75,6 +78,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
   onCouponUsed,
   pointBalance,
   onSpendPoints,
+  onOpenQRCode,
 }) => {
   const [copiedCode, setCopiedCode] = useState(false);
   // N-POINT で払うか / ポイントを引いているあいだ / うまくいかなかったときの理由
@@ -521,6 +525,16 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
                   <span>{activeOrder.orderId}</span>
                   {copiedCode ? <Check className="w-3 h-3 text-emerald-600" /> : <span className="text-[9px] text-[#6B6380] font-normal">コピー</span>}
                 </button>
+                {onOpenQRCode && (
+                  <button
+                    type="button"
+                    onClick={onOpenQRCode}
+                    className="ml-auto font-black text-[#5B21B6] bg-[#EFE8FA] hover:bg-[#E0D5F5] px-2 py-0.5 rounded border border-[#DDD6FE] cursor-pointer transition-all inline-flex items-center gap-1"
+                  >
+                    <QrCode className="w-3 h-3" />
+                    <span>QR乗車券</span>
+                  </button>
+                )}
               </div>
               <h3 className="text-base font-black text-[#5B21B6] flex items-center gap-1.5 mt-0.5">
                 <Armchair className="w-5 h-5 text-[#5B21B6]" />
@@ -1223,6 +1237,17 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
           orderId={activeOrder.orderId}
           buttonLabel="予約内容を確認する"
           onClose={() => setShowBookingSuccessModal(false)}
+          secondary={
+            onOpenQRCode
+              ? {
+                  label: 'QR乗車券を表示',
+                  onClick: () => {
+                    setShowBookingSuccessModal(false);
+                    onOpenQRCode();
+                  },
+                }
+              : undefined
+          }
           rows={[
             { label: '列車', value: `${activeOrder.trainName} ${activeOrder.departureTime || '—'}発` },
             { label: '区間', value: `${activeOrder.boardingStation || '—'} → ${activeOrder.destinationStation || '—'}` },
