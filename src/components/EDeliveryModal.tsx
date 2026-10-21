@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { X, UtensilsCrossed, Check, ShoppingBag, AlertCircle, Tag } from 'lucide-react';
 import { EquipItem, ActiveOrder } from '../types';
-import { getSeatClassLabel, canOrderItem, canUseDelivery, getItemRestrictionLabel, effectiveAllocation, formatSeats, seatDisplayName, splitSeats } from '../utils/seatUtils';
+import { getSeatClassLabel, canOrderItem, canUseDelivery, getItemRestrictionLabel, effectiveAllocation, formatSeats, seatDisplayName, splitSeats, tapSeatAllocation, untapSeatAllocation } from '../utils/seatUtils';
 import { handleImageError } from '../utils/imageFallback';
 import { NPointPayRow } from './NPointPayRow';
 import { exceedsOrderTotal, MAX_ORDER_TOTAL, withinLimits } from '../utils/cartLimits';
@@ -101,17 +101,10 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
   const seats = activeOrder ? splitSeats(activeOrder.seatNo) : [];
   const multiSeat = isLaunched() && seats.length >= 2;
   const allocationOf = (itemId: string, quantity: number) => effectiveAllocation(quantity, seats, seatAlloc[itemId]);
-  const changeSeatQuantity = (itemId: string, quantity: number, seat: string, delta: number) => {
-    const current = allocationOf(itemId, quantity);
-    const others = seats.slice(1).reduce((sum, st) => sum + (st === seat ? 0 : current[st] || 0), 0);
-    const next = Math.max(0, Math.min((current[seat] || 0) + delta, quantity - others));
-    const explicit: { [seat: string]: number } = {};
-    seats.slice(1).forEach((st) => {
-      const n = st === seat ? next : current[st] || 0;
-      if (n > 0) explicit[st] = n;
-    });
-    setSeatAlloc((prev) => ({ ...prev, [itemId]: explicit }));
-  };
+  const tapSeat = (itemId: string, quantity: number, seat: string) =>
+    setSeatAlloc((prev) => ({ ...prev, [itemId]: tapSeatAllocation(quantity, seats, prev[itemId], seat) }));
+  const untapSeat = (itemId: string, quantity: number, seat: string) =>
+    setSeatAlloc((prev) => ({ ...prev, [itemId]: untapSeatAllocation(quantity, seats, prev[itemId], seat) }));
 
   // 1品割引計算 (最も高額な1品をクーポンの割引率で割引)
   let discountAmount = 0;
@@ -209,14 +202,12 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
     setCompleted({
       orderId: activeOrder.orderId,
       rows: [
-        { label: '商品', value: selectedItems.map((ci) => `${ci.item.name} ×${ci.quantity}`).join('、') },
+        // 複数席: お届け先の席ごとの一覧が、商品の行と同じ情報
+        ...(multiSeat ? [] : [{ label: '商品', value: selectedItems.map((ci) => `${ci.item.name} ×${ci.quantity}`).join('、') }]),
         {
           label: 'お届け先',
           value: multiSeat ? (
-            <>
-              <span className="block">{activeOrder.carNo}号車</span>
-              <DeliverySeatList order={{ seatNo: activeOrder.seatNo, items: selectedItems, itemSeats }} className="mt-1 text-left" />
-            </>
+            <DeliverySeatList order={{ seatNo: activeOrder.seatNo, items: selectedItems, itemSeats }} className="max-h-40 text-left" />
           ) : (
             `${activeOrder.carNo}号車 ${formatSeats(activeOrder.seatNo)}`
           ),
@@ -486,56 +477,59 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
                 </div>
               </div>
 
-              {/* 複数席: どの席に届けるか(指定のない分は、先頭の席へ) */}
+              {/* 複数席: 商品ごとに、届ける席の札を選ぶ(先頭の席に、最初から全部入っている) */}
               {multiSeat && selectedItems.length > 0 && (
-                <div className="bg-[#F9F8FD] p-3.5 rounded-2xl border border-[#E6E2EE] space-y-2.5">
-                  <div className="font-extrabold text-[#5B21B6] text-xs">どの席にしますか?</div>
-                  <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                    {selectedItems.map(({ item, quantity }) => {
-                      const alloc = allocationOf(item.id, quantity);
-                      const assigned = seats.slice(1).reduce((sum, st) => sum + (alloc[st] || 0), 0);
-                      return (
-                        <div key={item.id} className="bg-white p-2.5 rounded-xl border border-[#D1C9E3] space-y-1.5">
-                          <div className="text-xs font-bold text-[#221C35] truncate">
-                            {item.name} ×{quantity}
-                          </div>
-                          <div className="grid grid-cols-2 gap-1.5">
-                            {seats.map((seat, i) => (
-                              <div key={seat} className="flex items-center justify-between gap-1 rounded-lg bg-[#F4F3F8] px-2 py-1">
-                                <span className="font-mono font-bold text-[11px] text-[#5B21B6]">{seatDisplayName(seat)}</span>
-                                {i === 0 ? (
-                                  <span className="font-mono font-black text-xs text-[#221C35] pr-1">{alloc[seat] || 0}</span>
-                                ) : (
-                                  <span className="flex items-center gap-1">
-                                    <button
-                                      type="button"
-                                      aria-label={`${seat} を減らす`}
-                                      disabled={(alloc[seat] || 0) <= 0}
-                                      onClick={() => changeSeatQuantity(item.id, quantity, seat, -1)}
-                                      className="w-6 h-6 rounded-md bg-white border border-[#D1C9E3] text-[#5B21B6] font-black text-xs disabled:opacity-40 cursor-pointer"
-                                    >
-                                      −
-                                    </button>
-                                    <span className="w-4 text-center font-mono font-black text-xs text-[#221C35]">{alloc[seat] || 0}</span>
-                                    <button
-                                      type="button"
-                                      aria-label={`${seat} を増やす`}
-                                      disabled={assigned >= quantity}
-                                      onClick={() => changeSeatQuantity(item.id, quantity, seat, 1)}
-                                      className="w-6 h-6 rounded-md bg-white border border-[#D1C9E3] text-[#5B21B6] font-black text-xs disabled:opacity-40 cursor-pointer"
-                                    >
-                                      +
-                                    </button>
-                                  </span>
+                <div className="bg-[#F9F8FD] p-2.5 rounded-2xl border border-[#E6E2EE] space-y-2 max-h-80 overflow-y-auto">
+                  {selectedItems.map(({ item, quantity }) => {
+                    const alloc = allocationOf(item.id, quantity);
+                    return (
+                      <div key={item.id} className="bg-white p-2.5 rounded-xl border border-[#D1C9E3]">
+                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                          <span className="text-xs font-bold text-[#221C35] min-w-0 truncate">{item.name}</span>
+                          {quantity >= 2 && (
+                            <span className="shrink-0 font-mono font-extrabold text-[11px] text-[#5B21B6] bg-[#EFE8FA] rounded-full px-2">
+                              {seats.reduce((sum, st) => sum + (alloc[st] || 0), 0)}/{quantity}
+                            </span>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-3 gap-1.5">
+                          {seats.map((seat, i) => {
+                            const count = alloc[seat] || 0;
+                            const on = count > 0;
+                            return (
+                              <div
+                                key={seat}
+                                className={`h-9 rounded-[10px] border flex items-stretch font-mono font-extrabold text-[13px] ${
+                                  on ? 'bg-[#5B21B6] border-[#5B21B6] text-white' : 'bg-white border-[#D1C9E3] text-[#221C35]'
+                                }`}
+                              >
+                                <button
+                                  type="button"
+                                  aria-pressed={on}
+                                  aria-label={`${seatDisplayName(seat)} に届ける`}
+                                  onClick={() => tapSeat(item.id, quantity, seat)}
+                                  className="flex-1 min-w-0 flex items-center justify-between pl-2.5 pr-1.5 cursor-pointer"
+                                >
+                                  <span>{seatDisplayName(seat)}</span>
+                                  {on && quantity >= 2 && <span className="text-xs text-[#EDE9FE]">{count}</span>}
+                                </button>
+                                {on && quantity >= 2 && i > 0 && (
+                                  <button
+                                    type="button"
+                                    aria-label={`${seatDisplayName(seat)} を1個減らす`}
+                                    onClick={() => untapSeat(item.id, quantity, seat)}
+                                    className="w-7 my-1 mr-1 rounded-lg bg-white/20 text-[15px] font-normal cursor-pointer"
+                                  >
+                                    −
+                                  </button>
                                 )}
                               </div>
-                            ))}
-                          </div>
+                            );
+                          })}
                         </div>
-                      );
-                    })}
-                  </div>
-                  <p className="text-[10px] text-[#6B6380]">指定しない分は、{seatDisplayName(seats[0])} へお届けします</p>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 

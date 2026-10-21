@@ -15,6 +15,8 @@ import {
   seatLabel,
   seatTitle,
   splitSeats,
+  tapSeatAllocation,
+  untapSeatAllocation,
 } from '../src/utils/seatUtils';
 import { pickDefaultSeat, sortSeats, toggleSeat } from '../src/utils/seatPick';
 
@@ -140,5 +142,77 @@ describe('デリバリーを席ごとに届ける', () => {
     expect(deliveryBySeat({ seatNo: '3A,3B', items: [{ item: item('a', '駅弁'), quantity: 2 }] })).toEqual([
       { seat: '3A', items: [{ name: '駅弁', quantity: 2 }] },
     ]);
+  });
+});
+
+describe('デリバリーの席の札(先頭の席に最初から全部入っている)', () => {
+  const seats = ['4B', '4C', '5B', '5C', '6B', '6C'];
+  const total = (alloc: { [seat: string]: number }) => Object.values(alloc).reduce((sum, n) => sum + n, 0);
+  const full = (quantity: number, explicit: { [seat: string]: number }) => effectiveAllocation(quantity, seats, explicit);
+
+  it('最初は、先頭の席に注文の個数ぜんぶ', () => {
+    expect(full(2, {})).toEqual({ '4B': 2 });
+    expect(full(1, {})).toEqual({ '4B': 1 });
+  });
+
+  it('個数が1: 札を押した席だけになる。押し直すと移る。先頭の席に戻すこともできる', () => {
+    let explicit = tapSeatAllocation(1, seats, {}, '5B');
+    expect(full(1, explicit)).toEqual({ '5B': 1 });
+    explicit = tapSeatAllocation(1, seats, explicit, '6C');
+    expect(full(1, explicit)).toEqual({ '6C': 1 });
+    explicit = tapSeatAllocation(1, seats, explicit, '4B');
+    expect(full(1, explicit)).toEqual({ '4B': 1 });
+  });
+
+  it('個数が2以上: 押すたびにその席へ1個。先頭の席から減っていく', () => {
+    let explicit = tapSeatAllocation(2, seats, {}, '4C');
+    expect(full(2, explicit)).toEqual({ '4B': 1, '4C': 1 });
+    explicit = tapSeatAllocation(2, seats, explicit, '6B');
+    expect(full(2, explicit)).toEqual({ '4C': 1, '6B': 1 });
+    explicit = tapSeatAllocation(2, seats, explicit, '6B');
+    expect(full(2, explicit)).toEqual({ '6B': 2 });
+  });
+
+  it('個数が2以上: 先頭の席の札を押すと、ほかの席から1個もらう。全部が押した席にあるときは、変わらない', () => {
+    let explicit = tapSeatAllocation(3, seats, {}, '5B');
+    explicit = tapSeatAllocation(3, seats, explicit, '5B'); // 4B:1, 5B:2
+    expect(full(3, explicit)).toEqual({ '4B': 1, '5B': 2 });
+    explicit = tapSeatAllocation(3, seats, explicit, '4B'); // 5B から 4B へ
+    expect(full(3, explicit)).toEqual({ '4B': 2, '5B': 1 });
+    expect(tapSeatAllocation(2, seats, {}, '4B')).toEqual({});
+  });
+
+  it('「−」: その席の1個を、先頭の席へ戻す。先頭の席・個数0の席では、何も起きない', () => {
+    const explicit = { '4C': 1, '6B': 1 };
+    expect(full(2, untapSeatAllocation(2, seats, explicit, '4C'))).toEqual({ '4B': 1, '6B': 1 });
+    expect(untapSeatAllocation(2, seats, explicit, '4B')).toEqual(explicit);
+    expect(untapSeatAllocation(2, seats, explicit, '5C')).toEqual(explicit);
+  });
+
+  it('どんな順番で操作しても、合計は注文の個数のまま。個数が0以下の席は出ない', () => {
+    for (const quantity of [1, 2, 3, 9]) {
+      let explicit: { [seat: string]: number } = {};
+      const ops = ['4C', '6B', '4B', '5C', '5C', '6B', '4C', '6C', '4B'];
+      ops.forEach((seat, i) => {
+        explicit = i % 3 === 2 ? untapSeatAllocation(quantity, seats, explicit, seat) : tapSeatAllocation(quantity, seats, explicit, seat);
+        const alloc = full(quantity, explicit);
+        expect(total(alloc)).toBe(quantity);
+        expect(Object.values(alloc).every((n) => n >= 1)).toBe(true);
+        expect(Object.keys(alloc).every((st) => seats.includes(st))).toBe(true);
+      });
+    }
+  });
+
+  it('札の結果は、サーバー(gas/Code.gs の sanitizeItemSeats)がそのまま受け取る形(席→個数。合計=注文の個数)', () => {
+    const ctx: Record<string, unknown> = { PropertiesService: { getScriptProperties: () => ({ getProperty: () => '' }) } };
+    vm.createContext(ctx);
+    vm.runInContext(fs.readFileSync(path.resolve(__dirname, '..', 'gas', 'Code.gs'), 'utf-8'), ctx);
+    const sanitize = ctx.sanitizeItemSeats as (raw: unknown, seats: string[], quantity: number) => { [seat: string]: number } | null;
+    let explicit: { [seat: string]: number } = {};
+    for (const seat of ['4C', '6B', '6B', '5C', '4C']) {
+      explicit = tapSeatAllocation(3, seats, explicit, seat);
+      const alloc = full(3, explicit);
+      expect({ ...sanitize(alloc, seats, 3) }).toEqual(alloc);
+    }
   });
 });

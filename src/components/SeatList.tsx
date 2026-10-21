@@ -27,13 +27,15 @@ export const DeliverySeatList: React.FC<{ order: Pick<ActiveOrder, 'seatNo' | 'i
   const rows = deliveryBySeat(order);
   if (rows.length === 0) return null;
   return (
-    <div className={`max-h-28 overflow-y-auto space-y-1 ${className}`}>
-      {rows.map((row) => (
-        <div key={row.seat} className="flex items-baseline gap-2 text-[11px]">
-          <span className="font-mono font-bold text-[#5B21B6] shrink-0">{seatDisplayName(row.seat)}</span>
-          <span className="text-[#221C35] min-w-0 break-words">{row.items.map((it) => `${it.name}×${it.quantity}`).join('、')}</span>
-        </div>
-      ))}
+    <div className={`max-h-32 overflow-y-auto space-y-1 min-w-0 ${className}`}>
+      {rows.map((row) =>
+        row.items.map((it, i) => (
+          <div key={`${row.seat}-${it.name}`} className="flex items-baseline gap-2 text-[11px] min-w-0">
+            <span className="font-mono font-bold text-[#5B21B6] shrink-0 w-7">{i === 0 ? seatDisplayName(row.seat) : ''}</span>
+            <span className="text-[#221C35] font-bold min-w-0 truncate">{`${it.name}×${it.quantity}`}</span>
+          </div>
+        )),
+      )}
     </div>
   );
 };
