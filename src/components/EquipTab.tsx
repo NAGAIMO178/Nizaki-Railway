@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { UtensilsCrossed, ShoppingBag, Plus, Minus, Check, ShoppingCart, Info } from 'lucide-react';
 import { EquipItem, ActiveOrder } from '../types';
-import { canOrderItem, canUseDelivery, getItemRestrictionLabel, getSeatClassLabel, formatSeats } from '../utils/seatUtils';
+import { canOrderItem, canUseDelivery, getItemRestrictionLabel, getSeatClassLabel, formatSeats, seatCountOf } from '../utils/seatUtils';
 import { DeliverySeatList } from './SeatList';
 import { handleImageError } from '../utils/imageFallback';
 import { canAddOne } from '../utils/cartLimits';
@@ -113,17 +113,23 @@ export const EquipTab: React.FC<EquipTabProps> = ({
                 {activeOrder.carNo}号車 {formatSeats(activeOrder.seatNo)}
               </span>
             </div>
-            <div className="text-[11px] text-[#4A4063] font-medium flex flex-wrap gap-x-2 gap-y-0.5">
-              {activeOrder.items.map((ci) => (
-                <span key={ci.item.id} className="bg-white/80 px-2 py-0.5 rounded border border-[#5B21B6]/10 text-[10px] font-bold">
-                  {ci.item.name} ×{ci.quantity}
-                </span>
-              ))}
-            </div>
-            <DeliverySeatList order={activeOrder} />
-            <div className="text-[10px] text-[#6B6380]">
-              ※下記カタログから商品を追加して【購入確定】を押すと、既存の注文に追加統合されます。
-            </div>
+            {seatCountOf(activeOrder.seatNo) >= 2 ? (
+              // 複数席: 席ごとの一覧が、商品の札と同じ情報
+              <DeliverySeatList order={activeOrder} />
+            ) : (
+              <>
+                <div className="text-[11px] text-[#4A4063] font-medium flex flex-wrap gap-x-2 gap-y-0.5">
+                  {activeOrder.items.map((ci) => (
+                    <span key={ci.item.id} className="bg-white/80 px-2 py-0.5 rounded border border-[#5B21B6]/10 text-[10px] font-bold">
+                      {ci.item.name} ×{ci.quantity}
+                    </span>
+                  ))}
+                </div>
+                <div className="text-[10px] text-[#6B6380]">
+                  ※下記カタログから商品を追加して【購入確定】を押すと、既存の注文に追加統合されます。
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

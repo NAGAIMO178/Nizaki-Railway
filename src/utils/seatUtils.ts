@@ -114,6 +114,32 @@ export function effectiveAllocation(quantity: number, seats: string[], explicit?
   return out;
 }
 
+// 札の操作の結果は「先頭の席以外に指定した個数」(先頭の席は、残りを受け取る)。合計は、いつも注文の個数と同じ
+const toExplicit = (alloc: { [seat: string]: number }, seats: string[]): { [seat: string]: number } => {
+  const out: { [seat: string]: number } = {};
+  seats.slice(1).forEach((seat) => {
+    if ((alloc[seat] || 0) > 0) out[seat] = alloc[seat];
+  });
+  return out;
+};
+
+// 席の札を押す。個数が1の商品は、押した席だけに届ける(押し直すと移る)。2個以上は、押した席に1個足し、1個を、ほかの席(先頭の席から順に)から減らす
+export function tapSeatAllocation(quantity: number, seats: string[], explicit: { [seat: string]: number } | undefined, seat: string): { [seat: string]: number } {
+  const current = effectiveAllocation(quantity, seats, explicit);
+  if (!seats.includes(seat) || quantity < 1) return toExplicit(current, seats);
+  if (quantity === 1) return toExplicit({ [seat]: 1 }, seats);
+  const donor = seats.find((st) => st !== seat && (current[st] || 0) > 0);
+  if (!donor) return toExplicit(current, seats);
+  return toExplicit({ ...current, [seat]: (current[seat] || 0) + 1, [donor]: current[donor] - 1 }, seats);
+}
+
+// 札の「−」: その席の1個を、先頭の席へ戻す(先頭の席の札には「−」がない)
+export function untapSeatAllocation(quantity: number, seats: string[], explicit: { [seat: string]: number } | undefined, seat: string): { [seat: string]: number } {
+  const current = effectiveAllocation(quantity, seats, explicit);
+  if (seats.length === 0 || seat === seats[0] || !((current[seat] || 0) > 0)) return toExplicit(current, seats);
+  return toExplicit({ ...current, [seat]: current[seat] - 1, [seats[0]]: (current[seats[0]] || 0) + 1 }, seats);
+}
+
 export interface SeatDelivery {
   seat: string;
   items: { name: string; quantity: number }[];
