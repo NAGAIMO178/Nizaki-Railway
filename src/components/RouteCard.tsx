@@ -4,6 +4,7 @@ import { crowdInfo } from '../utils/crowd';
 import { formatDiaTime } from '../utils/diaTimetable';
 import { RouteResult } from '../utils/routeSearch';
 import { routeCardMark, ROUTE_CARD_MARK_TEXT } from '../utils/routeCardMark';
+import { legBarJoins } from '../utils/legBars';
 
 const DAY = 86400;
 
@@ -18,6 +19,7 @@ interface RouteCardProps {
 export const RouteCard: React.FC<RouteCardProps> = ({ result: r, index, lineColor, onOpen }) => {
   const mark = routeCardMark(r);
   const hasCrowd = r.legs.some((l) => l.crowd && crowdInfo(l.crowd));
+  const joins = legBarJoins(r.legs);
   const columns = `6px 5.1em 1.1em ${hasCrowd ? '4.3em ' : ''}minmax(0,1fr)`;
 
   return (
@@ -48,9 +50,19 @@ export const RouteCard: React.FC<RouteCardProps> = ({ result: r, index, lineColo
         <div className="flex-1 min-w-0 grid items-center gap-x-1 gap-y-1.5 text-[11px] text-[#221C35]" style={{ gridTemplateColumns: columns }}>
           {r.legs.map((leg, k) => {
             const crowd = leg.crowd ? crowdInfo(leg.crowd) : undefined;
+            const join = joins[k];
             return (
               <React.Fragment key={`${leg.trainNo}-${k}`}>
-                <span className="w-1.5 h-4 rounded-full" style={{ backgroundColor: lineColor(leg.lineCode) }} />
+                {/* 路線の色の棒。直通(乗ったまま続く区間)だけ、上下の棒をすき間なくつなぐ(つなぎ目は角を丸めない) */}
+                <span
+                  className="w-1.5"
+                  style={{
+                    backgroundColor: lineColor(leg.lineCode),
+                    alignSelf: 'stretch',
+                    marginBottom: join.next ? '-0.375rem' : undefined,
+                    borderRadius: `${join.prev ? 0 : 3}px ${join.prev ? 0 : 3}px ${join.next ? 0 : 3}px ${join.next ? 0 : 3}px`,
+                  }}
+                />
                 <span className="font-bold whitespace-nowrap">{leg.lineName}</span>
                 <span className={leg.paid ? 'text-amber-600 font-bold' : 'text-[#857D99]'}>{leg.typeAbbr}</span>
                 {hasCrowd && (
