@@ -19,8 +19,13 @@ interface LoginModalProps {
 
 type RegisterStep = 'form' | 'line-wait';
 
+// 入力の長さの上限(サーバー gas/Code.gs の MAX_EMAIL_LENGTH・MAX_PASSWORD_LENGTH と同じ数字)
+const MAX_EMAIL_LENGTH = 254;
+const MAX_PASSWORD_LENGTH = 128;
+
 const validatePassword = (pw: string): string | null => {
   if (pw.length < 6) return 'パスワードは6文字以上で入力してください。';
+  if (pw.length > MAX_PASSWORD_LENGTH) return `パスワードは${MAX_PASSWORD_LENGTH}文字以内で入力してください。`;
   if (!/[a-z]/.test(pw)) return 'パスワードには英字の小文字を1文字以上含めてください。';
   if (!/[A-Z]/.test(pw)) return 'パスワードには英字の大文字を1文字以上含めてください。';
   if (!/[0-9]/.test(pw)) return 'パスワードには数字を1文字以上含めてください。';
@@ -136,6 +141,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return '有効なメールアドレスを入力してください。';
     }
+    if (email.length > MAX_EMAIL_LENGTH) return `メールアドレスは${MAX_EMAIL_LENGTH}文字以内で入力してください。`;
     const pwError = validatePassword(password);
     if (pwError) return pwError;
     if (password !== confirmPassword) return '確認用パスワードが一致しません。';
@@ -319,6 +325,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                     name="username"
                     type="email"
                     inputMode="email"
+                    maxLength={MAX_EMAIL_LENGTH}
                     autoComplete="username webauthn"
                     value={idOrEmail}
                     onChange={(e) => setIdOrEmail(e.target.value)}
@@ -340,6 +347,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                     name="password"
                     type="password"
                     autoComplete="current-password webauthn"
+                    maxLength={MAX_PASSWORD_LENGTH}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
@@ -381,6 +389,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                     name="username"
                     type="email"
                     inputMode="email"
+                    maxLength={MAX_EMAIL_LENGTH}
                     autoComplete="username"
                     value={idOrEmail}
                     onChange={(e) => setIdOrEmail(e.target.value)}
@@ -403,6 +412,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                     name="new-password"
                     type="password"
                     autoComplete="new-password"
+                    maxLength={MAX_PASSWORD_LENGTH}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
@@ -423,6 +433,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                     name="new-password-confirm"
                     type="password"
                     autoComplete="new-password"
+                    maxLength={MAX_PASSWORD_LENGTH}
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder="••••••••"

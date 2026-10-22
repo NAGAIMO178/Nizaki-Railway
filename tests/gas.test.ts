@@ -284,13 +284,14 @@ describe('シートに書く文字(式の注入を防ぐ)', () => {
     gas.Utilities = { ...gas.Utilities, getUuid: () => 'salt' };
     gas.hashPassword = () => 'hash';
     gas.createSessionToken = () => 'tok';
-    const r = gas.handleVerifyLineAndRegister(emailEvil, 'Abcd1!', 'ABC234', '123456', evil);
+    const nameEvil = '=HYPERLINK("x")'; // 表示名は30文字まで
+    const r = gas.handleVerifyLineAndRegister(emailEvil, 'Abcd1!', 'ABC234', '123456', nameEvil);
     expect(r.status).toBe('success');
     const row = written[0];
     expect(row[1]).toBe("'" + emailEvil);
-    expect(row[3]).toBe("'" + evil);
+    expect(row[3]).toBe("'" + nameEvil);
     expect(row[8]).toBe("'" + evil);
-    expect(r.user.name).toBe(evil); // 画面へ返す名前は、元のまま
+    expect(r.user.name).toBe(nameEvil); // 画面へ返す名前は、元のまま
   });
 
   it('予約: 列車名・座席などが式でも、式にならずに書かれる(日付と時刻の列は、文字の書式のまま)', () => {
@@ -685,5 +686,222 @@ describe('注文の上限(予約の登録・デリバリーの追加)', () => {
         { name: '菓子', quantity: 1, price: 300 },
       ]);
     });
+  });
+});
+
+// ---- ログイン・登録の入口: 回数制限(同時に送っても抜けられない)と、入力の形・長さ ----
+describe('ログインの回数制限と入力の検査', () => {
+  const PW = 'Abcd1!ef';
+  let cache: Record<string, string>;
+  let lockFails: boolean;
+  let lookups: string[];
+  let counterAtLookup: number[];
+
+  const wrong = { status: 'error', message: 'メールアドレスまたはパスワードが正しくありません。' };
+
+  beforeEach(() => {
+    cache = {};
+    lockFails = false;
+    lookups = [];
+    counterAtLookup = [];
+    gas.CacheService = {
+      getScriptCache: () => ({
+        get: (k: string) => cache[k] ?? null,
+        put: (k: string, v: string) => void (cache[k] = v),
+        remove: (k: string) => void delete cache[k],
+      }),
+    };
+    gas.LockService = {
+      getScriptLock: () => ({
+        waitLock: () => {
+          if (lockFails) throw new Error('busy');
+        },
+        releaseLock: () => undefined,
+      }),
+    };
+    gas.loginFailureKey = (email: string) => 'fail:' + email;
+    gas.hashPassword = (pw: string, salt: string) => 'h(' + pw + ',' + salt + ')';
+    gas.createSessionToken = (id: string) => 'tok-' + id;
+    gas.findMemberByEmail = (email: string) => {
+      lookups.push(email);
+      counterAtLookup.push(Number(cache['fail:' + email] ?? 0));
+      return email === 'taro@example.com'
+        ? { memberId: 'NZ-1', name: '太郎', email, salt: 's', passwordHash: 'h(' + PW + ',s)', rank: 'レギュラー', joinDate: '2026-10-01', lineUserId: '' }
+        : null;
+    };
+  });
+
+  it('ふつうのログインは通る(メールの大文字・前後の空白は、そろえる)', () => {
+    const r = gas.handleLogin('  Taro@Example.com ', PW);
+    expect(r).toMatchObject({ status: 'success', sessionToken: 'tok-NZ-1', user: { memberId: 'NZ-1', name: '太郎' } });
+  });
+
+  it('5回続けて間違えると、正しいパスワードでも、しばらく断る', () => {
+    for (let i = 0; i < 5; i++) expect(gas.handleLogin('taro@example.com', 'bad' + i)).toEqual(wrong);
+    expect(gas.handleLogin('taro@example.com', PW)).toMatchObject({ status: 'error', message: expect.stringContaining('しばらく') });
+  });
+
+  it('4回間違えたあと、正しければ通り、回数は消える(ふつうのログインは、締め出されない)', () => {
+    for (let i = 0; i < 4; i++) gas.handleLogin('taro@example.com', 'bad' + i);
+    expect(gas.handleLogin('taro@example.com', PW).status).toBe('success');
+    for (let i = 0; i < 4; i++) expect(gas.handleLogin('taro@example.com', 'bad' + i)).toEqual(wrong);
+    expect(gas.handleLogin('taro@example.com', PW).status).toBe('success');
+  });
+
+  it('メールごとに数える(ほかのメールの失敗に、巻き込まれない)', () => {
+    for (let i = 0; i < 5; i++) gas.handleLogin('other@example.com', 'bad' + i);
+    expect(gas.handleLogin('taro@example.com', PW).status).toBe('success');
+  });
+
+  it('試す回数は、パスワードを確かめる前に確保する(確かめている最中に同時に送られても、5回を超えて試せない)', () => {
+    let nested = false;
+    const lookup = gas.findMemberByEmail;
+    gas.findMemberByEmail = (email: string) => {
+      if (!nested) {
+        nested = true;
+        // 1回目を確かめているあいだに、ほかの20回が同時に届いたとする
+        for (let i = 0; i < 20; i++) gas.handleLogin('taro@example.com', 'guess' + i);
+      }
+      return lookup(email);
+    };
+    gas.handleLogin('taro@example.com', 'first');
+    expect(lookups.length).toBe(5); // 確かめられたのは、5回だけ
+    expect(counterAtLookup[0]).toBeGreaterThanOrEqual(1); // 確かめる時点で、もう数えてある
+  });
+
+  it('止まっているあいだは、ロックを待たずに断る。ロックを取れないときは、確かめずに、混み合っていると返す', () => {
+    cache['fail:taro@example.com'] = '5';
+    lockFails = true;
+    expect(gas.handleLogin('taro@example.com', PW)).toMatchObject({ message: expect.stringContaining('しばらく') });
+    cache = {};
+    expect(gas.handleLogin('taro@example.com', PW)).toMatchObject({ status: 'error', message: expect.stringContaining('混み合って') });
+    expect(lookups).toEqual([]);
+  });
+
+  it('型違い・空・巨大な入力は、台帳も回数も見ずに、ふつうの失敗と同じ文言で断る', () => {
+    const bad: Array<[unknown, unknown]> = [
+      [undefined, PW], [null, PW], ['', PW], ['   ', PW], [123, PW], [{ a: 1 }, PW], [['taro@example.com'], PW],
+      ['taro@example.com', undefined], ['taro@example.com', null], ['taro@example.com', ''], ['taro@example.com', 123456], ['taro@example.com', ['x']],
+      ['a'.repeat(255), PW], ['taro@example.com', 'x'.repeat(129)], ['x'.repeat(100000), 'y'.repeat(100000)],
+    ];
+    bad.forEach(([e, p], i) => expect(gas.handleLogin(e, p), `#${i}`).toEqual(wrong));
+    expect(lookups).toEqual([]);
+    expect(Object.keys(cache)).toEqual([]);
+  });
+
+  it('上限ちょうど(メール254文字・パスワード128文字)は、受け付ける', () => {
+    const longEmail = 'a'.repeat(242) + '@example.com'; // 254文字
+    expect(longEmail.length).toBe(254);
+    gas.handleLogin(longEmail, 'P'.repeat(128));
+    expect(lookups).toEqual([longEmail]);
+  });
+
+  it('アカウント削除も、同じ回数制限と入力の検査を通る', () => {
+    for (let i = 0; i < 5; i++) expect(gas.handleDeleteAccount('taro@example.com', 'bad' + i)).toEqual(wrong);
+    expect(gas.handleDeleteAccount('taro@example.com', PW)).toMatchObject({ message: expect.stringContaining('しばらく') });
+    expect(gas.handleDeleteAccount({ a: 1 }, PW)).toEqual(wrong);
+    expect(gas.handleDeleteAccount('taro@example.com', 'x'.repeat(129))).toEqual(wrong);
+  });
+});
+
+describe('会員の登録の入力の検査と、認証コードの回数制限', () => {
+  let cache: Record<string, string>;
+  let appended: unknown[][];
+  let lockFails: boolean;
+  const PW = 'Abcd1!ef';
+  const EMAIL = 'hanako@example.com';
+
+  beforeEach(() => {
+    cache = { line_otp_ABC234: JSON.stringify({ code: '123456', lineUserId: 'U1' }) };
+    appended = [];
+    lockFails = false;
+    gas.CacheService = {
+      getScriptCache: () => ({
+        get: (k: string) => cache[k] ?? null,
+        put: (k: string, v: string) => void (cache[k] = v),
+        remove: (k: string) => void delete cache[k],
+      }),
+    };
+    gas.LockService = {
+      getScriptLock: () => ({
+        waitLock: () => {
+          if (lockFails) throw new Error('busy');
+        },
+        releaseLock: () => undefined,
+      }),
+    };
+    gas.findMemberByEmail = () => null;
+    gas.getOrCreateMembersSheet = () => ({
+      getDataRange: () => ({ getValues: () => [['会員ID']] }),
+      appendRow: (r: unknown[]) => void appended.push(r),
+    });
+    gas.Utilities = { ...gas.Utilities, getUuid: () => 'salt' };
+    gas.hashPassword = () => 'hash';
+    gas.createSessionToken = () => 'tok';
+  });
+
+  const register = (o: Partial<Record<'email' | 'pw' | 'token' | 'code' | 'name', unknown>> = {}) =>
+    gas.handleVerifyLineAndRegister(
+      'email' in o ? o.email : EMAIL,
+      'pw' in o ? o.pw : PW,
+      'token' in o ? o.token : 'ABC234',
+      'code' in o ? o.code : '123456',
+      o.name
+    );
+  const refused = (r: { status: string }) => {
+    expect(r.status).toBe('error');
+    expect(appended).toEqual([]);
+  };
+
+  it('ふつうの登録は通る(日本語の名前30文字・長めのメール・128文字のパスワードも)', () => {
+    expect(register({ name: '神埼太郎' }).status).toBe('success');
+    cache.line_otp_ABC234 = JSON.stringify({ code: '123456', lineUserId: 'U1' });
+    expect(register({ name: '神'.repeat(30), email: 'a'.repeat(100) + '@example.com' }).status).toBe('success');
+    cache.line_otp_ABC234 = JSON.stringify({ code: '123456', lineUserId: 'U1' });
+    expect(register({ pw: 'Aa1!' + 'x'.repeat(124) }).status).toBe('success');
+    expect(appended.length).toBe(3);
+  });
+
+  it('表示名が31文字以上・文字でないときは、断る。渡さないとき・空のときは、メールの@の前(30文字まで)', () => {
+    refused(register({ name: 'あ'.repeat(31) }));
+    refused(register({ name: { a: 1 } }));
+    refused(register({ name: 42 }));
+    expect(register({ name: '' }).user.name).toBe('hanako');
+    cache.line_otp_ABC234 = JSON.stringify({ code: '123456', lineUserId: 'U1' });
+    expect(register({ email: 'b'.repeat(40) + '@example.com' }).user.name).toBe('b'.repeat(30));
+  });
+
+  it('メールが255文字以上・文字でない・形がおかしいときは、断る', () => {
+    refused(register({ email: 'a'.repeat(243) + '@example.com' }));
+    [undefined, null, 5, {}, [EMAIL], '', 'no-at-sign', 'a@b'].forEach((e) => refused(register({ email: e })));
+  });
+
+  it('パスワードが129文字以上・文字でないときは、断る(文言は、既存の言い方に合わせる)', () => {
+    expect(register({ pw: 'Aa1!' + 'x'.repeat(125) })).toMatchObject({ message: 'パスワードは128文字以内で入力してください。' });
+    [undefined, null, 123456, {}, ['Abcd1!ef']].forEach((p) => refused(register({ pw: p })));
+  });
+
+  it('合言葉・認証コードが、文字でない・空のときは、断る(例外にならない)', () => {
+    [undefined, null, 5, {}, ['ABC234']].forEach((t) => refused(register({ token: t })));
+    [undefined, null, '', '000000', 'abcdef', {}].forEach((c) => refused(register({ code: c })));
+  });
+
+  it('認証コードは5回まで。5回目の間違いで、合言葉が無効になり、正しいコードでも通らない', () => {
+    for (let i = 0; i < 4; i++) expect(register({ code: '00000' + i })).toMatchObject({ message: '認証コードが正しくありません。' });
+    expect(register({ code: '000009' })).toMatchObject({ message: expect.stringContaining('無効') });
+    refused(register());
+  });
+
+  it('認証コードを試す回数は、確かめる前に確保する(5回試したあとは、正しいコードでも、確かめずに断る)', () => {
+    cache['line_otp_fail_ABC234'] = '5'; // すでに5回試した
+    expect(register({ code: '123456' })).toMatchObject({ status: 'error', message: expect.stringContaining('無効') });
+    expect(cache['line_otp_ABC234']).toBeUndefined();
+    expect(appended).toEqual([]);
+  });
+
+  it('ロックを取れないときは、確かめずに、混み合っていると返す', () => {
+    lockFails = true;
+    expect(register({ code: '123456' })).toMatchObject({ status: 'error', message: expect.stringContaining('混み合って') });
+    expect(appended).toEqual([]);
   });
 });

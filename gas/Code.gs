@@ -1067,19 +1067,22 @@ const SHEET_MEMBERS = '会員台帳';
  * ③ ログイン
  */
 function handleLogin(email, password) {
-  email = (email || '').trim().toLowerCase();
-  if (isLoginLocked(email)) return loginLockedResponse();
+  email = normalizeLoginEmail(email);
+  // 型違い・空・巨大な入力は、台帳も回数も見ずに断る(中身は、ふつうの失敗と同じ文言)
+  if (!isAcceptableCredentials(email, password)) return wrongCredentialsResponse();
+  // 試す回数は、先に1つ確保する(同時にたくさん送られても、5回を超えて試せない)
+  const gate = reserveLoginAttempt(email);
+  if (gate === 'locked') return loginLockedResponse();
+  if (gate === 'busy') return loginBusyResponse();
   const member = findMemberByEmail(email);
 
   if (!member) {
-    recordLoginFailure(email);
-    return createJsonResponse({ status: 'error', message: 'メールアドレスまたはパスワードが正しくありません。' });
+    return wrongCredentialsResponse();
   }
 
   const inputHash = hashPassword(password, member.salt);
   if (inputHash !== member.passwordHash) {
-    recordLoginFailure(email);
-    return createJsonResponse({ status: 'error', message: 'メールアドレスまたはパスワードが正しくありません。' });
+    return wrongCredentialsResponse();
   }
   clearLoginFailures(email);
 
@@ -1094,19 +1097,20 @@ function handleLogin(email, password) {
  * ④ アカウント削除(パスワード再確認のうえ会員台帳から行ごと削除)
  */
 function handleDeleteAccount(email, password) {
-  email = (email || '').trim().toLowerCase();
-  if (isLoginLocked(email)) return loginLockedResponse();
+  email = normalizeLoginEmail(email);
+  if (!isAcceptableCredentials(email, password)) return wrongCredentialsResponse();
+  const gate = reserveLoginAttempt(email);
+  if (gate === 'locked') return loginLockedResponse();
+  if (gate === 'busy') return loginBusyResponse();
   const member = findMemberByEmail(email);
 
   if (!member) {
-    recordLoginFailure(email);
-    return createJsonResponse({ status: 'error', message: 'メールアドレスまたはパスワードが正しくありません。' });
+    return wrongCredentialsResponse();
   }
 
   const inputHash = hashPassword(password, member.salt);
   if (inputHash !== member.passwordHash) {
-    recordLoginFailure(email);
-    return createJsonResponse({ status: 'error', message: 'メールアドレスまたはパスワードが正しくありません。' });
+    return wrongCredentialsResponse();
   }
   clearLoginFailures(email);
 
@@ -1215,6 +1219,24 @@ function getOrCreateMembersSheet() {
 /**
  * LINE経由の神埼ID新規登録: 合言葉トークンの発行(登録ステップ1)
  */
+// 認証コードを試す回数を、ロックの中で1つ増やして、何回目かを返す('busy' のときは、ロックを取れなかった)
+function reserveOtpAttempt(failKey) {
+  const cache = CacheService.getScriptCache();
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(3000);
+  } catch (err) {
+    return 'busy';
+  }
+  try {
+    const n = Number(cache.get(failKey) || 0) + 1;
+    cache.put(failKey, String(n), 600);
+    return n;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function handleStartLineVerification() {
   const token = generateToken(6);
   CacheService.getScriptCache().put('line_pending_' + token, '1', 600); // 10分間有効
@@ -1247,9 +1269,19 @@ function handleLineVerificationMessage(replyToken, userId, token) {
  * ※このタイミングでLINEのuserIdも同時に会員台帳へ紐付けられる
  */
 function handleVerifyLineAndRegister(email, password, token, code, name) {
-  email = (email || '').trim().toLowerCase();
+  email = normalizeLoginEmail(email);
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return createJsonResponse({ status: 'error', message: 'メールアドレスの形式が正しくありません。' });
+  }
+  if (email.length > MAX_EMAIL_LENGTH) {
+    return createJsonResponse({ status: 'error', message: 'メールアドレスは' + MAX_EMAIL_LENGTH + '文字以内で入力してください。' });
+  }
+  // 表示名は、渡されたときだけ調べる(いまのアプリは渡さない。そのときは、メールの@の前から作る)
+  if (name !== undefined && name !== null && name !== '' && (typeof name !== 'string' || name.length > MAX_NAME_LENGTH)) {
+    return createJsonResponse({ status: 'error', message: '表示名は' + MAX_NAME_LENGTH + '文字以内で入力してください。' });
+  }
+  if (typeof token !== 'string' || (code !== undefined && code !== null && typeof code !== 'string' && typeof code !== 'number')) {
+    return createJsonResponse({ status: 'error', message: '認証コードが正しくないか、有効期限が切れています。' });
   }
 
   const passwordError = validatePasswordServer(password);
@@ -1257,7 +1289,7 @@ function handleVerifyLineAndRegister(email, password, token, code, name) {
     return createJsonResponse({ status: 'error', message: passwordError });
   }
 
-  const normalizedToken = (token || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const normalizedToken = token.toUpperCase().replace(/[^A-Z0-9]/g, '');
   const cache = CacheService.getScriptCache();
   const raw = cache.get('line_otp_' + normalizedToken);
   if (!raw) {
@@ -1265,16 +1297,23 @@ function handleVerifyLineAndRegister(email, password, token, code, name) {
   }
 
   const data = JSON.parse(raw);
-  if (String(code).trim() !== data.code) {
-    // 認証コードの当てずっぽうを防ぐ(5回間違えたらこの合言葉は無効)
-    const failKey = 'line_otp_fail_' + normalizedToken;
-    const fails = Number(cache.get(failKey) || 0) + 1;
-    if (fails >= 5) {
+  // 認証コードの当てずっぽうを防ぐ(5回までしか試せない。試す回数は、確かめる前に、ロックの中で確保する)
+  const failKey = 'line_otp_fail_' + normalizedToken;
+  const attempt = reserveOtpAttempt(failKey);
+  if (attempt === 'busy') {
+    return createJsonResponse({ status: 'error', message: '混み合っています。しばらくしてからもう一度お試しください。' });
+  }
+  if (attempt > 5) {
+    cache.remove('line_otp_' + normalizedToken);
+    cache.remove(failKey);
+    return createJsonResponse({ status: 'error', message: '認証コードの誤りが続いたため、合言葉を無効にしました。最初からやり直してください。' });
+  }
+  if (String(code === undefined || code === null ? '' : code).trim() !== data.code) {
+    if (attempt >= 5) {
       cache.remove('line_otp_' + normalizedToken);
       cache.remove(failKey);
       return createJsonResponse({ status: 'error', message: '認証コードの誤りが続いたため、合言葉を無効にしました。最初からやり直してください。' });
     }
-    cache.put(failKey, String(fails), 600);
     return createJsonResponse({ status: 'error', message: '認証コードが正しくありません。' });
   }
 
@@ -1306,7 +1345,7 @@ function handleVerifyLineAndRegister(email, password, token, code, name) {
     const passwordHash = hashPassword(password, salt);
     const joinDate = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
     const timestamp = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm:ss');
-    const userName = String(name || email.split('@')[0]);
+    const userName = String(name || email.split('@')[0]).slice(0, MAX_NAME_LENGTH); // 名前を渡さないときは、メールの@の前(長ければ切る)
     sheet.appendRow([timestamp, sheetSafe(email), memberId, sheetSafe(userName), salt, passwordHash, 'レギュラー', joinDate, sheetSafe(data.lineUserId || '')]);
 
     cache.remove('line_otp_' + normalizedToken);
@@ -1458,14 +1497,37 @@ function handleVerifyAdminToken(adminToken) {
  * パスワード規則のサーバー側チェック(クライアントと同じ条件)
  */
 function validatePasswordServer(pw) {
-  pw = String(pw || '');
+  if (typeof pw !== 'string') return 'パスワードを入力してください。';
   if (pw.length < 6) return 'パスワードは6文字以上で入力してください。';
-  if (pw.length > 128) return 'パスワードが長すぎます。';
+  if (pw.length > MAX_PASSWORD_LENGTH) return 'パスワードは' + MAX_PASSWORD_LENGTH + '文字以内で入力してください。';
   if (!/[a-z]/.test(pw)) return 'パスワードには英字の小文字を1文字以上含めてください。';
   if (!/[A-Z]/.test(pw)) return 'パスワードには英字の大文字を1文字以上含めてください。';
   if (!/[0-9]/.test(pw)) return 'パスワードには数字を1文字以上含めてください。';
   if (!/[!-\/:-@\[-`{-~]/.test(pw)) return 'パスワードには記号を1文字以上含めてください。';
   return null;
+}
+
+// 入力の長さの上限(メールは RFC の最大。画面の入力欄の maxLength も、同じ数字)
+const MAX_EMAIL_LENGTH = 254;
+const MAX_PASSWORD_LENGTH = 128;
+const MAX_NAME_LENGTH = 30;
+
+function normalizeLoginEmail(email) {
+  return typeof email === 'string' ? email.trim().toLowerCase() : '';
+}
+
+// ログイン・アカウント削除に渡された、メールとパスワードが、受け付けられる形か(文字で、空でなく、長すぎない)
+function isAcceptableCredentials(email, password) {
+  return email !== '' && email.length <= MAX_EMAIL_LENGTH &&
+    typeof password === 'string' && password.length > 0 && password.length <= MAX_PASSWORD_LENGTH;
+}
+
+function wrongCredentialsResponse() {
+  return createJsonResponse({ status: 'error', message: 'メールアドレスまたはパスワードが正しくありません。' });
+}
+
+function loginBusyResponse() {
+  return createJsonResponse({ status: 'error', message: '混み合っています。しばらくしてからもう一度お試しください。' });
 }
 
 // ログイン失敗の回数制限(同一メールで10分間に5回まで)
@@ -1482,11 +1544,27 @@ function isLoginLocked(email) {
   return count >= LOGIN_MAX_FAILURES;
 }
 
-function recordLoginFailure(email) {
+// パスワードを確かめる前に、試す回数を1つ確保する。'ok' | 'locked' | 'busy'
+// 数えるところは、ロックの中(読む→足す→書く)。同時に送られても、数え漏れず、5回を超えて試せない。
+// 成功したら、clearLoginFailures で消す。止まっているときは、ロックを待たずに断る(連打でロックを塞がせない)
+function reserveLoginAttempt(email) {
   const cache = CacheService.getScriptCache();
   const key = loginFailureKey(email);
-  const count = Number(cache.get(key) || 0) + 1;
-  cache.put(key, String(count), LOGIN_LOCK_SECONDS);
+  if (Number(cache.get(key) || 0) >= LOGIN_MAX_FAILURES) return 'locked';
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(3000);
+  } catch (err) {
+    return 'busy';
+  }
+  try {
+    const count = Number(cache.get(key) || 0);
+    if (count >= LOGIN_MAX_FAILURES) return 'locked';
+    cache.put(key, String(count + 1), LOGIN_LOCK_SECONDS);
+    return 'ok';
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function clearLoginFailures(email) {
