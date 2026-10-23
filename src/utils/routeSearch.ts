@@ -5,6 +5,7 @@ import { calculateFare } from './fare';
 import { RouteOptions, DEFAULT_ROUTE_OPTIONS } from './routeOptions';
 import { bumpForDelay, crowdDelayRate, dayTypeOf, loadAllCrowdTrains, trainMaxLevel, trainSegmentLevel } from './crowd';
 import { isLaunched } from './launch';
+import { platformAtStop } from './platform';
 
 const LINE_CODES = ['Y', 'NI', 'SC', 'TC'];
 // 乗換に必要な最短の時間(秒)。模擬の値で、駅による違いは付けていない
@@ -144,6 +145,9 @@ export interface RouteLeg {
   delayMin: number; // 遅れ(分)。0なら時刻表どおり
   // 前の区間から、同じ列車に乗ったまま続く(直通)。乗換に数えない
   through?: boolean;
+  // 乗る駅の発車の番線と、降りる駅の到着の番線(公開後のダイヤだけ。無いときは、なし)
+  depPlatform?: string;
+  arrPlatform?: string;
   km: number;
   // 乗ってから降りるまでに停まる駅(最後が降りる駅)
   stops: RouteStop[];
@@ -468,6 +472,8 @@ const searchOnce = (net: Net, ctx: Ctx, from: string, to: string, readySec: numb
       crowd,
       crowdAvg,
       through: p.through,
+      depPlatform: platformAtStop(train, p.boardPos / 3),
+      arrPlatform: platformAtStop(train, p.alightPos / 3),
     };
   });
 

@@ -6,6 +6,8 @@ import { fareTierLabel } from '../utils/fare';
 import { RouteResult, RouteLeg } from '../utils/routeSearch';
 import { crowdInfo } from '../utils/crowd';
 import { legShowsCrowd } from '../utils/crowdShown';
+import { isLaunched } from '../utils/launch';
+import { legPlatformParts } from '../utils/platform';
 
 const DAY = 86400;
 
@@ -21,7 +23,14 @@ const Time: React.FC<{ sec: number; sched: number; className?: string }> = ({ se
   );
 };
 
+const PlatformNo: React.FC<{ no: string }> = ({ no }) => (
+  <>
+    <span className="inline-block min-w-[16px] text-center px-1 rounded bg-[#EDE9FE] text-[#5B21B6] font-extrabold text-xs">{no}</span>番線
+  </>
+);
+
 const LegBlock: React.FC<{ leg: RouteLeg }> = ({ leg }) => {
+  const platforms = legPlatformParts(leg);
   const [open, setOpen] = useState(false);
   const color = lineColor(leg.lineCode);
   const n = leg.stops.length;
@@ -48,6 +57,22 @@ const LegBlock: React.FC<{ leg: RouteLeg }> = ({ leg }) => {
             <span className={`text-[11px] font-bold ${leg.paid ? 'text-amber-600' : 'text-[#6B6380]'}`}>{leg.typeName}</span>
           </div>
           <div className="text-[11px] text-[#6B6380] mt-0.5">{leg.destLabel}</div>
+          {/* 番線(公開後のダイヤだけ。分からないほうは出さない) */}
+          {isLaunched() && platforms && (
+            <div className="mt-1 text-[11px] text-[#6B6380]">
+              {platforms.dep && (
+                <>
+                  [発] <PlatformNo no={platforms.dep} />
+                </>
+              )}
+              {platforms.dep && platforms.arr && ' → '}
+              {platforms.arr && (
+                <>
+                  [着] <PlatformNo no={platforms.arr} />
+                </>
+              )}
+            </div>
+          )}
           {leg.delayMin > 0 && (
             <div className="mt-1.5 inline-block text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded px-1.5 py-0.5">
               {leg.delayMin}分遅れ

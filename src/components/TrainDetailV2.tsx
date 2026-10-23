@@ -2,6 +2,7 @@ import React from 'react';
 import { ChevronRight, Clock, User, Users } from 'lucide-react';
 import type { LiveTrainPos } from './TrainLocationTab';
 import { CROWD_LEVELS, CROWD_MAX_LEVEL, crowdInfo } from '../utils/crowd';
+import { isLaunched } from '../utils/launch';
 
 // 列車の詳細(公開後の新しい画面。列車位置で列車を押すと出るシートの中身)。
 // 上に答え(遅れ・混雑)、下に詳細(これから通る駅)の順。見出しの色は神埼の紫に統一し、路線は小さな丸で見分ける。
@@ -48,6 +49,8 @@ export const TrainDetailV2: React.FC<TrainDetailV2Props> = ({ train, lineName, o
   const rows = train.rows ?? [];
   const info = train.crowdNow ? crowdInfo(train.crowdNow) : undefined;
   const typeText = train.paid ? '特急' : train.trainType;
+  // 番線の列(公開後のダイヤだけ。どの駅にも番線が無いときは、列ごと出さない)
+  const showPlatform = isLaunched() && rows.some((r) => !r.pass && r.platform);
 
   // 札・枠・見出しは、アプリのほかの画面(発車案内・列車位置)と同じ作り(角の小さい札・太い字・はっきりした縁・うす紫の見出し)
   const cardHead = 'px-3 py-2.5 bg-[#EFE8FA]/60 border-b border-[#E6E2EE] flex items-center gap-2 text-xs font-bold text-[#5B21B6]';
@@ -133,6 +136,7 @@ export const TrainDetailV2: React.FC<TrainDetailV2Props> = ({ train, lineName, o
         <div className={cardHead}>
           <Clock className="w-4 h-4" />
           <span>停車駅情報</span>
+          {showPlatform && <span className="ml-auto">番線</span>}
         </div>
         {rows.length === 0 ? (
           <div className="p-3 text-center text-xs font-bold text-[#857D99]">まもなく終点に到着します</div>
@@ -140,7 +144,7 @@ export const TrainDetailV2: React.FC<TrainDetailV2Props> = ({ train, lineName, o
           rows.map((row, i) => (
             <div
               key={`${row.stationName}-${i}`}
-              className={`grid grid-cols-[70px_22px_1fr] items-center border-b border-[#E6E2EE]/50 last:border-b-0 text-xs font-bold ${row.pass ? 'min-h-[30px] text-[#A59FB5]' : 'min-h-[40px]'}`}
+              className={`grid ${showPlatform ? 'grid-cols-[70px_22px_1fr_3rem]' : 'grid-cols-[70px_22px_1fr]'} items-center border-b border-[#E6E2EE]/50 last:border-b-0 text-xs font-bold ${row.pass ? 'min-h-[30px] text-[#A59FB5]' : 'min-h-[40px]'}`}
             >
               <div className="text-right pr-2 font-mono leading-tight">
                 {row.pass ? (
@@ -159,6 +163,13 @@ export const TrainDetailV2: React.FC<TrainDetailV2Props> = ({ train, lineName, o
                 {!row.pass && <span className="absolute left-[5px] top-1/2 -mt-1.5 w-3 h-3 rounded-full bg-white border-[3px] border-[#5B21B6]" />}
               </div>
               <div className={row.pass ? '' : 'text-[#221C35]'}>{row.stationName}</div>
+              {showPlatform && (
+                <div className="text-center">
+                  {!row.pass && row.platform && (
+                    <span className="inline-block min-w-[22px] px-1.5 py-px rounded bg-[#EDE9FE] text-[#5B21B6] text-xs font-extrabold">{row.platform}</span>
+                  )}
+                </div>
+              )}
             </div>
           ))
         )}

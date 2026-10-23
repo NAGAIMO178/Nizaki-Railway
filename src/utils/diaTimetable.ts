@@ -5,6 +5,7 @@ import { disruptionManager } from './disruptionManager';
 import { isLaunched } from './launch';
 import { bumpForDelay, crowdDelayRate, dayTypeOf, loadAllCrowdTrains, trainMaxLevelAnyLine, trainSegmentLevel } from './crowd';
 import type { DynamicDeparture } from '../components/MyStationCard';
+import { platformAtStop, departurePlatformOfRow } from './platform';
 
 type MasterLine = {
   name: string;
@@ -290,6 +291,7 @@ export const computeBoard = (data: BoardData, platform: 1 | 2, nowMs: number, li
       isOrigin: normalizeName(trainOriginName(c.line.master, train)) === normalizeName(c.line.master.stations[c.line.stationIdx]?.[0] ?? ''),
       delayMinutes: eff.delayMinutes,
       isSuspended: eff.isSuspended,
+      platform: departurePlatformOfRow(train, c.line.stationIdx),
     };
   });
 
@@ -378,7 +380,8 @@ export interface DiaLiveTrain {
   expressBand?: string; // 有料の特急の、見出しの名前(例: Nライナー)
   expressName?: string; // 有料の特急の、号つきの名前(例: Nライナー5号)
   // これから通る駅(止まる駅と、通過する駅)。通過する駅は、時刻なし
-  rows: { stationName: string; pass: boolean; scheduledTime?: string; estimatedTime?: string }[];
+  // platform: その駅の番線(公開後のダイヤだけ。止まる駅だけ。無いときは、なし)
+  rows: { stationName: string; pass: boolean; scheduledTime?: string; estimatedTime?: string; platform?: string }[];
 }
 
 // 有料の特急の、見出しの名前と、号つきの名前(予約の画面と、同じ番号の付け方)
@@ -555,6 +558,7 @@ export const computeLiveTrains = (data: LineData, lineId: string, direction: 1 |
         pass: false,
         scheduledTime: formatDiaTime(stops[k].A),
         estimatedTime: formatDiaTime(stops[k].A + delay * 60),
+        platform: platformAtStop(t, k),
       });
       if (k + 1 < stops.length) pushPass(stops[k].pos + 1, stops[k + 1].pos);
     }

@@ -52,7 +52,7 @@ export interface LiveTrainPos {
   paid?: boolean;
   expressBand?: string;
   expressName?: string;
-  rows?: { stationName: string; pass: boolean; scheduledTime?: string; estimatedTime?: string }[];
+  rows?: { stationName: string; pass: boolean; scheduledTime?: string; estimatedTime?: string; platform?: string }[];
 }
 
 // 統一された種別スタイル取得関数
