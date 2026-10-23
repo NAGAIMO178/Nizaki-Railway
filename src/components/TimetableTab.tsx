@@ -3,6 +3,8 @@ import { ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
 import { REGISTERABLE_LINES } from './MyStationRegisterCard';
 import { RouteSearch } from './RouteSearch';
 import { isLaunched } from '../utils/launch';
+import { TimetableLegend } from './TimetableLegend';
+import { destLabels, buildLegendRows } from '../utils/timetableLegend';
 import {
   loadTimetableLines,
   loadStationTimetable,
@@ -113,6 +115,13 @@ export const TimetableTab: React.FC = () => {
     });
     return Array.from(byHour.entries()).sort((a, b) => a[0] - b[0]);
   }, [direction]);
+
+  // 行先の記号(頭文字)と、その方向に出る記号だけの凡例
+  const labels = useMemo(() => destLabels(direction?.departures.map((d) => d.dest) ?? []), [direction]);
+  const legendRows = useMemo(
+    () => (direction ? buildLegendRows(direction.departures, direction.mainDest, labels) : []),
+    [direction, labels]
+  );
 
   // これから最初に発車する列車(時刻表で目立たせる)
   const nextSec = direction?.departures.find((d) => d.sec >= nowSec)?.sec;
@@ -233,7 +242,7 @@ export const TimetableTab: React.FC = () => {
                           >
                             <span className={`text-[9px] font-bold ${isNext ? 'text-white/90' : d.paid ? 'text-amber-600' : 'text-[#857D99]'}`}>
                               {d.typeAbbr}
-                              {d.dest !== direction?.mainDest ? ` ${d.dest}` : ''}
+                              {d.dest !== direction?.mainDest ? ` ${labels.get(d.dest) ?? d.dest}` : ''}
                             </span>
                             <span className="text-sm font-mono font-black">{m}</span>
                           </div>
@@ -245,11 +254,7 @@ export const TimetableTab: React.FC = () => {
               </div>
             )}
 
-            <div className="text-[10px] text-[#857D99] leading-relaxed px-1">
-              {timetable.types.map((t) => `${t.abbr}…${t.name}${t.paid ? '(有料)' : ''}`).join(' / ')}
-              <br />
-              24は、翌日の0時台です。表示は予定の時刻で、遅れは反映されません。
-            </div>
+            <TimetableLegend rows={legendRows} />
           </>
         )}
       </div>
