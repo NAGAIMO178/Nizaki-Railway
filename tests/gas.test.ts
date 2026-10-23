@@ -908,7 +908,7 @@ describe('会員の登録の入力の検査と、認証コードの回数制限'
 
 // ---- 公開記念イベントのごほうび(claimEventTare): サーバーで判定して、1人1回だけ ----
 describe('公開記念イベントのごほうび(claimEventTare)', () => {
-  const H = ['予約日時', '予約番号', 'LINE_USER_ID', '列車名', '号車', '座席番号', '席種', '乗車駅', '降車駅', '合計金額', 'ステータス', '会員ID', '予約日', '出発時刻', '到着時刻', '乗車日時', '初回登録日時'];
+  const H = ['予約日時', '予約番号', 'LINE_USER_ID', '列車名', '号車', '座席番号', '席種', '乗車駅', '降車駅', '合計金額', 'ステータス', '会員ID', '予約日', '出発時刻', '到着時刻', '乗車日時', '初回登録日時', '初回の内容'];
   const jst = (s: string) => Date.parse(s + '+09:00');
   const START = jst('2026-11-01T00:00:00');
   let grid: unknown[][];
@@ -923,6 +923,8 @@ describe('公開記念イベントのごほうび(claimEventTare)', () => {
       乗車駅: '東京駅', 降車駅: '土浦駅', 合計金額: 3000, ステータス: '予約確定', 会員ID: 'M1', 予約日: '2026-11-01', 出発時刻: '10:05',
       到着時刻: '12:00', 乗車日時: '', 初回登録日時: '2026/11/01 09:00:00', ...o,
     };
+    // 判定は、最初に登録された内容だけを見る。指定がなければ、いまの列と同じ内容で、最初に登録されたことにする
+    if (!('初回の内容' in o)) v['初回の内容'] = JSON.stringify({ train: v['列車名'], from: v['乗車駅'], to: v['降車駅'], date: v['予約日'], dep: v['出発時刻'] });
     return H.map((h) => v[h]);
   };
   const claim = (orderId: unknown = 'EQ-100', token = 'ok') => gas.handleClaimEventTare(token, orderId);
@@ -1068,9 +1070,9 @@ describe('公開記念イベントのごほうび(claimEventTare)', () => {
     expect(claim()).toMatchObject({ code: 'event_not_yet' });
   });
 
-  it('日付の型で入っている予約日・登録日時も、読める', () => {
+  it('日付の型で入っている登録日時も、読める', () => {
     const ctxDate = (iso: string) => vm.runInContext(`new Date('${iso}')`, gas); // 台帳の読み出しと同じ世界の Date
-    grid[1] = resv({ 予約日: ctxDate('2026-11-01T00:00:00+09:00'), 初回登録日時: ctxDate('2026-11-01T09:00:00+09:00') });
+    grid[1] = resv({ 初回登録日時: ctxDate('2026-11-01T09:00:00+09:00') });
     gas.Utilities = {
       formatDate: (d: Date, _tz: string, pattern: string) => {
         const j = new Date(d.getTime() + 9 * 3600 * 1000).toISOString();
@@ -1206,5 +1208,23 @@ describe('予約の最初の登録の日時(初回登録日時)', () => {
     send(4000);
     expect(grid[1][H.indexOf('初回登録日時')]).toBe('2026/11/01 09:00:00');
     expect(grid[1][H.indexOf('合計金額')]).toBe(4000);
+  });
+});
+
+describe('イベントの判定は、最初の内容だけを見る(更新で書き換えても迂回できない)', () => {
+  it('いまの列を書き換えても、最初の内容が条件を満たさなければ、付かない', () => {
+    const H = ['予約日時', '予約番号', 'LINE_USER_ID', '列車名', '号車', '座席番号', '席種', '乗車駅', '降車駅', '合計金額', 'ステータス', '会員ID', '予約日', '出発時刻', '到着時刻', '乗車日時', '初回登録日時', '初回の内容'];
+    const first = JSON.stringify({ train: '特急めぐり 15号', from: '東京駅', to: '土浦駅', date: '2026-12-31', dep: '10:05' }); // 遠い日付で登録
+    const row = ['', 'EQ-100', '', '特急めぐり 15号', 1, '1A', '指定席', '東京駅', '土浦駅', 3000, '予約確定', 'M1', '2026-11-01', '10:05', '12:00', '', '2026/11/01 09:00:00', first]; // いまの列は、過去の発車に書き換え済み
+    gas.nowMs = () => Date.parse('2026-11-01T10:42:00+09:00');
+    gas.getDataSpreadsheet = () => ({ getSheetByName: () => ({ getDataRange: () => ({ getValues: () => [H, row] }) }) });
+    gas.CacheService = { getScriptCache: () => ({ get: () => null, put: () => undefined, remove: () => undefined }) };
+    gas.PropertiesService = { getScriptProperties: () => ({ getProperty: () => '' }) };
+    rows.push(['t', 'M1', 'welcome', 'welcome', 100, 'x']);
+    expect(gas.handleClaimEventTare('ok', 'EQ-100')).toMatchObject({ code: 'event_not_yet' });
+    row[17] = ''; // 最初の内容が無い(公開前の古い予約)・読めない
+    expect(gas.handleClaimEventTare('ok', 'EQ-100')).toMatchObject({ code: 'event_not_yet' });
+    row[17] = '{こわれた';
+    expect(gas.handleClaimEventTare('ok', 'EQ-100')).toMatchObject({ code: 'event_not_yet' });
   });
 });

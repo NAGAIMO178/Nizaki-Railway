@@ -501,7 +501,7 @@ function logCouponIssue(userId, course) {
 // 予約台帳の列(この順で作成。既存の台帳には不足している列だけ後ろへ追加する)
 const RESERVATION_HEADERS = [
   '予約日時', '予約番号', 'LINE_USER_ID', '列車名', '号車', '座席番号', '席種',
-  '乗車駅', '降車駅', '合計金額', 'ステータス', '会員ID', '予約日', '出発時刻', '到着時刻', '乗車日時', '初回登録日時'
+  '乗車駅', '降車駅', '合計金額', 'ステータス', '会員ID', '予約日', '出発時刻', '到着時刻', '乗車日時', '初回登録日時', '初回の内容'
 ];
 
 function getOrCreateReservationsSheet() {
@@ -672,6 +672,11 @@ function handleCreateReservation(sessionToken, order, awardPoints) {
     };
 
     let firstRegisteredAt = nowText(); // 最初に登録された日時(更新では、変えない。イベントのごほうびの判定が、予約の時刻に使う)
+    // 最初に登録された、列車・区間・日付・発車時刻(更新では、変えない)。イベントのごほうびの判定は、現在の列ではなく、これだけを見る
+    // (更新で、判定に使う列を書き換えて、条件を迂回されないように)
+    let firstContent = JSON.stringify({
+      train: values['列車名'], from: values['乗車駅'], to: values['降車駅'], date: values['予約日'], dep: values['出発時刻']
+    });
     let targetRow = -1;
     let previousTotal = null; // 更新のとき、更新前の合計金額(デリバリーを足したときのポイントを求める)
     let previousBasis = 0;    // これまでに、ポイントを計算した、いちばん大きい合計金額(下げて、また上げても、二重に付かない)
@@ -690,6 +695,7 @@ function handleCreateReservation(sessionToken, order, awardPoints) {
         previousBasis = readPointBasis(col['明細'] !== undefined ? data[i][col['明細']] : '');
         boardedAt = col['乗車日時'] !== undefined ? cellText(data[i][col['乗車日時']]) : '';
         firstRegisteredAt = col['初回登録日時'] !== undefined ? cellText(data[i][col['初回登録日時']]) : '';
+        firstContent = col['初回の内容'] !== undefined ? cellText(data[i][col['初回の内容']]) : '';
         break;
       }
     }
@@ -710,6 +716,7 @@ function handleCreateReservation(sessionToken, order, awardPoints) {
 
     values['乗車日時'] = boardedAt;
     values['初回登録日時'] = firstRegisteredAt;
+    values['初回の内容'] = firstContent;
     const row = headers.map(function (h) { return values[h] !== undefined ? sheetSafe(values[h]) : ''; });
     if (targetRow === -1) {
       sheet.appendRow(row);
@@ -718,7 +725,7 @@ function handleCreateReservation(sessionToken, order, awardPoints) {
       sheet.getRange(targetRow, 1, 1, row.length).setValues([row]);
     }
     // 日付・時刻は文字列のまま保存する(シートが日付型に変換しないように)
-    ['予約日', '出発時刻', '到着時刻', '乗車日時', '初回登録日時'].forEach(function (h) {
+    ['予約日', '出発時刻', '到着時刻', '乗車日時', '初回登録日時', '初回の内容'].forEach(function (h) {
       const c = headers.indexOf(h);
       if (c !== -1) {
         const cell = sheet.getRange(targetRow, c + 1);
@@ -2100,17 +2107,25 @@ function isEventTareEligible(memberId, orderId, now) {
   if (data.length <= 1) return false;
   const col = {};
   data[0].forEach(function (h, i) { col[h] = i; });
-  const need = ['予約番号', '会員ID', 'ステータス', '列車名', '乗車駅', '降車駅', '予約日', '出発時刻', '初回登録日時'];
+  const need = ['予約番号', '会員ID', 'ステータス', '初回登録日時', '初回の内容'];
   for (let i = 0; i < need.length; i++) if (col[need[i]] === undefined) return false;
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
     if (String(row[col['予約番号']]) !== orderId || String(row[col['会員ID']]) !== memberId) continue;
     if (String(row[col['ステータス']]) === 'キャンセル') return false;
-    if (String(row[col['列車名']]).indexOf('特急めぐり') !== 0) return false;
-    if (stripStationName(row[col['乗車駅']]) !== '東京') return false;
-    if (EVENT_TARE_DESTINATIONS.indexOf(stripStationName(row[col['降車駅']])) === -1) return false;
-    const date = cellText(row[col['予約日']], 'yyyy-MM-dd');
-    const dep = cellText(row[col['出発時刻']], 'HH:mm');
+    // 列車・区間・日付・発車時刻は、最初に登録されたときの内容だけを見る(あとの更新で書き換えられても、効かない)
+    let first;
+    try {
+      first = JSON.parse(cellText(row[col['初回の内容']]));
+    } catch (err) {
+      return false;
+    }
+    if (!first || typeof first !== 'object') return false;
+    if (String(first.train).indexOf('特急めぐり') !== 0) return false;
+    if (stripStationName(first.from) !== '東京') return false;
+    if (EVENT_TARE_DESTINATIONS.indexOf(stripStationName(first.to)) === -1) return false;
+    const date = typeof first.date === 'string' ? first.date : '';
+    const dep = typeof first.dep === 'string' ? first.dep : '';
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !isEventTareDeparture(dep)) return false;
     const depMs = Date.parse(date + 'T' + (dep.length === 4 ? '0' + dep : dep) + ':00+09:00');
     if (!isFinite(depMs) || depMs < start) return false;
