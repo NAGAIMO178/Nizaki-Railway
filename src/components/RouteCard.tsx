@@ -5,6 +5,7 @@ import { formatDiaTime } from '../utils/diaTimetable';
 import { RouteResult } from '../utils/routeSearch';
 import { routeCardMark, ROUTE_CARD_MARK_TEXT } from '../utils/routeCardMark';
 import { legBarJoins } from '../utils/legBars';
+import { legShowsCrowd } from '../utils/crowdShown';
 
 const DAY = 86400;
 
@@ -18,6 +19,7 @@ interface RouteCardProps {
 // 経路検索の候補カード。区間の行は、棒・路線名・種別・混雑の札・区間を、全カードで同じ位置から始める
 export const RouteCard: React.FC<RouteCardProps> = ({ result: r, index, lineColor, onOpen }) => {
   const mark = routeCardMark(r);
+  // 混雑の札の列は、混雑のデータがあれば、札を出さない区間でも空けておく(候補が並んだとき、区間の文字の位置がそろうように)
   const hasCrowd = r.legs.some((l) => l.crowd && crowdInfo(l.crowd));
   const joins = legBarJoins(r.legs);
   const columns = `6px 5.1em 1.1em ${hasCrowd ? '4.3em ' : ''}minmax(0,1fr)`;
@@ -49,7 +51,7 @@ export const RouteCard: React.FC<RouteCardProps> = ({ result: r, index, lineColo
       <div className="border-t border-[#EFEDF5] px-3.5 py-2.5 flex items-center gap-2">
         <div className="flex-1 min-w-0 grid items-center gap-x-1 gap-y-1.5 text-[11px] text-[#221C35]" style={{ gridTemplateColumns: columns }}>
           {r.legs.map((leg, k) => {
-            const crowd = leg.crowd ? crowdInfo(leg.crowd) : undefined;
+            const crowd = legShowsCrowd(leg) ? crowdInfo(leg.crowd!) : undefined;
             const join = joins[k];
             return (
               <React.Fragment key={`${leg.trainNo}-${k}`}>
