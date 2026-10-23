@@ -5,6 +5,7 @@ import { formatDiaTime } from '../utils/diaTimetable';
 import { fareTierLabel } from '../utils/fare';
 import { RouteResult, RouteLeg } from '../utils/routeSearch';
 import { crowdInfo } from '../utils/crowd';
+import { legShowsCrowd } from '../utils/crowdShown';
 
 const DAY = 86400;
 
@@ -52,7 +53,7 @@ const LegBlock: React.FC<{ leg: RouteLeg }> = ({ leg }) => {
               {leg.delayMin}分遅れ
             </div>
           )}
-          {leg.crowd && crowdInfo(leg.crowd) && (
+          {legShowsCrowd(leg) && crowdInfo(leg.crowd!) && (
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-[#6B6380]">
               <span className="font-bold">混雑の目安</span>
               <span
