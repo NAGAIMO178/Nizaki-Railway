@@ -2053,7 +2053,7 @@ const EVENT_TARE_KEY = 'event:tare';
 const EVENT_TARE_POINTS = 350;
 const EVENT_TARE_TITLE = '幻のタレ事件 解決報奨（味覚捜査班）';
 const EVENT_TARE_START_MS = Date.parse('2026-11-01T00:00:00+09:00');
-const EVENT_TARE_RIDE_MINUTES = 37;             // 東京〜土浦の予定の所要(特急めぐりは、どの便も同じ)
+const EVENT_TARE_RIDE_SECONDS = 2200;           // 東京〜土浦の予定の所要 36分40秒(特急めぐりは、どの便も同じ。ダイヤの実データ)
 const EVENT_TARE_BOOKING_LEAD_MS = 5 * 60 * 1000; // 予約は、発車の5分前まで
 const EVENT_TARE_DESTINATIONS = ['土浦', 'ひたちなか海浜公園', '日立'];
 const EVENT_TARE_MAX_ATTEMPTS = 5;
@@ -2118,7 +2118,7 @@ function isEventTareEligible(memberId, orderId, now) {
     const registeredMs = stampToMs(row[col['初回登録日時']]);
     if (registeredMs === null || registeredMs > depMs - EVENT_TARE_BOOKING_LEAD_MS) return false;
     // 発車から、予定の所要時間が過ぎていること(サーバーの時刻。端末の時計は見ない。遅れは見ない)
-    return now >= depMs + EVENT_TARE_RIDE_MINUTES * 60 * 1000;
+    return now >= depMs + EVENT_TARE_RIDE_SECONDS * 1000;
   }
   return false;
 }

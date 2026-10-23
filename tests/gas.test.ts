@@ -930,7 +930,7 @@ describe('公開記念イベントのごほうび(claimEventTare)', () => {
 
   beforeEach(() => {
     grid = [[...H], resv()];
-    now = jst('2026-11-01T10:42:00'); // 10:05発 + 37分
+    now = jst('2026-11-01T10:42:00'); // 10:05発 + 36分40秒より後
     cache = {};
     props = {};
     lockFails = false;
@@ -983,10 +983,10 @@ describe('公開記念イベントのごほうび(claimEventTare)', () => {
     expect(ledgerRows().length).toBe(1);
   });
 
-  it('発車から37分たつまでは付かない。37分ちょうどで付く', () => {
-    now = jst('2026-11-01T10:41:59');
+  it('発車から36分40秒(2200秒)たつまでは付かない。ちょうどで付く', () => {
+    now = jst('2026-11-01T10:41:39');
     expect(claim()).toMatchObject({ code: 'event_not_yet' });
-    now = jst('2026-11-01T10:42:00');
+    now = jst('2026-11-01T10:41:40');
     expect(claim().status).toBe('success');
   });
 
