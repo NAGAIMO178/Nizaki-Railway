@@ -18,7 +18,8 @@ type Master = Record<string, MasterLine>;
 // [列車番号(6桁), 種別番号, 方向, 運用番号, 始発の発車秒, [駅番号, 着, 発, ...3つずつ(始発秒からの差。-1は無し)], 運行番号(例: 61K)]
 // 公開前のダイヤ(data/dia/)には、運行番号が無い
 // 7つ目の次に、列車全体の「行先の駅名」「始発の駅名」が入る(直通の列車は、路線をまたいだ全体。公開前のダイヤには無い)
-type TrainRow = [string, number, string, string, number, number[], string?, string?, string?];
+// 10番目に、停車駅ごとの番線(停車駅の並び 5番目 と同じ順。公開後のダイヤだけ)。読むのは platform.ts
+export type TrainRow = [string, number, string, string, number, number[], string?, string?, string?, string[]?];
 // {方向: [[発車秒, 種別番号, 列車の添字], ...]}
 type StationFile = Record<string, [number, number, number][]>;
 
@@ -597,6 +598,12 @@ export const EXPRESS_TYPES = {
 } as const;
 
 export type ExpressKey = keyof typeof EXPRESS_TYPES;
+
+// 特急の予約で使う、もとの路線のコード(直通の特急は、つないだ2つの路線。ほかは、その路線だけ)
+export const expressSourceLines = (key: ExpressKey): string[] => {
+  const j = JOINED_EXPRESS[key as keyof typeof JOINED_EXPRESS];
+  return j && isLaunched() ? [...j.lines] : [EXPRESS_TYPES[key].lineCode];
+};
 
 // 直通の特急(公開後の特急めぐり: 東京〜日立)は、前の路線と後の路線にまたがる。予約では、2つの路線を、駅の並びと時刻をつないだ
 // 1本の仮の路線として扱う(号数・乗る駅・降りる駅・営業キロが、東京〜日立で通しになる)。接続の駅で、前の部分の着と、後の部分の発を、1つの駅にまとめる

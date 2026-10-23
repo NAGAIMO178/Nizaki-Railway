@@ -5,7 +5,8 @@
 //  - 同じ予約の同じ知らせは、1回だけ(再読み込みしても重ねない)。アプリを閉じているあいだは、知らせられない。
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ActiveOrder } from '../types';
-import { EXPRESS_TYPES, findExpressTrips, loadExpressData, resolveTrainDelay } from './diaTimetable';
+import { EXPRESS_TYPES, expressSourceLines, findExpressTrips, getCachedLineData, loadExpressData, resolveTrainDelay } from './diaTimetable';
+import { departurePlatform, platformLabel } from './platform';
 import { getNotificationPermissionState, sendLocalPushNotification } from './pushNotification';
 import { formatSeats } from './seatUtils';
 
@@ -33,6 +34,7 @@ interface Resolved {
   trainName: string;
   carNo: number;
   seatNo: string;
+  platform?: string; // 乗る駅の番線(ダイヤに無ければ、なし)
   hasItems: boolean;
 }
 
@@ -60,8 +62,12 @@ const writeNotified = (orderId: string, keys: Set<string>) => {
   }
 };
 
+// 発車のリマインドの文(番線が分かるときは、座席の前に「2番線」を入れる)
+export const remindText = (r: { trainName: string; boarding: string; carNo: number; seatNo: string; platform?: string }, mins: number): string =>
+  `ご予約の${r.trainName}は、あと約${mins}分で${r.boarding}駅を発車します(${[platformLabel(r.platform), `${r.carNo}号車 ${formatSeats(r.seatNo)}`].filter((x) => x).join('・')})。`;
+
 // 予約から、ダイヤ上の列車を探す(特急の名前・乗る駅・降りる駅・日付から)
-const resolveOrder = async (order: ActiveOrder): Promise<Resolved | null> => {
+export const resolveOrder = async (order: ActiveOrder): Promise<Resolved | null> => {
   const key = (Object.keys(EXPRESS_TYPES) as (keyof typeof EXPRESS_TYPES)[]).find((k) => order.trainName.startsWith(EXPRESS_TYPES[k].label));
   if (!key || !order.boardingStation || !order.destinationStation) return null;
   const cfg = EXPRESS_TYPES[key];
@@ -79,6 +85,12 @@ const resolveOrder = async (order: ActiveOrder): Promise<Resolved | null> => {
     d.setHours(0, 0, 0, 0);
     dayStartMs = d.getTime();
   }
+  // 乗る駅の番線: 直通の特急は、つないだ2つの路線のうち、その駅から発車する側の行を読む
+  let platform: string | undefined;
+  for (const code of expressSourceLines(key)) {
+    platform = departurePlatform(getCachedLineData(code), trip.code, boarding);
+    if (platform) break;
+  }
   return {
     orderId: order.orderId,
     lineCode: trip.boardLine ?? cfg.lineCode,
@@ -92,6 +104,7 @@ const resolveOrder = async (order: ActiveOrder): Promise<Resolved | null> => {
     trainName: order.trainName,
     carNo: order.carNo,
     seatNo: order.seatNo,
+    platform,
     hasItems: !!order.items && order.items.length > 0,
   };
 };
@@ -169,10 +182,10 @@ export function useReservationWatcher(opts: {
             if (minsToDep <= near && !notified.has(`remind${near}`)) {
               mark(`remind${far}`);
               mark(`remind${near}`);
-              notify('【発車のお知らせ】', `ご予約の${r.trainName}は、あと約${Math.max(1, Math.ceil(minsToDep))}分で${r.boarding}駅を発車します(${r.carNo}号車 ${formatSeats(r.seatNo)})。`, tag('remind'));
+              notify('【発車のお知らせ】', remindText(r, Math.max(1, Math.ceil(minsToDep))), tag('remind'));
             } else if (minsToDep <= far && !notified.has(`remind${far}`) && !notified.has(`remind${near}`)) {
               mark(`remind${far}`);
-              notify('【発車のお知らせ】', `ご予約の${r.trainName}は、あと約${Math.ceil(minsToDep)}分で${r.boarding}駅を発車します(${r.carNo}号車 ${formatSeats(r.seatNo)})。`, tag('remind'));
+              notify('【発車のお知らせ】', remindText(r, Math.ceil(minsToDep)), tag('remind'));
             }
           }
 
