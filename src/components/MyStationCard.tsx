@@ -5,6 +5,8 @@ import { findNearestStation } from '../utils/nearestStation';
 import { disruptionManager } from '../utils/disruptionManager';
 import { computeBoard, formatDiaTime, getCachedBoardData, loadBoardData } from '../utils/diaTimetable';
 import type { BoardData, BoardResult } from '../utils/diaTimetable';
+import { isLaunched } from '../utils/launch';
+import { platformLabel } from '../utils/platform';
 
 interface MyStationCardProps {
   registeredStations: RegisterableStation[];
@@ -25,6 +27,7 @@ export interface DynamicDeparture {
   delayMinutes?: number;  // 遅延分数
   isSuspended?: boolean;  // 運休・見合わせフラグ
   carCount?: number;      // 両数
+  platform?: string;      // 発車の番線(公開後のダイヤだけ)
 }
 
 // 種別ごとの指定カラーを取得する関数 (浮かない洗練されたトーン＆マナー)
@@ -592,11 +595,14 @@ export const MyStationCard: React.FC<MyStationCardProps> = ({
                     {dep.isSuspended ? (
                       <div className="text-[9px] text-rose-600 font-bold">運転見合わせ</div>
                     ) : (
-                      !isImminent && (
-                        <div className="text-[9px] text-[#857D99] font-bold">
-                          {Math.floor(remainingSec / 60)}分後
-                        </div>
-                      )
+                      <div className={`text-[9px] font-bold ${isImminent ? 'text-white/90' : 'text-[#857D99]'}`}>
+                        {/* 番線(公開後だけ。分からないときは出さない) */}
+                        {isLaunched() && dep.platform && (
+                          <span className={`text-[11px] font-extrabold ${isImminent ? 'text-white' : 'text-[#5B21B6]'}`}>{platformLabel(dep.platform)}</span>
+                        )}
+                        {isLaunched() && dep.platform && !isImminent && ' ・ '}
+                        {!isImminent && <>{Math.floor(remainingSec / 60)}分後</>}
+                      </div>
                     )}
                   </div>
                   <Users className={`w-3.5 h-3.5 ${isImminent ? 'text-white/80' : 'text-[#857D99]'}`} />

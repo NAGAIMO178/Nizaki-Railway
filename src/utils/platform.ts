@@ -8,6 +8,15 @@ export const platformAtStop = (train: TrainRow, k: number): string | undefined =
   return p ? p : undefined;
 };
 
+// 列車の行で、駅(stationIdx)から発車するときの番線。発車のある停車駅だけ(終着駅は、着だけなので、対象外)
+export const departurePlatformOfRow = (train: TrainRow, stationIdx: number): string | undefined => {
+  const flat = train[5];
+  for (let k = 0; k * 3 < flat.length; k++) {
+    if (flat[k * 3] === stationIdx && flat[k * 3 + 2] !== -1) return platformAtStop(train, k);
+  }
+  return undefined;
+};
+
 // 路線のデータで、列車 trainNo が、駅 stationName から発車するときの番線。発車のある停車駅だけ(終着駅は、着だけなので、対象外)
 export const departurePlatform = (data: LineData | undefined, trainNo: string, stationName: string): string | undefined => {
   if (!data) return undefined;
@@ -16,12 +25,16 @@ export const departurePlatform = (data: LineData | undefined, trainNo: string, s
   const name = normalizeStationName(stationName);
   const stationIdx = data.master.stations.findIndex((s) => normalizeStationName(s[0]) === name);
   if (stationIdx < 0) return undefined;
-  const flat = train[5];
-  for (let k = 0; k * 3 < flat.length; k++) {
-    if (flat[k * 3] === stationIdx && flat[k * 3 + 2] !== -1) return platformAtStop(train, k);
-  }
-  return undefined;
+  return departurePlatformOfRow(train, stationIdx);
 };
+
+// 経路の1区間の「[発] 5番線 → [着] 3番線」。どちらも分からなければ undefined(片方だけなら、分かるほうだけ)
+export interface LegPlatformParts {
+  dep?: string;
+  arr?: string;
+}
+export const legPlatformParts = (leg: { depPlatform?: string; arrPlatform?: string }): LegPlatformParts | undefined =>
+  leg.depPlatform || leg.arrPlatform ? { dep: leg.depPlatform || undefined, arr: leg.arrPlatform || undefined } : undefined;
 
 // 知らせや画面に出す言い方(番線が無ければ、空)
 export const platformLabel = (platform: string | undefined): string => (platform ? `${platform}番線` : '');
