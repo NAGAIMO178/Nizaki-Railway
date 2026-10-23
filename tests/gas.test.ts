@@ -905,3 +905,306 @@ describe('会員の登録の入力の検査と、認証コードの回数制限'
     expect(appended).toEqual([]);
   });
 });
+
+// ---- 公開記念イベントのごほうび(claimEventTare): サーバーで判定して、1人1回だけ ----
+describe('公開記念イベントのごほうび(claimEventTare)', () => {
+  const H = ['予約日時', '予約番号', 'LINE_USER_ID', '列車名', '号車', '座席番号', '席種', '乗車駅', '降車駅', '合計金額', 'ステータス', '会員ID', '予約日', '出発時刻', '到着時刻', '乗車日時', '初回登録日時'];
+  const jst = (s: string) => Date.parse(s + '+09:00');
+  const START = jst('2026-11-01T00:00:00');
+  let grid: unknown[][];
+  let now: number;
+  let cache: Record<string, string>;
+  let props: Record<string, string>;
+  let lockFails: boolean;
+
+  const resv = (o: Record<string, unknown> = {}) => {
+    const v: Record<string, unknown> = {
+      予約日時: '2026/11/01 00:10:00', 予約番号: 'EQ-100', LINE_USER_ID: '', 列車名: '特急めぐり 15号', 号車: 1, 座席番号: '1A', 席種: '指定席',
+      乗車駅: '東京駅', 降車駅: '土浦駅', 合計金額: 3000, ステータス: '予約確定', 会員ID: 'M1', 予約日: '2026-11-01', 出発時刻: '10:05',
+      到着時刻: '12:00', 乗車日時: '', 初回登録日時: '2026/11/01 09:00:00', ...o,
+    };
+    return H.map((h) => v[h]);
+  };
+  const claim = (orderId: unknown = 'EQ-100', token = 'ok') => gas.handleClaimEventTare(token, orderId);
+  const ledgerRows = () => rows.slice(1).filter((r) => r[1] === 'M1');
+
+  beforeEach(() => {
+    grid = [[...H], resv()];
+    now = jst('2026-11-01T10:42:00'); // 10:05発 + 37分
+    cache = {};
+    props = {};
+    lockFails = false;
+    gas.nowMs = () => now;
+    gas.getDataSpreadsheet = () => ({ getSheetByName: () => ({ getDataRange: () => ({ getValues: () => grid.map((r) => [...r]) }) }) });
+    gas.CacheService = {
+      getScriptCache: () => ({
+        get: (k: string) => cache[k] ?? null,
+        put: (k: string, v: string) => void (cache[k] = v),
+        remove: (k: string) => void delete cache[k],
+      }),
+    };
+    gas.LockService = {
+      getScriptLock: () => ({
+        waitLock: () => {
+          if (lockFails) throw new Error('busy');
+        },
+        releaseLock: () => undefined,
+      }),
+    };
+    gas.PropertiesService = { getScriptProperties: () => ({ getProperty: (k: string) => props[k] ?? '' }) };
+    put('welcome', 'welcome', 100);
+  });
+
+  it('条件を満たせば、350ptと名札が付く(額は、サーバーの定数)', () => {
+    const r = claim();
+    expect(r).toMatchObject({ status: 'success', added: true, points: 350, balance: 450 });
+    const last = rows[rows.length - 1];
+    expect(last.slice(1, 5)).toEqual(['M1', 'event', 'event:tare', 350]);
+    expect(String(last[5])).toContain('味覚捜査班');
+  });
+
+  it('二重に押しても、1回だけ(台帳に同じ行を2つ作らない)', () => {
+    claim();
+    expect(claim()).toMatchObject({ status: 'success', added: false, points: 0, balance: 450 });
+    expect(ledgerRows().filter((r) => r[3] === 'event:tare').length).toBe(1);
+  });
+
+  it('ポイントの付与の1日の上限は、このイベントに効かない', () => {
+    for (let i = 0; i < 3; i++) put('reservation', `reservation:X${i}`, 1500); // きょうの上限(3000pt)を使い切った状態
+    expect(claim()).toMatchObject({ status: 'success', added: true, points: 350 });
+  });
+
+  it('サーバーの時刻が、2026-11-01 0:00より前なら、付かない', () => {
+    grid[1] = resv({ 予約日: '2026-10-31', 出発時刻: '10:05', 初回登録日時: '2026/10/31 09:00:00' });
+    now = jst('2026-10-31T23:59:59');
+    expect(claim()).toMatchObject({ status: 'error', code: 'event_not_yet' });
+    now = jst('2026-11-01T10:42:00');
+    expect(claim()).toMatchObject({ status: 'error', code: 'event_not_yet' }); // 乗車日時が、開始より前
+    expect(ledgerRows().length).toBe(1);
+  });
+
+  it('発車から37分たつまでは付かない。37分ちょうどで付く', () => {
+    now = jst('2026-11-01T10:41:59');
+    expect(claim()).toMatchObject({ code: 'event_not_yet' });
+    now = jst('2026-11-01T10:42:00');
+    expect(claim().status).toBe('success');
+  });
+
+  it('端末から送った時刻・額は、見ない(予約番号だけ受け取る)', () => {
+    now = jst('2026-11-01T10:00:00');
+    expect(gas.handleClaimEventTare('ok', 'EQ-100', 99999, '2000-01-01')).toMatchObject({ code: 'event_not_yet' });
+    expect(gas.handleClaimEventTare.length).toBe(2);
+  });
+
+  it('降りる駅が、土浦・ひたちなか海浜公園・日立なら通り、それ以外(柏・松戸など)は断る', () => {
+    ['土浦', 'ひたちなか海浜公園駅', '日立'].forEach((d, i) => {
+      rows.length = 2;
+      cache = {};
+      grid[1] = resv({ 降車駅: d });
+      expect(claim().status, d).toBe('success');
+      rows.splice(2); // 受け取りの行を消して、次を試す
+      rows[1] = ['t', 'M1', 'welcome', 'welcome', 100, 'x'];
+      void i;
+    });
+    ['柏', '松戸', '北千住', '東京', '大宮', ''].forEach((d) => {
+      cache = {};
+      grid[1] = resv({ 降車駅: d });
+      expect(claim(), d).toMatchObject({ code: 'event_not_yet' });
+    });
+  });
+
+  it('東京発でない・特急めぐりでない・取り消し・ほかの会員の予約・予約番号が違う、は断る', () => {
+    const bad: Array<Record<string, unknown>> = [
+      { 乗車駅: '松戸駅' }, { 乗車駅: '土浦駅', 降車駅: '日立駅' }, { 列車名: '特急あやみ 101号' }, { 列車名: '特急Nライナー 3号' },
+      { ステータス: 'キャンセル' }, { 会員ID: 'M2' }, { 予約番号: 'EQ-200' },
+    ];
+    bad.forEach((o) => {
+      cache = {};
+      grid[1] = resv(o);
+      expect(claim(), JSON.stringify(o)).toMatchObject({ code: 'event_not_yet' });
+    });
+    expect(ledgerRows().length).toBe(1);
+  });
+
+  it('始発(5:05)と、ダイヤにない時刻は、対象外。5:35から23:05までの30分おきは通る', () => {
+    ['05:05', '05:36', '05:00', '00:05', '04:35', '23:35', '10:00', '24:05', 'abc', ''].forEach((t) => {
+      cache = {};
+      grid[1] = resv({ 出発時刻: t, 初回登録日時: '2026/11/01 00:01:00' }); // 登録の時刻は、ほかの条件で断られないように、早くしておく
+      now = jst('2026-11-02T12:00:00');
+      expect(claim(), t).toMatchObject({ code: 'event_not_yet' });
+    });
+    ['05:35', '06:05', '12:35', '23:05'].forEach((t) => {
+      cache = {};
+      rows.splice(2);
+      grid[1] = resv({ 出発時刻: t, 予約日: '2026-11-01', 初回登録日時: '2026/11/01 00:30:00' });
+      now = jst('2026-11-02T12:00:00');
+      expect(claim().status, t).toBe('success');
+    });
+  });
+
+  it('予約が、発車の5分前より後に、サーバーへ登録されたものは、付かない(5分前ちょうどは、通る)', () => {
+    grid[1] = resv({ 初回登録日時: '2026/11/01 10:00:01' });
+    expect(claim()).toMatchObject({ code: 'event_not_yet' });
+    grid[1] = resv({ 初回登録日時: '2026/11/01 10:00:00' });
+    expect(claim().status).toBe('success');
+  });
+
+  it('登録の時刻が無い・読めない予約(公開前の古い形)は、例外にならず、対象外', () => {
+    ['', undefined, 'きのう', 12345, '2026-11-01'].forEach((v) => {
+      cache = {};
+      grid[1] = resv({ 初回登録日時: v });
+      expect(claim(), String(v)).toMatchObject({ code: 'event_not_yet' });
+    });
+    // 列そのものが無い古い台帳・見出ししか無い台帳・台帳が無い
+    const oldHeaders = H.filter((h) => h !== '初回登録日時' && h !== '乗車日時');
+    grid = [[...oldHeaders], oldHeaders.map(() => 'x')];
+    cache = {};
+    expect(claim()).toMatchObject({ code: 'event_not_yet' });
+    grid = [[...H]];
+    cache = {};
+    expect(claim()).toMatchObject({ code: 'event_not_yet' });
+    gas.getDataSpreadsheet = () => ({ getSheetByName: () => null });
+    cache = {};
+    expect(claim()).toMatchObject({ code: 'event_not_yet' });
+  });
+
+  it('日付の型で入っている予約日・登録日時も、読める', () => {
+    const ctxDate = (iso: string) => vm.runInContext(`new Date('${iso}')`, gas); // 台帳の読み出しと同じ世界の Date
+    grid[1] = resv({ 予約日: ctxDate('2026-11-01T00:00:00+09:00'), 初回登録日時: ctxDate('2026-11-01T09:00:00+09:00') });
+    gas.Utilities = {
+      formatDate: (d: Date, _tz: string, pattern: string) => {
+        const j = new Date(d.getTime() + 9 * 3600 * 1000).toISOString();
+        const [y, mo, da] = [j.slice(0, 4), j.slice(5, 7), j.slice(8, 10)];
+        return pattern === 'yyyy-MM-dd' ? `${y}-${mo}-${da}` : `${y}/${mo}/${da} ${j.slice(11, 19)}`;
+      },
+    };
+    expect(claim().status).toBe('success');
+  });
+
+  it('おかしな予約番号(文字でない・空・長すぎる・記号)は、断る', () => {
+    [undefined, null, 5, {}, ['EQ-100'], '', 'x'.repeat(41), 'EQ 100', 'EQ_100'].forEach((o) => {
+      cache = {};
+      const r = gas.handleClaimEventTare('ok', o); // (claim() は、undefined を既定の番号にするので、直接呼ぶ)
+      expect([String(o), r.code]).toEqual([String(o), 'event_not_yet']);
+    });
+  });
+
+  it('断りの返事は、何が足りないかを区別しない(同じ文言・同じ code)', () => {
+    const reasons = [{ 降車駅: '柏' }, { 出発時刻: '05:05' }, { ステータス: 'キャンセル' }, { 初回登録日時: '2026/11/01 10:30:00' }];
+    const replies = reasons.map((o) => {
+      cache = {};
+      grid[1] = resv(o);
+      return claim();
+    });
+    replies.forEach((r) => expect(r).toEqual(replies[0]));
+    expect(replies[0]).toEqual({ status: 'error', code: 'event_not_yet', message: 'まだ対象ではありません。' });
+  });
+
+  it('総当たりを防ぐ: 5回まで。止まったあとは、条件を満たしても、しばらく断る。成功すると、回数は消える', () => {
+    grid[1] = resv({ 降車駅: '柏' });
+    for (let i = 0; i < 5; i++) expect(claim()).toMatchObject({ code: 'event_not_yet' });
+    grid[1] = resv();
+    expect(claim()).toMatchObject({ status: 'error', code: 'event_locked' });
+    cache = {}; // 10分たった
+    expect(claim().status).toBe('success');
+    expect(cache['event_tare_try_M1']).toBeUndefined();
+  });
+
+  it('止まっているときは、ロックを待たずに断る。ロックを取れないときは、確かめずに混み合っていると返す', () => {
+    cache['event_tare_try_M1'] = '5';
+    lockFails = true;
+    expect(claim()).toMatchObject({ code: 'event_locked' });
+    cache = {};
+    expect(claim()).toMatchObject({ status: 'error', code: 'event_busy' });
+    expect(ledgerRows().length).toBe(1);
+  });
+
+  it('試す回数は、確かめる前に確保する(確かめている最中に同時に届いても、5回を超えて試せない)', () => {
+    let nested = false;
+    let checks = 0;
+    const base = gas.isEventTareEligible;
+    gas.isEventTareEligible = (...a: unknown[]) => {
+      checks++;
+      if (!nested) {
+        nested = true;
+        for (let i = 0; i < 20; i++) claim();
+      }
+      return base(...a);
+    };
+    claim();
+    expect(checks).toBeLessThanOrEqual(5);
+  });
+
+  it('ログインの有効期限が切れているときは、断る。最初の同期の前は、付けない', () => {
+    expect(claim('EQ-100', 'bad')).toMatchObject({ status: 'error', code: 'session' });
+    rows.length = 1; // 台帳が空(同期の前)
+    expect(claim().status).toBe('error');
+    expect(rows.length).toBe(1);
+  });
+
+  it('アプリから、判定なしで、受け取ることはできない(earnEventReward・端末の申告・コード)', () => {
+    expect(gas.handleEarnEventReward('ok', 'tare')).toMatchObject({ status: 'error' });
+    expect(gas.eventRewardsFrom({ eventRewards: ['tare', 'event:tare'] })).toEqual([]);
+    expect(vm.runInContext('EVENT_REWARD_TABLE.tare', gas)).toBeUndefined();
+    expect(ledgerRows().length).toBe(1);
+  });
+
+  it('スクリプトプロパティで、開始を前にずらせる(公開前の動作確認用。ふだんは、設定しない)', () => {
+    grid[1] = resv({ 予約日: '2026-10-31', 初回登録日時: '2026/10/31 09:00:00' });
+    now = jst('2026-10-31T10:42:00');
+    expect(claim()).toMatchObject({ code: 'event_not_yet' });
+    props.EVENT_TARE_START_MS = String(jst('2026-10-30T00:00:00'));
+    expect(claim().status).toBe('success');
+  });
+
+  it('受け取り済みかを、アカウントのデータに入れる(eventTareCleared)', () => {
+    const build = () => gas.buildAccountData('M1', gas.readMemberPoints('M1'), { codes: [] }, { stage: 1, stamps: [], cleared: false });
+    gas.getOrCreateSheetWithHeaders = () => ({ getDataRange: () => ({ getValues: () => rows.map((r) => [...r]) }), appendRow: (r: unknown[]) => void rows.push(r) });
+    expect(build().eventTareCleared).toBe(false);
+    claim();
+    expect(build().eventTareCleared).toBe(true);
+  });
+});
+
+describe('予約の最初の登録の日時(初回登録日時)', () => {
+  const H = ['予約日時', '予約番号', 'LINE_USER_ID', '列車名', '号車', '座席番号', '席種', '乗車駅', '降車駅', '合計金額', 'ステータス', '会員ID', '予約日', '出発時刻', '到着時刻', '乗車日時', '初回登録日時'];
+  let grid: unknown[][];
+  let clock: string;
+
+  beforeEach(() => {
+    grid = [[...H]];
+    clock = '2026/11/01 09:00:00';
+    const sheet = {
+      getDataRange: () => ({ getValues: () => grid.map((r) => [...r]) }),
+      appendRow: (r: unknown[]) => void grid.push([...r]),
+      getLastRow: () => grid.length,
+      getLastColumn: () => grid[0].length,
+      getRange: (row: number, col: number) => ({
+        getValues: () => [grid[row - 1].slice(col - 1, col)],
+        setValue: (v: unknown) => void (grid[row - 1][col - 1] = v),
+        setValues: (vs: unknown[][]) => vs.forEach((r, i) => r.forEach((v, j) => void (grid[row - 1 + i][col - 1 + j] = v))),
+        setNumberFormat: () => undefined,
+      }),
+    };
+    gas.verifySessionToken = () => 'M1';
+    gas.findMemberById = () => ({ memberId: 'M1', lineUserId: '' });
+    gas.getOrCreateReservationsSheet = () => sheet;
+    gas.nowText = () => clock;
+    gas.Utilities = { formatDate: () => '2026/11/01 12:00:00' };
+  });
+
+  const send = (total: number) =>
+    gas.handleCreateReservation('t', {
+      orderId: 'EQ-1', trainName: '特急めぐり 15号', carNo: 1, seatNo: '1A', seatType: '指定席', boardingStation: '東京駅', destinationStation: '土浦駅',
+      totalPrice: total, reservedDate: '2026-11-01', departureTime: '10:05', arrivalTime: '12:00',
+    }, false);
+
+  it('最初に登録された日時を残し、更新(デリバリーの追加など)では、変えない', () => {
+    send(3000);
+    expect(grid[1][H.indexOf('初回登録日時')]).toBe('2026/11/01 09:00:00');
+    clock = '2026/11/01 11:30:00'; // 発車のあとに、デリバリーを足した
+    send(4000);
+    expect(grid[1][H.indexOf('初回登録日時')]).toBe('2026/11/01 09:00:00');
+    expect(grid[1][H.indexOf('合計金額')]).toBe(4000);
+  });
+});

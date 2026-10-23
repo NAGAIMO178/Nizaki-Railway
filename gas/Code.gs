@@ -72,6 +72,10 @@ function doPost(e) {
     if (json.action === 'spendPoints') {
       return handleSpendPoints(json.sessionToken, json.orderId, json.points, json.title);
     }
+    // 公開記念イベントのごほうび(額はサーバーの定数。受け取るのは、予約番号だけ)
+    if (json.action === 'claimEventTare') {
+      return handleClaimEventTare(json.sessionToken, json.orderId);
+    }
     if (json.action === 'saveMysteryProgress') {
       return handleSaveMysteryProgress(json.sessionToken, json.progress);
     }
@@ -497,7 +501,7 @@ function logCouponIssue(userId, course) {
 // 予約台帳の列(この順で作成。既存の台帳には不足している列だけ後ろへ追加する)
 const RESERVATION_HEADERS = [
   '予約日時', '予約番号', 'LINE_USER_ID', '列車名', '号車', '座席番号', '席種',
-  '乗車駅', '降車駅', '合計金額', 'ステータス', '会員ID', '予約日', '出発時刻', '到着時刻', '乗車日時'
+  '乗車駅', '降車駅', '合計金額', 'ステータス', '会員ID', '予約日', '出発時刻', '到着時刻', '乗車日時', '初回登録日時'
 ];
 
 function getOrCreateReservationsSheet() {
@@ -667,6 +671,7 @@ function handleCreateReservation(sessionToken, order, awardPoints) {
       '到着時刻': limitText(order.arrivalTime, 5)
     };
 
+    let firstRegisteredAt = nowText(); // 最初に登録された日時(更新では、変えない。イベントのごほうびの判定が、予約の時刻に使う)
     let targetRow = -1;
     let previousTotal = null; // 更新のとき、更新前の合計金額(デリバリーを足したときのポイントを求める)
     let previousBasis = 0;    // これまでに、ポイントを計算した、いちばん大きい合計金額(下げて、また上げても、二重に付かない)
@@ -684,6 +689,7 @@ function handleCreateReservation(sessionToken, order, awardPoints) {
         previousTotal = Number(data[i][col['合計金額']]) || 0;
         previousBasis = readPointBasis(col['明細'] !== undefined ? data[i][col['明細']] : '');
         boardedAt = col['乗車日時'] !== undefined ? cellText(data[i][col['乗車日時']]) : '';
+        firstRegisteredAt = col['初回登録日時'] !== undefined ? cellText(data[i][col['初回登録日時']]) : '';
         break;
       }
     }
@@ -703,6 +709,7 @@ function handleCreateReservation(sessionToken, order, awardPoints) {
     }
 
     values['乗車日時'] = boardedAt;
+    values['初回登録日時'] = firstRegisteredAt;
     const row = headers.map(function (h) { return values[h] !== undefined ? sheetSafe(values[h]) : ''; });
     if (targetRow === -1) {
       sheet.appendRow(row);
@@ -711,7 +718,7 @@ function handleCreateReservation(sessionToken, order, awardPoints) {
       sheet.getRange(targetRow, 1, 1, row.length).setValues([row]);
     }
     // 日付・時刻は文字列のまま保存する(シートが日付型に変換しないように)
-    ['予約日', '出発時刻', '到着時刻', '乗車日時'].forEach(function (h) {
+    ['予約日', '出発時刻', '到着時刻', '乗車日時', '初回登録日時'].forEach(function (h) {
       const c = headers.indexOf(h);
       if (c !== -1) {
         const cell = sheet.getRange(targetRow, c + 1);
@@ -1548,9 +1555,13 @@ function isLoginLocked(email) {
 // 数えるところは、ロックの中(読む→足す→書く)。同時に送られても、数え漏れず、5回を超えて試せない。
 // 成功したら、clearLoginFailures で消す。止まっているときは、ロックを待たずに断る(連打でロックを塞がせない)
 function reserveLoginAttempt(email) {
+  return reserveCounter(loginFailureKey(email), LOGIN_MAX_FAILURES, LOGIN_LOCK_SECONDS);
+}
+
+// 試す回数を1つ確保する共通の数え方。'ok' | 'locked' | 'busy'。数えるところは、ロックの中
+function reserveCounter(key, max, seconds) {
   const cache = CacheService.getScriptCache();
-  const key = loginFailureKey(email);
-  if (Number(cache.get(key) || 0) >= LOGIN_MAX_FAILURES) return 'locked';
+  if (Number(cache.get(key) || 0) >= max) return 'locked';
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(3000);
@@ -1559,8 +1570,8 @@ function reserveLoginAttempt(email) {
   }
   try {
     const count = Number(cache.get(key) || 0);
-    if (count >= LOGIN_MAX_FAILURES) return 'locked';
-    cache.put(key, String(count + 1), LOGIN_LOCK_SECONDS);
+    if (count >= max) return 'locked';
+    cache.put(key, String(count + 1), seconds);
     return 'ok';
   } finally {
     lock.releaseLock();
@@ -1946,6 +1957,7 @@ function buildAccountData(memberId, ledger, coupons, mystery) {
     }),
     usedCoupons: coupons.codes.slice(),
     claimedEvents: Object.keys(ledger.keys).filter(function (k) { return k.indexOf('event:') === 0; }).map(function (k) { return k.slice(6); }),
+    eventTareCleared: !!ledger.keys[EVENT_TARE_KEY],
     mystery: { stage: mystery.stage, stamps: mystery.stamps, cleared: mystery.cleared },
     orders: readMemberOrders(memberId),
     rides: readMemberRides(memberId)
@@ -2031,6 +2043,113 @@ function handleSpendPoints(sessionToken, orderId, rawPoints, rawTitle) {
     }
     addPointEntry(ledger, a.memberId, 'spend', key, -points, limitText(rawTitle, 60) || '特急券・座席のお支払い(N-POINT)');
     return createJsonResponse({ status: 'success', spent: points, balance: ledgerBalance(ledger), added: true });
+  });
+}
+
+// ---- 公開記念イベント『幻のタレと消えた頑固職人』のごほうび ----
+// 判定は、すべてサーバーで行う(アプリのコードに、答えも額も置かない)。額は、ここの定数だけ。
+// EVENT_REWARD_TABLE には入れない(入れると、アプリが、判定なしで受け取れてしまう)。
+const EVENT_TARE_KEY = 'event:tare';
+const EVENT_TARE_POINTS = 350;
+const EVENT_TARE_TITLE = '幻のタレ事件 解決報奨（味覚捜査班）';
+const EVENT_TARE_START_MS = Date.parse('2026-11-01T00:00:00+09:00');
+const EVENT_TARE_RIDE_MINUTES = 37;             // 東京〜土浦の予定の所要(特急めぐりは、どの便も同じ)
+const EVENT_TARE_BOOKING_LEAD_MS = 5 * 60 * 1000; // 予約は、発車の5分前まで
+const EVENT_TARE_DESTINATIONS = ['土浦', 'ひたちなか海浜公園', '日立'];
+const EVENT_TARE_MAX_ATTEMPTS = 5;
+const EVENT_TARE_ATTEMPT_SECONDS = 600;
+
+function nowMs() {
+  return Date.now();
+}
+
+// イベントの開始。テストのために、スクリプトプロパティ EVENT_TARE_START_MS(ミリ秒)があれば、それを使う
+function eventTareStartMs() {
+  const override = Number(PropertiesService.getScriptProperties().getProperty('EVENT_TARE_START_MS'));
+  return isFinite(override) && override > 0 ? override : EVENT_TARE_START_MS;
+}
+
+function stripStationName(v) {
+  return String(v === undefined || v === null ? '' : v).replace(/[（(].*?[）)]/g, '').trim().replace(/駅$/, '');
+}
+
+// 特急めぐり 東京発(下り)の発車は、5:05 から 23:05 まで、30分おき。始発(5:05)は、対象外
+function isEventTareDeparture(hhmm) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm);
+  if (!m) return false;
+  const minutes = Number(m[1]) * 60 + Number(m[2]);
+  return minutes > 5 * 60 + 5 && minutes <= 23 * 60 + 5 && (minutes - (5 * 60 + 5)) % 30 === 0;
+}
+
+// 「2026/11/01 10:00:00」(日本時間。日付の型でも)を、ミリ秒にする。読めなければ null
+function stampToMs(v) {
+  const m = /^(\d{4})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2}):(\d{2})$/.exec(cellText(v));
+  if (!m) return null;
+  const ms = Date.parse(m[1] + '-' + m[2] + '-' + m[3] + 'T' + m[4] + ':' + m[5] + ':' + m[6] + '+09:00');
+  return isFinite(ms) ? ms : null;
+}
+
+// この会員の予約番号が、ごほうびの条件を満たすか(読むだけ。ロックの中から呼ぶ)
+function isEventTareEligible(memberId, orderId, now) {
+  if (!/^[A-Za-z0-9-]{3,40}$/.test(orderId)) return false;
+  const start = eventTareStartMs();
+  if (now < start) return false; // 下の「発車がイベント開始以降」と重なる。サーバーの時刻で見ている、という意味で残す
+  const sheet = getDataSpreadsheet().getSheetByName(SHEET_RESERVATIONS);
+  if (!sheet) return false;
+  const data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return false;
+  const col = {};
+  data[0].forEach(function (h, i) { col[h] = i; });
+  const need = ['予約番号', '会員ID', 'ステータス', '列車名', '乗車駅', '降車駅', '予約日', '出発時刻', '初回登録日時'];
+  for (let i = 0; i < need.length; i++) if (col[need[i]] === undefined) return false;
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    if (String(row[col['予約番号']]) !== orderId || String(row[col['会員ID']]) !== memberId) continue;
+    if (String(row[col['ステータス']]) === 'キャンセル') return false;
+    if (String(row[col['列車名']]).indexOf('特急めぐり') !== 0) return false;
+    if (stripStationName(row[col['乗車駅']]) !== '東京') return false;
+    if (EVENT_TARE_DESTINATIONS.indexOf(stripStationName(row[col['降車駅']])) === -1) return false;
+    const date = cellText(row[col['予約日']], 'yyyy-MM-dd');
+    const dep = cellText(row[col['出発時刻']], 'HH:mm');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !isEventTareDeparture(dep)) return false;
+    const depMs = Date.parse(date + 'T' + (dep.length === 4 ? '0' + dep : dep) + ':00+09:00');
+    if (!isFinite(depMs) || depMs < start) return false;
+    // 予約が、サーバーに最初に登録された時刻(アプリの申告ではない)が、発車の5分前までであること
+    const registeredMs = stampToMs(row[col['初回登録日時']]);
+    if (registeredMs === null || registeredMs > depMs - EVENT_TARE_BOOKING_LEAD_MS) return false;
+    // 発車から、予定の所要時間が過ぎていること(サーバーの時刻。端末の時計は見ない。遅れは見ない)
+    return now >= depMs + EVENT_TARE_RIDE_MINUTES * 60 * 1000;
+  }
+  return false;
+}
+
+// ごほうびを、1人1回だけ付ける。条件を満たさないときは、何が足りないかは返さない(総当たりの手がかりにしない)
+function handleClaimEventTare(sessionToken, orderId) {
+  const a = authMember(sessionToken);
+  if (a.error) return a.error;
+  const id = typeof orderId === 'string' ? orderId : '';
+  const attemptKey = 'event_tare_try_' + a.memberId;
+  const gate = reserveCounter(attemptKey, EVENT_TARE_MAX_ATTEMPTS, EVENT_TARE_ATTEMPT_SECONDS);
+  if (gate === 'locked') {
+    return createJsonResponse({ status: 'error', code: 'event_locked', message: 'しばらくしてからお試しください。' });
+  }
+  if (gate === 'busy') {
+    return createJsonResponse({ status: 'error', code: 'event_busy', message: '混み合っています。しばらくしてからもう一度お試しください。' });
+  }
+  return withScriptLock(function () {
+    const ledger = readMemberPoints(a.memberId);
+    if (!ledger.keys['welcome'] && !ledger.keys['migration']) return notSyncedYetResponse();
+    if (ledger.keys[EVENT_TARE_KEY]) {
+      // 2回目以降(二重に押した・やり直し): すでに受け取り済み。何も付けない
+      CacheService.getScriptCache().remove(attemptKey);
+      return createJsonResponse({ status: 'success', added: false, points: 0, balance: ledgerBalance(ledger) });
+    }
+    if (!isEventTareEligible(a.memberId, id, nowMs())) {
+      return createJsonResponse({ status: 'error', code: 'event_not_yet', message: 'まだ対象ではありません。' });
+    }
+    addPointEntry(ledger, a.memberId, 'event', EVENT_TARE_KEY, EVENT_TARE_POINTS, EVENT_TARE_TITLE);
+    CacheService.getScriptCache().remove(attemptKey);
+    return createJsonResponse({ status: 'success', added: true, points: EVENT_TARE_POINTS, balance: ledgerBalance(ledger) });
   });
 }
 
