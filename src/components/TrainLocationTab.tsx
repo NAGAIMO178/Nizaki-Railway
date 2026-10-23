@@ -8,6 +8,7 @@ import { sendLocalPushNotification } from '../utils/pushNotification';
 import { disruptionManager } from '../utils/disruptionManager';
 import { useDragToDismiss } from '../utils/useDragToDismiss';
 import { isLaunched } from '../utils/launch';
+import { trainIconCenter, isCompactTrainIcons, COMPACT_SCALE } from '../utils/trainIconLayout';
 import { crowdInfo, loadAllCrowdTrains } from '../utils/crowd';
 
 export interface StationNode {
@@ -462,17 +463,9 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
     // かつ複数編成が重なり合って隠れてしまわない（大事故・衝突防止）よう、各列車を整然と横並びに配置。
     // 線路のX座標: -24px / 駅ノード: -31px
     // 列車アイコン右端が -36px より左にあれば線路・ノードを跨がない。
-    let centerPos = -62;
-    if (total === 2) {
-      // 2編成時: 優等種別(左) -86px, 下等種別(右) -56px (幅30px差)
-      centerPos = index === 0 ? -86 : -56;
-    } else if (total === 3) {
-      // 3編成時: 最優等(左) -104px, 中間(中) -80px, 最下等(右) -56px (幅24px差)
-      centerPos = index === 0 ? -104 : index === 1 ? -80 : -56;
-    } else if (total > 3) {
-      // 4編成以上時: 動的均等配置 (最右 -56px、左へ24px刻み)
-      centerPos = -56 - (total - 1 - index) * 24;
-    }
+    // 3編成以上は、札と列車の絵を小さくして、左端で切れずに収める
+    const compact = isCompactTrainIcons(total);
+    const centerPos = trainIconCenter(total, index);
 
     return (
       <button
@@ -482,7 +475,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
           setSelectedTrain(isSelected ? null : train);
           setSelectedStation(null); // 駅のシートが開いていたら閉じる(2枚が重ならないように)
         }}
-        style={{ left: `${centerPos}px` }}
+        style={{ left: `${centerPos}px`, ...(compact ? { scale: isSelected ? 0.95 : COMPACT_SCALE } : {}) }}
         className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-20 flex flex-col items-center cursor-pointer transition-all ${
           isSelected ? 'scale-115 ring-2 ring-[#5B21B6] rounded-xl p-0.5 bg-purple-50/80 shadow-md z-30' : 'hover:scale-105'
         }`}
