@@ -27,7 +27,7 @@ import { useDelayNotifyMode } from './utils/delayNotifySettings';
 import { useDelayWatcher } from './utils/useDelayWatcher';
 import { useReservationWatcher } from './utils/useReservationWatcher';
 import { computeMileage, Mileage } from './utils/mileage';
-import { readEventProgress } from './utils/eventTare';
+import { readEventProgress, setEventCleared } from './utils/eventTare';
 import { EventTareBand } from './components/EventTareEntry';
 import { TabType, ActiveOrder, EquipItem, PointHistoryItem, UserProfile, OrderHistoryItem } from './types';
 
@@ -758,6 +758,15 @@ export default function App() {
   const eventOrders = React.useMemo(() => (activeOrder ? [activeOrder, ...shownOrderHistory] : shownOrderHistory), [activeOrder, shownOrderHistory]);
   const eventProgress = isLaunched() ? readEventProgress(eventOwner, eventStore) : { joined: false, cleared: false };
   void eventTareTick; // イベントの画面を閉じたあとに、入口の表示を読み直す
+  // サーバーが「ごほうび受け取り済み」と言うとき(別の端末で解決したときなど)は、この端末の印も、解決済みにする
+  const serverEventCleared = cloudOn ? !!cloud.account?.eventTareCleared : false;
+  React.useEffect(() => {
+    if (!isLaunched() || !serverEventCleared || !eventOwner) return;
+    if (readEventProgress(eventOwner, eventStore).cleared) return;
+    setEventCleared(eventOwner, true, eventStore);
+    setEventTareTick((n) => n + 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverEventCleared, eventOwner]);
   const openEventTare = () => {
     if (!isLoggedIn) {
       handleRequireLogin('公開記念イベントへの参加には、神埼IDログインが必要です。', () => setEventTareOpen(true));

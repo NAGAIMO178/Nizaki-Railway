@@ -27,7 +27,7 @@ import {
   setEventCleared,
 } from '../utils/eventTare';
 import { EXTRA_CHOICES, VISIBLE_CHOICES, chatReply, commanderUpdates, showsChat } from '../utils/eventTareChat';
-import { claimEventTare } from '../utils/eventTareClaim';
+import { claimEventTare } from '../utils/cloudAccount';
 import type { ChatChoice } from '../data/eventTareScript';
 
 // 公開記念イベントの画面(公開後だけ。呼ぶ側が isLaunched() の内側で出す)。雅石のミステリーと同じ、暗い背景と琥珀色。
