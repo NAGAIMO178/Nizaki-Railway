@@ -9,12 +9,15 @@ import {
 import { KANZAKI_ALL_STATIONS_72 } from '../data/mysteryTrainData';
 import { DigitalStampRallyBanner } from './DigitalStampRallyBanner';
 import { isLaunched } from '../utils/launch';
+import { EventTareCard } from './EventTareEntry';
 
 // 謎解きの本体は大きいので、そのイベントを開くときに読み込む
 const MysteryTrainApp = lazy(() => import('./MysteryTrainApp').then((m) => ({ default: m.MysteryTrainApp })));
 const MysteryTrainEvent = lazy(() => import('./MysteryTrainEvent').then((m) => ({ default: m.MysteryTrainEvent })));
 
 interface EventsTabProps {
+  // 公開記念イベント(公開後だけ。渡されなければ、出さない)
+  eventTare?: { joined: boolean; cleared: boolean; onOpen: () => void };
   onAddNPoints?: (points: number, title?: string, type?: 'stamp' | 'coupon') => void;
   isLoggedIn?: boolean;
   onRequireLogin?: (reason: string, onLoggedIn?: () => void) => void;
@@ -23,6 +26,7 @@ interface EventsTabProps {
 }
 
 export const EventsTab: React.FC<EventsTabProps> = ({
+  eventTare,
   onAddNPoints,
   isLoggedIn = false,
   onRequireLogin,
@@ -32,7 +36,8 @@ export const EventsTab: React.FC<EventsTabProps> = ({
   const [selectedEventId, setSelectedEventId] = useState<'portal' | 'mashin' | 'kaitan'>(() => {
     try {
       const saved = localStorage.getItem('kanzaki_current_selected_event');
-      if (saved === 'mashin' || saved === 'kaitan') {
+      // 公開後は、「消えた試運転列車の謎」を出さない(前回それを開いていても、一覧に戻す)
+      if (saved === 'mashin' || (saved === 'kaitan' && !isLaunched())) {
         return saved;
       }
     } catch {}
@@ -137,7 +142,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
   // =========================================================================
   // VIEW A: 通常画面（参加可能イベント一覧） - 他のタブと統一された神埼鉄道アプリ公式トンマナ
   // =========================================================================
-  if (selectedEventId === 'portal') {
+  if (selectedEventId === 'portal' || (isLaunched() && selectedEventId === 'kaitan')) {
     return (
       <div className="max-w-3xl mx-auto px-4 py-5 pb-24 space-y-5 animate-fadeIn text-[#221C35]">
         {/* 1. 画面タイトルヘッダー（他タブと統一されたアイデンティティ） */}
@@ -159,6 +164,9 @@ export const EventsTab: React.FC<EventsTabProps> = ({
             2026年度 特集
           </span>
         </div>
+
+        {/* 公開記念イベント(公開後だけ) */}
+        {isLaunched() && eventTare && <EventTareCard {...eventTare} />}
 
         {/* 2. 公式イベントポスター枠（ヘッダーバナー画像） */}
         <DigitalStampRallyBanner customImageUrl={customPosterUrl} />
@@ -258,80 +266,82 @@ export const EventsTab: React.FC<EventsTabProps> = ({
             </div>
           </div>
 
-          {/* イベントカード2: 消えた試運転列車の謎（全線七十二駅探索） */}
-          <div 
-            onClick={() => handleSelectEvent('kaitan')}
-            className="group bg-white rounded-2xl border border-[#E5E2EE] hover:border-[#5B21B6]/60 p-4 sm:p-5 shadow-xs hover:shadow-md transition-all cursor-pointer relative overflow-hidden"
-          >
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div className="space-y-2 min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="bg-[#F4F3F8] text-[#4A4063] text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-[#E5E2EE]">
-                    七十二駅探索版
-                  </span>
-                  <span className="bg-purple-50 text-purple-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-purple-200">
-                    大正浪漫奇譚
-                  </span>
-                  {kaitanProgress.stage > 1 ? (
-                    <span className="bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                      <span>第 {kaitanProgress.stage} 幕 到達</span>
+          {/* 公開後は、この謎は出さない(公開前は、これまでどおり。データ・コードは残す) */}
+          {!isLaunched() && (
+            <div 
+              onClick={() => handleSelectEvent('kaitan')}
+              className="group bg-white rounded-2xl border border-[#E5E2EE] hover:border-[#5B21B6]/60 p-4 sm:p-5 shadow-xs hover:shadow-md transition-all cursor-pointer relative overflow-hidden"
+            >
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="space-y-2 min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="bg-[#F4F3F8] text-[#4A4063] text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-[#E5E2EE]">
+                      七十二駅探索版
                     </span>
-                  ) : (
-                    <span className="bg-[#F4F3F8] text-[#6B6380] text-[10px] px-2 py-0.5 rounded-full">
-                      第 1 幕
+                    <span className="bg-purple-50 text-purple-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-purple-200">
+                      大正浪漫奇譚
                     </span>
-                  )}
+                    {kaitanProgress.stage > 1 ? (
+                      <span className="bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                        <span>第 {kaitanProgress.stage} 幕 到達</span>
+                      </span>
+                    ) : (
+                      <span className="bg-[#F4F3F8] text-[#6B6380] text-[10px] px-2 py-0.5 rounded-full">
+                        第 1 幕
+                      </span>
+                    )}
+                  </div>
+
+                  <div>
+                    <h4 className="text-base sm:text-lg font-extrabold text-[#221C35] group-hover:text-[#5B21B6] transition-colors">
+                      神埼鉄路奇譚 〜消えた試運転列車の謎〜
+                    </h4>
+                    <p className="text-xs text-[#6B6380] mt-1 leading-relaxed">
+                      深夜のダイヤに突如現れた幽霊試運転列車。全線{KANZAKI_ALL_STATIONS_72.length}駅に隠された停車標識の手がかりを追い、怪異の正体へ迫る本格捜査録。
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-3 text-[11px] text-[#857D99] pt-1">
+                    <span className="flex items-center gap-1">
+                      <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                      難易度: ★★★☆☆
+                    </span>
+                    <span>・</span>
+                    <span>全3幕構成</span>
+                    <span>・</span>
+                    <span>電子スタンプ押印 ＆ 特典クーポン付き</span>
+                  </div>
                 </div>
 
-                <div>
-                  <h4 className="text-base sm:text-lg font-extrabold text-[#221C35] group-hover:text-[#5B21B6] transition-colors">
-                    神埼鉄路奇譚 〜消えた試運転列車の謎〜
-                  </h4>
-                  <p className="text-xs text-[#6B6380] mt-1 leading-relaxed">
-                    深夜のダイヤに突如現れた幽霊試運転列車。全線{KANZAKI_ALL_STATIONS_72.length}駅に隠された停車標識の手がかりを追い、怪異の正体へ迫る本格捜査録。
-                  </p>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-3 text-[11px] text-[#857D99] pt-1">
-                  <span className="flex items-center gap-1">
-                    <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-                    難易度: ★★★☆☆
-                  </span>
-                  <span>・</span>
-                  <span>全3幕構成</span>
-                  <span>・</span>
-                  <span>電子スタンプ押印 ＆ 特典クーポン付き</span>
-                </div>
-              </div>
-
-              {/* 右側アクションボタン */}
-              <div className="flex sm:flex-col items-center gap-2 w-full sm:w-auto shrink-0 pt-2 sm:pt-0">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleSelectEvent('kaitan');
-                  }}
-                  className="flex-1 sm:flex-none h-11 px-5 rounded-xl bg-[#221C35] hover:bg-[#5B21B6] text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer"
-                >
-                  <span>{kaitanProgress.stage > 1 ? '探索を再開する' : '探索を開始する'}</span>
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-
-                {kaitanProgress.stage > 1 && !cloudMode && (
+                {/* 右側アクションボタン */}
+                <div className="flex sm:flex-col items-center gap-2 w-full sm:w-auto shrink-0 pt-2 sm:pt-0">
                   <button
                     type="button"
-                    onClick={handleResetKaitan}
-                    className="h-11 sm:h-8 px-3 rounded-lg bg-white hover:bg-rose-50 border border-[#E5E2EE] hover:border-rose-200 text-[#857D99] hover:text-rose-600 text-[11px] font-medium flex items-center justify-center gap-1 transition-all cursor-pointer"
-                    title="このイベントの記録を白紙に戻す"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleSelectEvent('kaitan');
+                    }}
+                    className="flex-1 sm:flex-none h-11 px-5 rounded-xl bg-[#221C35] hover:bg-[#5B21B6] text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer"
                   >
-                    <RotateCcw className="w-3 h-3" />
-                    <span>白紙に戻す</span>
+                    <span>{kaitanProgress.stage > 1 ? '探索を再開する' : '探索を開始する'}</span>
+                    <ArrowRight className="w-4 h-4" />
                   </button>
-                )}
+
+                  {kaitanProgress.stage > 1 && !cloudMode && (
+                    <button
+                      type="button"
+                      onClick={handleResetKaitan}
+                      className="h-11 sm:h-8 px-3 rounded-lg bg-white hover:bg-rose-50 border border-[#E5E2EE] hover:border-rose-200 text-[#857D99] hover:text-rose-600 text-[11px] font-medium flex items-center justify-center gap-1 transition-all cursor-pointer"
+                      title="このイベントの記録を白紙に戻す"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>白紙に戻す</span>
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
     );

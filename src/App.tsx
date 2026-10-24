@@ -27,6 +27,8 @@ import { useDelayNotifyMode } from './utils/delayNotifySettings';
 import { useDelayWatcher } from './utils/useDelayWatcher';
 import { useReservationWatcher } from './utils/useReservationWatcher';
 import { computeMileage, Mileage } from './utils/mileage';
+import { readEventProgress, setEventCleared } from './utils/eventTare';
+import { EventTareBand } from './components/EventTareEntry';
 import { TabType, ActiveOrder, EquipItem, PointHistoryItem, UserProfile, OrderHistoryItem } from './types';
 
 // 起動に要らない画面は、開くときに読み込む(最初のホームを早く出すため)。先読みは、下の useEffect
@@ -37,6 +39,7 @@ const ReservationTab = lazyScreen<typeof import('./components/ReservationTab').R
 const EquipTab = lazyScreen<typeof import('./components/EquipTab').EquipTab>(() => import('./components/EquipTab'), 'EquipTab');
 const EventsTab = lazyScreen<typeof import('./components/EventsTab').EventsTab>(() => import('./components/EventsTab'), 'EventsTab');
 const SettingsTab = lazyScreen<typeof import('./components/SettingsTab').SettingsTab>(() => import('./components/SettingsTab'), 'SettingsTab');
+const EventTarePage = lazyScreen<typeof import('./components/EventTarePage').EventTarePage>(() => import('./components/EventTarePage'), 'EventTarePage');
 const EDeliveryModal = lazyScreen<typeof import('./components/EDeliveryModal').EDeliveryModal>(() => import('./components/EDeliveryModal'), 'EDeliveryModal');
 const NPointModal = lazyScreen<typeof import('./components/NPointModal').NPointModal>(() => import('./components/NPointModal'), 'NPointModal');
 const RouteMapModal = lazyScreen<typeof import('./components/RouteMapModal').RouteMapModal>(() => import('./components/RouteMapModal'), 'RouteMapModal');
@@ -518,6 +521,9 @@ export default function App() {
 
   // Modals state
   const [isEDeliveryModalOpen, setIsEDeliveryModalOpen] = useState(false);
+  // 公開記念イベント(公開後だけ)
+  const [eventTareOpen, setEventTareOpen] = useState(false);
+  const [eventTareTick, setEventTareTick] = useState(0);
   const [isNPointModalOpen, setIsNPointModalOpen] = useState(false);
   const [isRouteMapModalOpen, setIsRouteMapModalOpen] = useState(false);
   const [isQRCodeModalOpen, setIsQRCodeModalOpen] = useState(false);
@@ -746,6 +752,29 @@ export default function App() {
   const shownPointHistory = cloudOn ? (cloud.account?.history ?? []) : pointHistory;
   const shownOrderHistory = cloudOn ? (cloud.account?.orders ?? []) : orderHistory;
 
+  // 公開記念イベント(公開後だけ)。デモ会員は、画面の中だけの保存先を使う
+  const eventOwner = normEmail(currentUser?.email);
+  const eventStore = demoOn ? { get: storeGet, set: storeSet } : undefined;
+  const eventOrders = React.useMemo(() => (activeOrder ? [activeOrder, ...shownOrderHistory] : shownOrderHistory), [activeOrder, shownOrderHistory]);
+  const eventProgress = isLaunched() ? readEventProgress(eventOwner, eventStore) : { joined: false, cleared: false };
+  void eventTareTick; // イベントの画面を閉じたあとに、入口の表示を読み直す
+  // サーバーが「ごほうび受け取り済み」と言うとき(別の端末で解決したときなど)は、この端末の印も、解決済みにする
+  const serverEventCleared = cloudOn ? !!cloud.account?.eventTareCleared : false;
+  React.useEffect(() => {
+    if (!isLaunched() || !serverEventCleared || !eventOwner) return;
+    if (readEventProgress(eventOwner, eventStore).cleared) return;
+    setEventCleared(eventOwner, true, eventStore);
+    setEventTareTick((n) => n + 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverEventCleared, eventOwner]);
+  const openEventTare = () => {
+    if (!isLoggedIn) {
+      handleRequireLogin('公開記念イベントへの参加には、神埼IDログインが必要です。', () => setEventTareOpen(true));
+      return;
+    }
+    setEventTareOpen(true);
+  };
+
   return (
     <PhoneContainer>
       {/* 1. Header */}
@@ -895,6 +924,11 @@ export default function App() {
                   </button>
                 ))}
               </div>
+              {isLaunched() && reservationView === 'ticket' && (
+                <div className="mt-2">
+                  <EventTareBand joined={eventProgress.joined} cleared={eventProgress.cleared} onOpen={openEventTare} />
+                </div>
+              )}
             </div>
 
             <LazyBoundary fallback={<TabFallback />}>
@@ -943,6 +977,7 @@ export default function App() {
                   isLoggedIn={isLoggedIn}
                   onRequireLogin={handleRequireLogin}
                   cloudMode={cloudOn}
+                  eventTare={isLaunched() ? { joined: eventProgress.joined, cleared: eventProgress.cleared, onOpen: openEventTare } : undefined}
                 />
               )}
             </LazyBoundary>
@@ -1015,6 +1050,33 @@ export default function App() {
         }}
         onOpenGuide={isLaunched() ? () => setWelcomeReplayKey((k) => k + 1) : undefined}
       />
+
+      {/* 公開記念イベント(公開後だけ) */}
+      {isLaunched() && (
+        <LazyOnOpen open={eventTareOpen}>
+          {eventTareOpen && (
+          <EventTarePage
+            owner={eventOwner}
+            sessionToken={currentUser?.sessionToken}
+            store={eventStore}
+            orders={eventOrders}
+            onClose={() => {
+              setEventTareOpen(false);
+              setEventTareTick((n) => n + 1);
+            }}
+            onReserve={() => {
+              setEventTareOpen(false);
+              setEventTareTick((n) => n + 1);
+              setReservationPreset({ key: Date.now(), expressType: 'meguri', boarding: '東京', destination: '日立', trainCode: '' });
+              setReservationView('ticket');
+              setActiveTab('reservation');
+            }}
+            onDemoReward={(points) => addPoints(points, '公開記念イベント', 'stamp')}
+            onRewarded={() => void cloud.refresh()}
+          />
+          )}
+        </LazyOnOpen>
+      )}
 
       {/* Interactive Modals */}
       <LazyOnOpen open={isEDeliveryModalOpen}>
