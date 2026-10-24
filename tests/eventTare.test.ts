@@ -18,6 +18,7 @@ import {
   readEventProgress,
   setEventCleared,
 } from '../src/utils/eventTare';
+import { eventStateFor } from '../src/utils/eventTareState';
 
 const DATE = '2026-11-02';
 const at = (h: number, m = 0, s = 0) => new Date(2026, 10, 2, h, m, s);
@@ -395,5 +396,44 @@ describe('参加・クリアの印', () => {
   it('壊れた保存データは、なしとして扱う', () => {
     const store: EventStore = { get: () => '{こわれた', set: () => undefined };
     expect(readEventProgress('a@example.com', store)).toEqual({ joined: false, cleared: false, joinedAt: 0 });
+  });
+});
+
+describe('画面の配線: 参加の時刻が、状態の計算に渡る(eventStateFor)', () => {
+  const pickIdx = () => {
+    for (let i = 2; i < 37; i++) {
+      const s = getEventState(true, [orderOf(i)], sec(meguri()[i].depSec + 60));
+      if (s.delayMinutes.player === 0 && s.delayMinutes.father === 0) return i;
+    }
+    throw new Error('遅れのない便が見つからない');
+  };
+  const endSec = (i: number) => {
+    const t = findExpressTrips(getCachedExpressData('meguri')!, EXPRESS_TYPES.meguri.typeName, '東京', EVENT_TARE.fatherStation);
+    return Math.max(t[i].arrSec, t[i - 1].arrSec);
+  };
+
+  it('参加の印の時刻(joinedAt)が、そのまま渡る: 参加より前に着いた予約は「予約なし」', () => {
+    const idx = pickIdx();
+    markEventJoined('w@example.com', undefined, sec(endSec(idx) + 60).getTime());
+    const progress = readEventProgress('w@example.com');
+    expect(progress.joinedAt).toBe(sec(endSec(idx) + 60).getTime());
+    expect(eventStateFor(progress, [orderOf(idx)], sec(endSec(idx) + 120)).phase).toBe('no_reservation');
+  });
+
+  it('参加のあとに着く予約は、対象。参加の時で予約が無ければ「予約なし」から始まる', () => {
+    const idx = pickIdx();
+    const dep = meguri()[idx].depSec;
+    markEventJoined('w2@example.com', undefined, sec(dep - 600).getTime());
+    const progress = readEventProgress('w2@example.com');
+    expect(eventStateFor(progress, [orderOf(idx)], sec(dep - 300)).phase).toBe('before_departure');
+    expect(eventStateFor(progress, [], sec(dep - 300)).phase).toBe('no_reservation');
+  });
+
+  it('時刻の無い古い印(0)は、今までどおり(着いたあとも対象)。クリア済みは、クリア済み', () => {
+    const idx = pickIdx();
+    localStorage.setItem('nizaki_event_tare-2026:old@example.com', JSON.stringify({ joined: true, cleared: false }));
+    const old = readEventProgress('old@example.com');
+    expect(eventStateFor(old, [orderOf(idx)], sec(endSec(idx) + 120)).phase).toBe('arrived');
+    expect(eventStateFor({ joined: true, cleared: true, joinedAt: 0 }, [orderOf(idx)], sec(endSec(idx) + 120)).phase).toBe('cleared');
   });
 });

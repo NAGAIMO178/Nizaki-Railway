@@ -20,7 +20,6 @@ import {
   EVENT_TARE,
   EventOrder,
   EventStore,
-  getEventState,
   loadEventData,
   markEventJoined,
   readEventProgress,
@@ -28,7 +27,8 @@ import {
 } from '../utils/eventTare';
 import { EXTRA_CHOICES, VISIBLE_CHOICES, chatReply, commanderUpdates, showsChat } from '../utils/eventTareChat';
 import { claimEventTare } from '../utils/cloudAccount';
-import { useReveal } from '../utils/eventTareReveal';
+import { eventStateFor } from '../utils/eventTareState';
+import { scrollBehavior, useReveal } from '../utils/eventTareReveal';
 import type { ChatChoice } from '../data/eventTareScript';
 
 // 公開記念イベントの画面(公開後だけ。呼ぶ側が isLaunched() の内側で出す)。雅石のミステリーと同じ、暗い背景と琥珀色。
@@ -80,15 +80,16 @@ const fromScript = (lines: ScriptLine[]): Omit<LogItem, 'id'>[] =>
   lines.map((l) => (l.who === 'ナレーション' ? { kind: 'nar', text: l.text } : l.who === 'あなた' ? { kind: 'me', text: l.text } : { kind: 'say', who: l.who, text: l.text }));
 
 // 複数行の場面を、LINE のように、1つずつ出す(入力中の「…」→ふきだし)。タップ(skipSignal)で、残りを全部すぐ出す。
-// 見た場面と、「動きを減らす」設定のときは、全部すぐ出す。
+// 見た場面は、全部すぐ出す(replay=参加前の導入は、見た印があっても、1つずつ出す)。
 const RevealList: React.FC<{
   lines: ScriptLine[];
   revealKey: string;
   skipSignal: number;
   onTick?: () => void;
   onDone?: () => void;
-}> = ({ lines, revealKey, skipSignal, onTick, onDone }) => {
-  const { count, typing, done } = useReveal(lines, revealKey, skipSignal);
+  replay?: boolean;
+}> = ({ lines, revealKey, skipSignal, onTick, onDone, replay }) => {
+  const { count, typing, done } = useReveal(lines, revealKey, skipSignal, replay);
   useEffect(() => {
     onTick?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -110,7 +111,7 @@ const RevealList: React.FC<{
 const TypingBubble: React.FC = () => (
   <div className="flex items-center gap-2">
     <span className="w-7 h-7 shrink-0 rounded-full bg-[#991B1B]" />
-    <div className="animate-pulse rounded-2xl border border-amber-600/30 bg-white/[0.07] px-3 py-2 text-[13px] text-stone-400">…</div>
+    <div className="motion-safe:animate-pulse rounded-2xl border border-amber-600/30 bg-white/[0.07] px-3 py-2 text-[13px] text-stone-400">…</div>
   </div>
 );
 
@@ -122,7 +123,7 @@ const Scene: React.FC<{ lines: ScriptLine[]; revealKey: string; onDone: () => vo
   return (
     <>
       <div className="flex-1 space-y-2.5 px-4 py-4" onClick={() => setSkip((n) => n + 1)}>
-        <RevealList lines={lines} revealKey={revealKey} skipSignal={skip} onTick={() => end.current?.scrollIntoView({ block: 'end', behavior: 'smooth' })} onDone={() => setDone(true)} />
+        <RevealList lines={lines} revealKey={revealKey} skipSignal={skip} onTick={() => end.current?.scrollIntoView({ block: 'end', behavior: scrollBehavior() })} onDone={() => setDone(true)} />
         <div ref={end} />
       </div>
       {done && (
@@ -175,7 +176,7 @@ export const EventTarePage: React.FC<EventTarePageProps> = ({ owner, sessionToke
   }, []);
 
   const state = useMemo(
-    () => getEventState(progress.joined, orders, now, { cleared: progress.cleared }),
+    () => eventStateFor(progress, orders, now),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [progress, orders, now, ready]
   );
@@ -200,7 +201,7 @@ export const EventTarePage: React.FC<EventTarePageProps> = ({ owner, sessionToke
     if (add.length > 0) push(add);
   }, [state, now, progress.joined, progress.cleared]);
 
-  const scrollDown = () => endRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
+  const scrollDown = () => endRef.current?.scrollIntoView({ block: 'end', behavior: scrollBehavior() });
   useEffect(() => {
     scrollDown();
   }, [log.length, typing, doneBlocks]);
@@ -308,7 +309,7 @@ export const EventTarePage: React.FC<EventTarePageProps> = ({ owner, sessionToke
       <div className="flex-1 space-y-4 px-4 py-5">
         <h2 className="font-serif text-2xl font-extrabold leading-snug text-amber-100">{TARE_TITLE}</h2>
         <div className="space-y-2.5 rounded-2xl border border-amber-600/35 bg-black/50 p-3.5" onClick={() => setSkip((n) => n + 1)}>
-          <RevealList lines={ACT1} revealKey="act1" skipSignal={skip} onTick={scrollDown} onDone={() => setStoryDone(true)} />
+          <RevealList lines={ACT1} revealKey="act1" replay skipSignal={skip} onTick={scrollDown} onDone={() => setStoryDone(true)} />
         </div>
         {storyDone && (
           <>
