@@ -22,12 +22,13 @@ import { fetchAndCacheTicket, summarizeTicket, TicketSummary } from './utils/tic
 import { calcDeliveryAddPoints, calcReservationPoints } from './utils/points';
 import LaunchCountdown from './components/LaunchCountdown';
 import { useCloudAccount } from './utils/useCloudAccount';
-import { rewardIdFromTitle } from './utils/cloudAccount';
+import { joinEventTare, rewardIdFromTitle } from './utils/cloudAccount';
 import { useDelayNotifyMode } from './utils/delayNotifySettings';
 import { useDelayWatcher } from './utils/useDelayWatcher';
 import { useReservationWatcher } from './utils/useReservationWatcher';
 import { computeMileage, Mileage } from './utils/mileage';
 import { readEventProgress, setEventCleared } from './utils/eventTare';
+import { syncJoinedFromServer } from './utils/eventTareJoin';
 import { EventTareBand } from './components/EventTareEntry';
 import { TabType, ActiveOrder, EquipItem, PointHistoryItem, UserProfile, OrderHistoryItem } from './types';
 
@@ -767,6 +768,21 @@ export default function App() {
     setEventTareTick((n) => n + 1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverEventCleared, eventOwner]);
+  // サーバーが覚えている参加の時刻(別の端末で参加したときなど)を、この端末に反映する。
+  // サーバーに記録が無いのに、この端末に参加の印があるときは、1回だけ送る(会員ごと)
+  const serverEventJoinedAt = cloudOn && cloud.account ? cloud.account.eventTareJoinedAt : undefined;
+  const eventJoinSyncedFor = React.useRef('');
+  React.useEffect(() => {
+    if (!isLaunched() || serverEventJoinedAt === undefined || !eventOwner || !currentUser?.sessionToken) return;
+    if (serverEventJoinedAt === null) {
+      if (eventJoinSyncedFor.current === eventOwner) return;
+      eventJoinSyncedFor.current = eventOwner;
+    }
+    void syncJoinedFromServer(eventOwner, eventStore, currentUser.sessionToken, serverEventJoinedAt, joinEventTare).then((changed) => {
+      if (changed) setEventTareTick((n) => n + 1);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverEventJoinedAt, eventOwner, currentUser?.sessionToken]);
   const openEventTare = () => {
     if (!isLoggedIn) {
       handleRequireLogin('公開記念イベントへの参加には、神埼IDログインが必要です。', () => setEventTareOpen(true));

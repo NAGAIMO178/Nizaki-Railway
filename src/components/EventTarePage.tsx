@@ -20,12 +20,12 @@ import {
   EventOrder,
   EventStore,
   loadEventData,
-  markEventJoined,
   readEventProgress,
   setEventCleared,
 } from '../utils/eventTare';
 import { EXTRA_CHOICES, VISIBLE_CHOICES, act3ReservedLines, chatReply, commanderUpdates, showsChat } from '../utils/eventTareChat';
-import { claimEventTare } from '../utils/cloudAccount';
+import { claimEventTare, joinEventTare } from '../utils/cloudAccount';
+import { joinEvent } from '../utils/eventTareJoin';
 import { eventStateFor } from '../utils/eventTareState';
 import { scrollBehavior, useReveal } from '../utils/eventTareReveal';
 import type { ChatChoice } from '../data/eventTareScript';
@@ -218,8 +218,7 @@ export const EventTarePage: React.FC<EventTarePageProps> = ({ owner, sessionToke
   };
 
   const join = () => {
-    markEventJoined(owner, store);
-    setProgress(readEventProgress(owner, store));
+    void joinEvent(owner, store, sessionToken, joinEventTare, setProgress).then(setProgress);
   };
 
   const finishCleared = (shown: boolean) => {
