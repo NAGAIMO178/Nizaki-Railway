@@ -80,15 +80,16 @@ const fromScript = (lines: ScriptLine[]): Omit<LogItem, 'id'>[] =>
   lines.map((l) => (l.who === 'ナレーション' ? { kind: 'nar', text: l.text } : l.who === 'あなた' ? { kind: 'me', text: l.text } : { kind: 'say', who: l.who, text: l.text }));
 
 // 複数行の場面を、LINE のように、1つずつ出す(入力中の「…」→ふきだし)。タップ(skipSignal)で、残りを全部すぐ出す。
-// 見た場面と、「動きを減らす」設定のときは、全部すぐ出す。
+// 見た場面と、「動きを減らす」設定のときは、全部すぐ出す(replay=参加前の導入は、見た印があっても、1つずつ出す)。
 const RevealList: React.FC<{
   lines: ScriptLine[];
   revealKey: string;
   skipSignal: number;
   onTick?: () => void;
   onDone?: () => void;
-}> = ({ lines, revealKey, skipSignal, onTick, onDone }) => {
-  const { count, typing, done } = useReveal(lines, revealKey, skipSignal);
+  replay?: boolean;
+}> = ({ lines, revealKey, skipSignal, onTick, onDone, replay }) => {
+  const { count, typing, done } = useReveal(lines, revealKey, skipSignal, replay);
   useEffect(() => {
     onTick?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -308,7 +309,7 @@ export const EventTarePage: React.FC<EventTarePageProps> = ({ owner, sessionToke
       <div className="flex-1 space-y-4 px-4 py-5">
         <h2 className="font-serif text-2xl font-extrabold leading-snug text-amber-100">{TARE_TITLE}</h2>
         <div className="space-y-2.5 rounded-2xl border border-amber-600/35 bg-black/50 p-3.5" onClick={() => setSkip((n) => n + 1)}>
-          <RevealList lines={ACT1} revealKey="act1" skipSignal={skip} onTick={scrollDown} onDone={() => setStoryDone(true)} />
+          <RevealList lines={ACT1} revealKey="act1" replay skipSignal={skip} onTick={scrollDown} onDone={() => setStoryDone(true)} />
         </div>
         {storyDone && (
           <>

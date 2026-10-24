@@ -6,6 +6,7 @@ import {
   prefersReducedMotion,
   revealDelayMs,
   revealSchedule,
+  startsInstant,
   totalRevealMs,
   TYPING_MAX_MS,
   TYPING_MIN_MS,
@@ -85,5 +86,20 @@ describe('見た場面・動きを減らす設定', () => {
     w.window.matchMedia = (q: string) => ({ matches: q.includes('reduce') });
     expect(prefersReducedMotion()).toBe(true);
     w.window.matchMedia = prev;
+  });
+});
+
+describe('すぐ出すか', () => {
+  it('見た印があれば、すぐ出す。見ていなければ、1つずつ', () => {
+    expect(startsInstant(true, false)).toBe(true);
+    expect(startsInstant(false, false)).toBe(false);
+  });
+  it('参加前の導入(replay)は、見た印があっても、1つずつ出す', () => {
+    expect(startsInstant(true, false, true)).toBe(false);
+    expect(startsInstant(false, false, true)).toBe(false);
+  });
+  it('「動きを減らす」設定は、いつでも、すぐ出す', () => {
+    expect(startsInstant(false, true)).toBe(true);
+    expect(startsInstant(true, true, true)).toBe(true);
   });
 });

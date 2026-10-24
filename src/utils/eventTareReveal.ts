@@ -63,9 +63,12 @@ export const prefersReducedMotion = (): boolean => {
   }
 };
 
+// 全部すぐ出すか。見た場面は、すぐ出す(replay のとき=参加前の導入は、見た印があっても、1つずつ出す)。「動きを減らす」設定は、いつでも、すぐ出す
+export const startsInstant = (seen: boolean, reducedMotion: boolean, replay = false): boolean => reducedMotion || (seen && !replay);
+
 // 1つずつ出す。skipSignal の数が変わると(タップ)、残りを全部すぐ出す
-export const useReveal = (lines: ScriptLine[], key: string, skipSignal = 0) => {
-  const instant = useMemo(() => isSceneSeen(key) || prefersReducedMotion(), [key]);
+export const useReveal = (lines: ScriptLine[], key: string, skipSignal = 0, replay = false) => {
+  const instant = useMemo(() => startsInstant(isSceneSeen(key), prefersReducedMotion(), replay), [key, replay]);
   const [count, setCount] = useState(instant ? lines.length : 0);
   const [showTyping, setShowTyping] = useState(false);
   const lastSignal = useRef(skipSignal);
