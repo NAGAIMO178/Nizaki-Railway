@@ -6,6 +6,7 @@ import {
   prefersReducedMotion,
   revealDelayMs,
   revealSchedule,
+  scrollBehavior,
   startsInstant,
   totalRevealMs,
   TYPING_MAX_MS,
@@ -91,15 +92,28 @@ describe('見た場面・動きを減らす設定', () => {
 
 describe('すぐ出すか', () => {
   it('見た印があれば、すぐ出す。見ていなければ、1つずつ', () => {
-    expect(startsInstant(true, false)).toBe(true);
-    expect(startsInstant(false, false)).toBe(false);
+    expect(startsInstant(true)).toBe(true);
+    expect(startsInstant(false)).toBe(false);
   });
   it('参加前の導入(replay)は、見た印があっても、1つずつ出す', () => {
-    expect(startsInstant(true, false, true)).toBe(false);
-    expect(startsInstant(false, false, true)).toBe(false);
+    expect(startsInstant(true, true)).toBe(false);
+    expect(startsInstant(false, true)).toBe(false);
   });
-  it('「動きを減らす」設定は、いつでも、すぐ出す', () => {
-    expect(startsInstant(false, true)).toBe(true);
-    expect(startsInstant(true, true, true)).toBe(true);
+  it('「動きを減らす」設定でも、見ていない場面は、1つずつ出す(順番は変えない)', () => {
+    const w = globalThis as unknown as { window: Record<string, unknown> };
+    const prev = w.window.matchMedia;
+    w.window.matchMedia = (q: string) => ({ matches: q.includes('reduce') });
+    expect(prefersReducedMotion()).toBe(true);
+    expect(startsInstant(false)).toBe(false);
+    expect(startsInstant(false, true)).toBe(false);
+    w.window.matchMedia = prev;
+  });
+  it('「動きを減らす」設定のときだけ、スクロールをなめらかにしない', () => {
+    const w = globalThis as unknown as { window: Record<string, unknown> };
+    const prev = w.window.matchMedia;
+    expect(scrollBehavior()).toBe('smooth');
+    w.window.matchMedia = (q: string) => ({ matches: q.includes('reduce') });
+    expect(scrollBehavior()).toBe('auto');
+    w.window.matchMedia = prev;
   });
 });
