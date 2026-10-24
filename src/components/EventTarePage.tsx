@@ -20,7 +20,6 @@ import {
   EVENT_TARE,
   EventOrder,
   EventStore,
-  getEventState,
   loadEventData,
   markEventJoined,
   readEventProgress,
@@ -28,6 +27,7 @@ import {
 } from '../utils/eventTare';
 import { EXTRA_CHOICES, VISIBLE_CHOICES, chatReply, commanderUpdates, showsChat } from '../utils/eventTareChat';
 import { claimEventTare } from '../utils/cloudAccount';
+import { eventStateFor } from '../utils/eventTareState';
 import { scrollBehavior, useReveal } from '../utils/eventTareReveal';
 import type { ChatChoice } from '../data/eventTareScript';
 
@@ -176,7 +176,7 @@ export const EventTarePage: React.FC<EventTarePageProps> = ({ owner, sessionToke
   }, []);
 
   const state = useMemo(
-    () => getEventState(progress.joined, orders, now, { cleared: progress.cleared }),
+    () => eventStateFor(progress, orders, now),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [progress, orders, now, ready]
   );
