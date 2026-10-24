@@ -39,12 +39,17 @@ export const ACT3_BEFORE_RESERVATION: ScriptLine[] = [
   L('指令員', '予約は、発車の5分前までだ。急げ'),
 ];
 
-// 第3幕(予約したあと、発車まで)
-export const ACT3_RESERVED: ScriptLine[] = [
+// 第3幕(予約したあと、発車まで)。親父さんの列車が、もう発車しているか(出発前か)で、3行目が変わる
+const ACT3_RESERVED_HEAD: ScriptLine[] = [
   L('指令員', '予約を確認した。ついでに、親父さんの予約も探した'),
   L('指令員', '…あった。A席。ただし、1本前のめぐりだ'),
-  L('指令員', 'もう出発している。同じ列車には乗れない'),
-  L('指令員', 'だが、追いかけられる。親父さんの列車が今どこかを、ダイヤから計算して伝える'),
+];
+const ACT3_RESERVED_TAIL: ScriptLine = L('指令員', 'だが、追いかけられる。親父さんの列車が今どこかを、ダイヤから計算して伝える');
+export const ACT3_RESERVED: ScriptLine[] = [...ACT3_RESERVED_HEAD, L('指令員', 'もう出発している。同じ列車には乗れない'), ACT3_RESERVED_TAIL];
+export const ACT3_RESERVED_FATHER_NOT_YET: ScriptLine[] = [
+  ...ACT3_RESERVED_HEAD,
+  L('指令員', '同じ列車には乗れない。1本、遅れて追いかける形になる'),
+  ACT3_RESERVED_TAIL,
 ];
 
 // 第4幕 乗車中(指令員の報告。状態で出す文が変わる)
@@ -55,6 +60,8 @@ export const COMMANDER = {
   near: (min: number) => `あと約${min}分で、親父さんの列車が土浦に着く`,
   soon: 'もうすぐ、親父さんが土浦に着く',
   arrived: '親父さんの列車が、土浦に着いた。…降りたようだ',
+  // 自分の列車が、まだ着いていないとき(親父さんが先に着いた)は、自分の残りも伝える
+  arrivedPlayerLeft: (min: number) => `親父さんの列車が、土浦に着いた。…降りたようだ。こちらの列車は、あと約${min}分で土浦に着く`,
   delay: (min: number) => `遅れが出ている。${min}分の遅れだ`,
   // 場面の一言(乗客の位置)
   sceneMatsudo: '松戸だ。さっきまでいた会議室のビルが、窓から見える',
@@ -93,9 +100,11 @@ export const CHAT_PR_RIDING: string[] = ['ありがとう。親父さんを、�
 export const CHAT_MINUTES = {
   both: (father: number, player: number) => `親父さんの列車は、あと約${father}分。こちらの列車は、あと約${player}分だ`,
   fatherGone: '親父さんは、もう降りている',
+  fatherGonePlayerLeft: (player: number) => `親父さんは、もう降りている。こちらの列車は、あと約${player}分だ`,
   noTrain: '予約した列車が走り出したら、時間を伝える',
 };
 export const CHAT_WHERE_NO_POSITION = '親父さんの列車は、まだ位置が分からない';
+export const CHAT_WHERE_FATHER_NOT_YET = (min: number) => `親父さんの列車は、まだ東京にいる。あと約${min}分で発車だ`;
 export const CHAT_SPEAKER: Speaker = '指令員';
 
 // 第5幕 土浦・発見

@@ -1,6 +1,6 @@
 // 公開記念イベントの、指令員の報告(状態から作る文)と、チャットの返事。画面の文は、src/data/eventTareScript.ts にある。
 // すべて、決まった文を選ぶだけ(AIではない)。
-import { CHAT_CHOICES, CHAT_MINUTES, CHAT_PR_RIDING, CHAT_WHERE_NO_POSITION, COMMANDER } from '../data/eventTareScript';
+import { ACT3_RESERVED, ACT3_RESERVED_FATHER_NOT_YET, CHAT_CHOICES, CHAT_MINUTES, CHAT_PR_RIDING, CHAT_WHERE_FATHER_NOT_YET, CHAT_WHERE_NO_POSITION, COMMANDER } from '../data/eventTareScript';
 import type { ChatChoice } from '../data/eventTareScript';
 import type { EventTareState } from './eventTare';
 
@@ -11,11 +11,31 @@ export const SOON_MINUTES = 3; // これ以内なら、「もうすぐ」
 export const SCENE_MATSUDO_MIN = 12;
 export const SCENE_KASHIWA_MIN = 20;
 
+// 東京〜土浦の所要(めぐり。36分40秒)。親父さんの列車が、土浦に着くまでの残りから、発車までを出すのに使う
+export const FATHER_RIDE_SEC = 2200;
+
+// 親父さんの列車が、もう発車しているか(位置が出る間、または、土浦に着いたあと)。分からないときは、発車ずみ扱い
+export const fatherDeparted = (s: EventTareState): boolean => {
+  const m = s.minutesToFatherArrival;
+  if (m === null || m <= 0) return true;
+  return s.fatherPosition !== null;
+};
+
+// 親父さんの列車の発車まで(分。発車前のみ。1以上)
+export const minutesToFatherDeparture = (s: EventTareState): number =>
+  Math.max(1, (s.minutesToFatherArrival ?? 0) - Math.floor(FATHER_RIDE_SEC / 60));
+
+// 第3幕(予約したあと)の指令員の文
+export const act3ReservedLines = (s: EventTareState) => (fatherDeparted(s) ? ACT3_RESERVED : ACT3_RESERVED_FATHER_NOT_YET);
+
+// 自分の列車が、土浦に着くまで(分)。まだ分からない・もう着いたときは 0
+const playerLeft = (s: EventTareState): number => Math.max(s.minutesToPlayerArrival ?? 0, 0);
+
 // 親父さんの列車の位置の文(いまの状態から)。位置が分からないときは null
 export const positionText = (s: EventTareState): string | null => {
   const m = s.minutesToFatherArrival;
   if (m !== null) {
-    if (m <= 0) return COMMANDER.arrived;
+    if (m <= 0) return playerLeft(s) > 0 ? COMMANDER.arrivedPlayerLeft(playerLeft(s)) : COMMANDER.arrived;
     if (m <= SOON_MINUTES) return COMMANDER.soon;
     if (m <= NEAR_MINUTES) return COMMANDER.near(m);
   }
@@ -78,11 +98,12 @@ export const chatReply = (choice: ChatChoice['id'], nth: number, s: EventTareSta
   const pick = (list: string[]) => list[Math.min(Math.max(nth, 1), list.length) - 1];
   switch (choice) {
     case 'where':
+      if (!fatherDeparted(s)) return CHAT_WHERE_FATHER_NOT_YET(minutesToFatherDeparture(s));
       return positionText(s) ?? CHAT_WHERE_NO_POSITION;
     case 'minutes': {
       const f = s.minutesToFatherArrival;
       const p = s.minutesToPlayerArrival;
-      if (f !== null && f <= 0) return CHAT_MINUTES.fatherGone;
+      if (f !== null && f <= 0) return p !== null && p > 0 ? CHAT_MINUTES.fatherGonePlayerLeft(p) : CHAT_MINUTES.fatherGone;
       if (f === null || p === null) return CHAT_MINUTES.noTrain;
       return CHAT_MINUTES.both(f, Math.max(p, 0));
     }
