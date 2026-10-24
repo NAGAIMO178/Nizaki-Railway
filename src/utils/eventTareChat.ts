@@ -28,11 +28,14 @@ export const minutesToFatherDeparture = (s: EventTareState): number =>
 // 第3幕(予約したあと)の指令員の文
 export const act3ReservedLines = (s: EventTareState) => (fatherDeparted(s) ? ACT3_RESERVED : ACT3_RESERVED_FATHER_NOT_YET);
 
+// 自分の列車が、土浦に着くまで(分)。まだ分からない・もう着いたときは 0
+const playerLeft = (s: EventTareState): number => Math.max(s.minutesToPlayerArrival ?? 0, 0);
+
 // 親父さんの列車の位置の文(いまの状態から)。位置が分からないときは null
 export const positionText = (s: EventTareState): string | null => {
   const m = s.minutesToFatherArrival;
   if (m !== null) {
-    if (m <= 0) return COMMANDER.arrived;
+    if (m <= 0) return playerLeft(s) > 0 ? COMMANDER.arrivedPlayerLeft(playerLeft(s)) : COMMANDER.arrived;
     if (m <= SOON_MINUTES) return COMMANDER.soon;
     if (m <= NEAR_MINUTES) return COMMANDER.near(m);
   }
@@ -100,7 +103,7 @@ export const chatReply = (choice: ChatChoice['id'], nth: number, s: EventTareSta
     case 'minutes': {
       const f = s.minutesToFatherArrival;
       const p = s.minutesToPlayerArrival;
-      if (f !== null && f <= 0) return CHAT_MINUTES.fatherGone;
+      if (f !== null && f <= 0) return p !== null && p > 0 ? CHAT_MINUTES.fatherGonePlayerLeft(p) : CHAT_MINUTES.fatherGone;
       if (f === null || p === null) return CHAT_MINUTES.noTrain;
       return CHAT_MINUTES.both(f, Math.max(p, 0));
     }

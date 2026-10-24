@@ -60,6 +60,8 @@ export const COMMANDER = {
   near: (min: number) => `あと約${min}分で、親父さんの列車が土浦に着く`,
   soon: 'もうすぐ、親父さんが土浦に着く',
   arrived: '親父さんの列車が、土浦に着いた。…降りたようだ',
+  // 自分の列車が、まだ着いていないとき(親父さんが先に着いた)は、自分の残りも伝える
+  arrivedPlayerLeft: (min: number) => `親父さんの列車が、土浦に着いた。…降りたようだ。こちらの列車は、あと約${min}分で土浦に着く`,
   delay: (min: number) => `遅れが出ている。${min}分の遅れだ`,
   // 場面の一言(乗客の位置)
   sceneMatsudo: '松戸だ。さっきまでいた会議室のビルが、窓から見える',
@@ -98,6 +100,7 @@ export const CHAT_PR_RIDING: string[] = ['ありがとう。親父さんを、�
 export const CHAT_MINUTES = {
   both: (father: number, player: number) => `親父さんの列車は、あと約${father}分。こちらの列車は、あと約${player}分だ`,
   fatherGone: '親父さんは、もう降りている',
+  fatherGonePlayerLeft: (player: number) => `親父さんは、もう降りている。こちらの列車は、あと約${player}分だ`,
   noTrain: '予約した列車が走り出したら、時間を伝える',
 };
 export const CHAT_WHERE_NO_POSITION = '親父さんの列車は、まだ位置が分からない';

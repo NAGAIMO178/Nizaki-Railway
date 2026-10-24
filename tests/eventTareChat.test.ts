@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ACT1, ACT2, ACT3_BEFORE_RESERVATION, ACT3_RESERVED, ACT3_RESERVED_FATHER_NOT_YET, CHAT_WHERE_FATHER_NOT_YET, ACT5, ACT6, CHAT_CHOICES, CLEAR, COMMANDER, EPILOGUE, UI } from '../src/data/eventTareScript';
+import { CHAT_MINUTES, ACT1, ACT2, ACT3_BEFORE_RESERVATION, ACT3_RESERVED, ACT3_RESERVED_FATHER_NOT_YET, CHAT_WHERE_FATHER_NOT_YET, ACT5, ACT6, CHAT_CHOICES, CLEAR, COMMANDER, EPILOGUE, UI } from '../src/data/eventTareScript';
 import { act3ReservedLines, fatherDeparted, minutesToFatherDeparture, commanderUpdates, chatReply, positionText, showsChat, VISIBLE_CHOICES, EXTRA_CHOICES } from '../src/utils/eventTareChat';
 import type { EventTareState } from '../src/utils/eventTare';
 
@@ -23,8 +23,11 @@ describe('指令員の位置の文', () => {
     expect(positionText(st({ minutesToFatherArrival: 4 }))).toBe(COMMANDER.near(4));
     expect(positionText(st({ minutesToFatherArrival: 3 }))).toBe(COMMANDER.soon);
     expect(positionText(st({ minutesToFatherArrival: 1 }))).toBe(COMMANDER.soon);
-    expect(positionText(st({ minutesToFatherArrival: 0 }))).toBe(COMMANDER.arrived);
-    expect(positionText(st({ minutesToFatherArrival: -5 }))).toBe(COMMANDER.arrived);
+    // 親父さんが着いたあと: 自分の列車が、まだなら、自分の残りも伝える。自分も着いたら、着いたことだけ
+    expect(positionText(st({ minutesToFatherArrival: 0, minutesToPlayerArrival: 30 }))).toBe(COMMANDER.arrivedPlayerLeft(30));
+    expect(positionText(st({ minutesToFatherArrival: -5, minutesToPlayerArrival: 25 }))).toBe(COMMANDER.arrivedPlayerLeft(25));
+    expect(positionText(st({ minutesToFatherArrival: -35, minutesToPlayerArrival: 0 }))).toBe(COMMANDER.arrived);
+    expect(positionText(st({ minutesToFatherArrival: -35, minutesToPlayerArrival: -2 }))).toBe(COMMANDER.arrived);
   });
 
   it('位置が分からないときは null', () => {
@@ -58,7 +61,7 @@ describe('指令員の報告(新しいものだけ)', () => {
     expect(run(st({ minutesToFatherArrival: 8 }), 5)).toEqual([COMMANDER.near(8)]);
     expect(run(st({ minutesToFatherArrival: 7 }), 6)).toEqual([]); // 10分以内は、1回だけ
     expect(run(st({ minutesToFatherArrival: 2 }), 8)).toEqual([COMMANDER.soon]);
-    expect(run(st({ minutesToFatherArrival: 0 }), 10)).toEqual([COMMANDER.arrived]);
+    expect(run(st({ minutesToFatherArrival: 0 }), 10)).toEqual([COMMANDER.arrivedPlayerLeft(36)]);
   });
 
   it('遅れがあるときは、遅れの報告(遅れの分が変わったら、また出す)', () => {
@@ -89,7 +92,7 @@ describe('チャット', () => {
     expect(chatReply('where', 1, st({ minutesToFatherArrival: 25 }))).toBe(COMMANDER.atStation('松戸'));
     expect(chatReply('minutes', 1, st({ minutesToFatherArrival: 6, minutesToPlayerArrival: 31 }))).toContain('あと約6分');
     expect(chatReply('minutes', 1, st({ minutesToFatherArrival: 6, minutesToPlayerArrival: 31 }))).toContain('あと約31分');
-    expect(chatReply('minutes', 1, st({ minutesToFatherArrival: 0 }))).toBe('親父さんは、もう降りている');
+
   });
 
   it('固定の返事: 2回目は2つ目、3回目以降は最後のまま', () => {
@@ -157,5 +160,29 @@ describe('親父さんの列車が、発車前か、発車後か', () => {
     expect(t(ACT3_RESERVED_FATHER_NOT_YET)).not.toContain('もう出発している。同じ列車には乗れない');
     expect(t(ACT3_RESERVED_FATHER_NOT_YET)).toContain('同じ列車には乗れない。1本、遅れて追いかける形になる');
     expect(ACT3_RESERVED_FATHER_NOT_YET.length).toBe(ACT3_RESERVED.length);
+  });
+});
+
+describe('親父さんが先に着いたあとの返事: 自分の残りも伝える', () => {
+  const fatherFirst = st({ minutesToFatherArrival: 0, minutesToPlayerArrival: 28 });
+  const bothArrived = st({ phase: 'arrived', minutesToFatherArrival: -40, minutesToPlayerArrival: 0 });
+
+  it('「あと何分で土浦？」: 親父さんが先に着いた・自分はまだ・自分も着いた', () => {
+    expect(chatReply('minutes', 1, fatherFirst)).toBe(CHAT_MINUTES.fatherGonePlayerLeft(28));
+    expect(chatReply('minutes', 1, fatherFirst)).toContain('あと約28分');
+    expect(chatReply('minutes', 1, fatherFirst)).toContain('もう降りている');
+    expect(chatReply('minutes', 1, bothArrived)).toBe(CHAT_MINUTES.fatherGone);
+    // 親父さんが着く前は、これまでどおり、両方
+    expect(chatReply('minutes', 1, st({ minutesToFatherArrival: 6, minutesToPlayerArrival: 31 }))).toBe(CHAT_MINUTES.both(6, 31));
+  });
+
+  it('「親父さんは、今どこ？」: 親父さんが着いたあとも、自分の残りを伝える。自分も着いたら、着いたことだけ', () => {
+    expect(chatReply('where', 1, fatherFirst)).toBe(COMMANDER.arrivedPlayerLeft(28));
+    expect(chatReply('where', 1, bothArrived)).toBe(COMMANDER.arrived);
+  });
+
+  it('司令員のログ: 親父さんが着いたとき、自分の列車がまだなら、残りも出す', () => {
+    const out = commanderUpdates(new Set(['departed']), fatherFirst, at(20)).map((u) => u.text);
+    expect(out).toContain(COMMANDER.arrivedPlayerLeft(28));
   });
 });
