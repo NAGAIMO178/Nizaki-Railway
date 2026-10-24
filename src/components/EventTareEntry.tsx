@@ -45,7 +45,7 @@ export const EventTareCard: React.FC<EntryProps> = ({ joined, cleared, onOpen })
           <h4 className="text-base sm:text-lg font-extrabold text-[#221C35] group-hover:text-[#5B21B6] transition-colors">{TARE_TITLE}</h4>
           <p className="text-xs text-[#6B6380] mt-1 leading-relaxed">{UI.cardTagline}</p>
         </div>
-        <EventMetaRow difficulty={2} items={[UI.cardReward]} />
+        <EventMetaRow difficulty={2} items={[UI.cardReward]} dotsOnlyWhenFit />
       </div>
       <div className="flex sm:flex-col items-center gap-2 w-full sm:w-auto shrink-0 pt-2 sm:pt-0">
         <button
