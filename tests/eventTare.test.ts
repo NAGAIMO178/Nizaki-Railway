@@ -96,6 +96,20 @@ describe('対象の予約の判定', () => {
   });
 });
 
+describe('取り消した予約・乗車日(リンクの指定で公開後の画面を見ているとき)', () => {
+  it('取り消した予約の記録は、対象にならない', () => {
+    expect(isEventEligibleOrder(orderOf(5))).toBe(true);
+    expect(isEventEligibleOrder(orderOf(5, '土浦', { result: 'cancelled' }))).toBe(false);
+    expect(isEventEligibleOrder(orderOf(5, '土浦', { result: 'completed' }))).toBe(true);
+    expect(getEventState(true, [orderOf(5, '土浦', { result: 'cancelled' })], at(8)).phase).toBe('no_reservation');
+  });
+
+  it('公開前の画面の確認(preview)では、乗車日がイベントの開始より前でも、試せる', () => {
+    // この確認では、本物の公開の判定(LAUNCH_AT)は、まだ来ていない
+    expect(isEventEligibleOrder(orderOf(5, '土浦', { reservedDate: '2026-10-01' }))).toBe(true);
+  });
+});
+
 describe('進行の段階', () => {
   const trip = 10;
   const o = () => orderOf(trip);

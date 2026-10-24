@@ -15,7 +15,7 @@ import {
   normalizeStationName,
   resolveTrainDelay,
 } from './diaTimetable';
-import { isLaunched } from './launch';
+import { isLaunched, LAUNCH_AT } from './launch';
 
 export const EVENT_TARE = {
   id: 'tare-2026',
@@ -46,7 +46,11 @@ export interface EventOrder {
   boardingStation?: string;
   destinationStation?: string;
   reservedDate?: string; // YYYY-MM-DD(省略すると、いまの日)
+  result?: 'completed' | 'cancelled'; // 終了した予約の記録(OrderHistoryItem)のとき。取り消した予約は、対象にならない
 }
+
+// 本物の公開(公開日をすぎた)か。リンクの指定(preview)で公開後の画面を見ているだけなら false
+const isRealLaunch = (): boolean => LAUNCH_AT !== null && Date.now() >= Date.parse(LAUNCH_AT);
 
 // 対象の予約の、降りる駅(土浦かそれより先)
 export const EVENT_DESTINATIONS = ['土浦', 'ひたちなか海浜公園', '日立'];
@@ -127,6 +131,7 @@ const resolve = (order: EventOrder, now: Date, prevN: number): Resolved | null =
   const data = getCachedExpressData(KEY);
   if (!data) return null;
   if (!order.trainName.startsWith(EXPRESS_TYPES[KEY].label)) return null;
+  if (order.result === 'cancelled') return null; // 取り消した予約は、対象にならない
   if (!order.boardingStation || !order.destinationStation) return null;
   if (stripEki(order.boardingStation) !== EVENT_ORIGIN) return null;
   if (!EVENT_DESTINATIONS.includes(stripEki(order.destinationStation))) return null;
@@ -140,6 +145,9 @@ const resolve = (order: EventOrder, now: Date, prevN: number): Resolved | null =
   const player = timelineOf(data, trips[i].code, dayStartMs);
   const father = timelineOf(data, trips[i - prevN].code, dayStartMs);
   if (!player || !father) return null;
+  // 乗車日時が、イベントの開始より前の予約(公開前にあった予約)は、対象にならない(サーバーの条件と同じ)。
+  // リンクの指定(preview)で、公開前に画面を試しているときは、この条件を外す
+  if (!(isLaunched() && !isRealLaunch()) && player.scheduledDepMs < Date.parse(EVENT_TARE.startAt)) return null;
   return {
     order,
     player: { trainNo: trips[i].code, ...player },
