@@ -1,6 +1,7 @@
 // 公開記念イベントの文を、LINE のように、1つずつ、間をあけて出す。
 //  - 出る前に、「…」の入力中の表示(長い文は、少し長く)
-//  - すでに見た場面・端末の「動きを減らす」設定のときは、全部すぐ出す
+//  - すでに見た場面は、全部すぐ出す(参加前の導入は、毎回、1つずつ)
+//  - 端末の「動きを減らす」設定でも、順番に出す(読む順番のための間)。止めるのは、動きだけ(点滅・なめらかなスクロール)
 //  - タップで、残りを全部すぐ出す(画面側)
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ScriptLine } from '../data/eventTareScript';
@@ -63,12 +64,15 @@ export const prefersReducedMotion = (): boolean => {
   }
 };
 
-// 全部すぐ出すか。見た場面は、すぐ出す(replay のとき=参加前の導入は、見た印があっても、1つずつ出す)。「動きを減らす」設定は、いつでも、すぐ出す
-export const startsInstant = (seen: boolean, reducedMotion: boolean, replay = false): boolean => reducedMotion || (seen && !replay);
+// 全部すぐ出すか。見た場面は、すぐ出す(replay のとき=参加前の導入は、見た印があっても、1つずつ出す)。「動きを減らす」設定は、関係しない
+export const startsInstant = (seen: boolean, replay = false): boolean => seen && !replay;
+
+// 下へ送るスクロール。「動きを減らす」設定のときは、なめらかにしない
+export const scrollBehavior = (): 'smooth' | 'auto' => (prefersReducedMotion() ? 'auto' : 'smooth');
 
 // 1つずつ出す。skipSignal の数が変わると(タップ)、残りを全部すぐ出す
 export const useReveal = (lines: ScriptLine[], key: string, skipSignal = 0, replay = false) => {
-  const instant = useMemo(() => startsInstant(isSceneSeen(key), prefersReducedMotion(), replay), [key, replay]);
+  const instant = useMemo(() => startsInstant(isSceneSeen(key), replay), [key, replay]);
   const [count, setCount] = useState(instant ? lines.length : 0);
   const [showTyping, setShowTyping] = useState(false);
   const lastSignal = useRef(skipSignal);
