@@ -76,6 +76,10 @@ function doPost(e) {
     if (json.action === 'claimEventTare') {
       return handleClaimEventTare(json.sessionToken, json.orderId);
     }
+    // 公開記念イベントに参加した時刻を、サーバーの時刻で、会員ごとに1回だけ記録する(別の端末でも、進み具合が同じになるように)
+    if (json.action === 'joinEventTare') {
+      return handleJoinEventTare(json.sessionToken);
+    }
     if (json.action === 'saveMysteryProgress') {
       return handleSaveMysteryProgress(json.sessionToken, json.progress);
     }
@@ -1155,7 +1159,7 @@ function handleDeleteAccount(email, password) {
 function deleteCloudAccountData(memberId) {
   if (!memberId) return;
   const ss = getDataSpreadsheet();
-  [[SHEET_POINTS, 1], [SHEET_USED_COUPONS, 0], [SHEET_MYSTERY, 0]].forEach(function (def) {
+  [[SHEET_POINTS, 1], [SHEET_USED_COUPONS, 0], [SHEET_MYSTERY, 0], [SHEET_EVENT_JOIN, 0]].forEach(function (def) {
     const sheet = ss.getSheetByName(def[0]);
     if (!sheet) return;
     const data = sheet.getDataRange().getValues();
@@ -1612,6 +1616,10 @@ const SHEET_USED_COUPONS = '使用済みクーポン';
 const USED_COUPON_HEADERS = ['会員ID', 'コード', '日時'];
 const SHEET_MYSTERY = 'ミステリー進行';
 const MYSTERY_HEADERS = ['会員ID', '解放した幕', 'スタンプ', '制覇', '更新日時'];
+// 公開記念イベントに参加した時刻(会員ごとに1行。最初の参加だけ)。ポイント・名札には関係しない
+const SHEET_EVENT_JOIN = 'イベント参加';
+const EVENT_JOIN_HEADERS = ['会員ID', 'イベント', '参加時刻(ms)', '日時'];
+const EVENT_TARE_ID = 'tare';
 
 const MIGRATION_POINT_CAP = 3000; // 端末のポイントを引き継ぐ上限
 const WELCOME_POINTS = 500;
@@ -1965,6 +1973,7 @@ function buildAccountData(memberId, ledger, coupons, mystery) {
     usedCoupons: coupons.codes.slice(),
     claimedEvents: Object.keys(ledger.keys).filter(function (k) { return k.indexOf('event:') === 0; }).map(function (k) { return k.slice(6); }),
     eventTareCleared: !!ledger.keys[EVENT_TARE_KEY],
+    eventTareJoinedAt: readEventJoinedAt(memberId),
     mystery: { stage: mystery.stage, stamps: mystery.stamps, cleared: mystery.cleared },
     orders: readMemberOrders(memberId),
     rides: readMemberRides(memberId)
@@ -2165,6 +2174,52 @@ function handleClaimEventTare(sessionToken, orderId) {
     addPointEntry(ledger, a.memberId, 'event', EVENT_TARE_KEY, EVENT_TARE_POINTS, EVENT_TARE_TITLE);
     CacheService.getScriptCache().remove(attemptKey);
     return createJsonResponse({ status: 'success', added: true, points: EVENT_TARE_POINTS, balance: ledgerBalance(ledger) });
+  });
+}
+
+// この会員が参加した時刻(ミリ秒)。まだなら null。読むだけ(表が無ければ、作らない)
+function readEventJoinedAt(memberId) {
+  const sheet = getDataSpreadsheet().getSheetByName(SHEET_EVENT_JOIN);
+  if (!sheet) return null;
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === memberId && String(data[i][1]) === EVENT_TARE_ID) {
+      const ms = Number(data[i][2]);
+      return isFinite(ms) && ms > 0 ? ms : null;
+    }
+  }
+  return null;
+}
+
+// 参加した時刻を、サーバーの時刻で、1回だけ記録する。2回目以降は、記録ずみの時刻を返すだけ(上書きしない)
+function handleJoinEventTare(sessionToken) {
+  const a = authMember(sessionToken);
+  if (a.error) return a.error;
+  const joinedResponse = function (ms, added) {
+    return createJsonResponse({ status: 'success', joinedAt: ms, added: added });
+  };
+  const already = readEventJoinedAt(a.memberId);
+  if (already !== null) return joinedResponse(already, false);
+  const attemptKey = 'event_tare_join_' + a.memberId;
+  const gate = reserveCounter(attemptKey, EVENT_TARE_MAX_ATTEMPTS, EVENT_TARE_ATTEMPT_SECONDS);
+  if (gate === 'locked') {
+    return createJsonResponse({ status: 'error', code: 'event_locked', message: 'しばらくしてからお試しください。' });
+  }
+  if (gate === 'busy') {
+    return createJsonResponse({ status: 'error', code: 'event_busy', message: '混み合っています。しばらくしてからもう一度お試しください。' });
+  }
+  return withScriptLock(function () {
+    // ロックの中で、もう一度確かめる(同時に送られても、1回だけ書く)
+    const again = readEventJoinedAt(a.memberId);
+    if (again !== null) return joinedResponse(again, false);
+    const now = nowMs();
+    if (now < eventTareStartMs()) {
+      return createJsonResponse({ status: 'error', code: 'event_not_started', message: 'まだ受け付けていません。' });
+    }
+    const sheet = getOrCreateSheetWithHeaders(SHEET_EVENT_JOIN, EVENT_JOIN_HEADERS, []);
+    sheet.appendRow([a.memberId, EVENT_TARE_ID, now, nowText()]);
+    CacheService.getScriptCache().remove(attemptKey);
+    return joinedResponse(now, true);
   });
 }
 
