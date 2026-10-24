@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { ACT1, ACT2, ACT3_BEFORE_RESERVATION, ACT3_RESERVED, ACT5, ACT6, CHAT_CHOICES, CLEAR, COMMANDER, EPILOGUE, UI } from '../src/data/eventTareScript';
-import { commanderUpdates, chatReply, positionText, showsChat, VISIBLE_CHOICES, EXTRA_CHOICES } from '../src/utils/eventTareChat';
+import { ACT1, ACT2, ACT3_BEFORE_RESERVATION, ACT3_RESERVED, ACT3_RESERVED_FATHER_NOT_YET, CHAT_WHERE_FATHER_NOT_YET, ACT5, ACT6, CHAT_CHOICES, CLEAR, COMMANDER, EPILOGUE, UI } from '../src/data/eventTareScript';
+import { act3ReservedLines, fatherDeparted, minutesToFatherDeparture, commanderUpdates, chatReply, positionText, showsChat, VISIBLE_CHOICES, EXTRA_CHOICES } from '../src/utils/eventTareChat';
 import type { EventTareState } from '../src/utils/eventTare';
 
 const base: EventTareState = {
@@ -124,5 +124,38 @@ describe('台本', () => {
   });
   it('どの文も、空ではない', () => {
     all.forEach((t) => expect(t.trim().length).toBeGreaterThan(0));
+  });
+});
+
+describe('親父さんの列車が、発車前か、発車後か', () => {
+  // 自分の発車が約38分後・親父さんの発車が約8分後 → 親父さんが土浦に着くまで 45分
+  const before = st({ phase: 'before_departure', minutesToFatherArrival: 45, minutesToPlayerArrival: 75, fatherPosition: null });
+  const after = st({ phase: 'before_departure', minutesToFatherArrival: 20, minutesToPlayerArrival: 50, fatherPosition: { between: ['松戸', '柏'] } });
+
+  it('位置が出ていなければ発車前、出ていれば発車ずみ(着いたあとも発車ずみ)', () => {
+    expect(fatherDeparted(before)).toBe(false);
+    expect(fatherDeparted(after)).toBe(true);
+    expect(fatherDeparted(st({ minutesToFatherArrival: -3, fatherPosition: null }))).toBe(true);
+  });
+
+  it('「親父さんは、今どこ？」: 発車前は「まだ東京にいる。あと約○分で発車」、発車後は位置', () => {
+    expect(minutesToFatherDeparture(before)).toBe(9);
+    expect(chatReply('where', 1, before)).toBe(CHAT_WHERE_FATHER_NOT_YET(9));
+    expect(chatReply('where', 1, before)).toContain('まだ東京にいる');
+    expect(chatReply('where', 1, after)).toBe(COMMANDER.between('松戸', '柏'));
+  });
+
+  it('発車の直前でも、0分とは言わない(1分以上)', () => {
+    expect(minutesToFatherDeparture(st({ minutesToFatherArrival: 37, fatherPosition: null }))).toBe(1);
+  });
+
+  it('第3幕(予約したあと): 発車前は1行にまとめる。発車後は、今の文のまま', () => {
+    expect(act3ReservedLines(after)).toBe(ACT3_RESERVED);
+    expect(act3ReservedLines(before)).toBe(ACT3_RESERVED_FATHER_NOT_YET);
+    const t = (ls: { text: string }[]) => ls.map((l) => l.text);
+    expect(t(ACT3_RESERVED)).toContain('もう出発している。同じ列車には乗れない');
+    expect(t(ACT3_RESERVED_FATHER_NOT_YET)).not.toContain('もう出発している。同じ列車には乗れない');
+    expect(t(ACT3_RESERVED_FATHER_NOT_YET)).toContain('同じ列車には乗れない。1本、遅れて追いかける形になる');
+    expect(ACT3_RESERVED_FATHER_NOT_YET.length).toBe(ACT3_RESERVED.length);
   });
 });

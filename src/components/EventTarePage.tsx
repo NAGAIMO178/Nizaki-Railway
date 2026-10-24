@@ -4,7 +4,6 @@ import {
   ACT1,
   ACT2,
   ACT3_BEFORE_RESERVATION,
-  ACT3_RESERVED,
   ACT5,
   ACT6,
   CHAT_SPEAKER,
@@ -26,7 +25,7 @@ import {
   readEventProgress,
   setEventCleared,
 } from '../utils/eventTare';
-import { EXTRA_CHOICES, VISIBLE_CHOICES, chatReply, commanderUpdates, showsChat } from '../utils/eventTareChat';
+import { EXTRA_CHOICES, VISIBLE_CHOICES, act3ReservedLines, chatReply, commanderUpdates, showsChat } from '../utils/eventTareChat';
 import { claimEventTare } from '../utils/cloudAccount';
 import { useReveal } from '../utils/eventTareReveal';
 import type { ChatChoice } from '../data/eventTareScript';
@@ -192,7 +191,7 @@ export const EventTarePage: React.FC<EventTarePageProps> = ({ owner, sessionToke
       add.push(...items);
     };
     if (state.phase === 'no_reservation') once('act2', [{ kind: 'block', text: '', block: { key: 'act2', lines: ACT2_LINES } }]);
-    if (state.phase === 'before_departure' || state.phase === 'riding' || state.phase === 'arrived') once('act3r', [{ kind: 'block', text: '', block: { key: 'act3r', lines: ACT3_RESERVED } }]);
+    if (state.phase === 'before_departure' || state.phase === 'riding' || state.phase === 'arrived') once('act3r', [{ kind: 'block', text: '', block: { key: 'act3r', lines: act3ReservedLines(state) } }]);
     commanderUpdates(known.current, state, now).forEach((u) => {
       known.current.add(u.key);
       add.push({ kind: 'say', who: CHAT_SPEAKER, text: u.text });
