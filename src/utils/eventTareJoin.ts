@@ -1,5 +1,6 @@
 // 公開記念イベントの参加を、サーバーの時刻(joinEventTare)とつなぐ。通信の結果は、画面にエラーとして出さない(端末の時刻のまま続ける)。
-import { markEventJoined, readEventProgress, setEventJoinedAt } from './eventTare';
+import { markEventJoined, readEventProgress, resetEventProgress, setEventJoinedAt } from './eventTare';
+import { clearSeenScenes } from './eventTareReveal';
 import type { EventProgress, EventStore } from './eventTare';
 import type { EventTareJoinResult } from './cloudAccount';
 
@@ -53,3 +54,14 @@ export const syncJoinedFromServer = async (
   const after = readEventProgress(owner, store);
   return after.joined !== before.joined || after.joinedAt !== before.joinedAt;
 };
+
+// 「最初からやり直す」: 参加の印・参加の時刻・見た場面の印を、この会員の分だけ消す。やり直した時刻を記録する(サーバーは変えない)。
+// クリア済みは、やり直せない(false)。チャットの履歴は、画面の中だけなので、画面を作り直して消す(呼ぶ側)。
+export const resetEvent = (owner: string, store: EventStore | undefined, nowMs: number = Date.now()): boolean => {
+  if (!resetEventProgress(owner, store, nowMs)) return false;
+  clearSeenScenes(owner);
+  return true;
+};
+
+// 「最初からやり直す」を出すのは、参加ずみで、まだクリアしていないとき
+export const canResetEvent = (p: Pick<EventProgress, 'joined' | 'cleared'>): boolean => p.joined && !p.cleared;

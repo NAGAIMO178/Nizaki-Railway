@@ -41,6 +41,17 @@ const defaultStore = (): SeenStore | null => {
     return null;
   }
 };
+// 見た場面の印の名前(会員ごと。別の会員の分と、混ざらない)と、場面の一覧
+export const SCENE_KEYS = ['act1', 'act2', 'act3r', 'found', 'epilogue'] as const;
+export const seenKeyOf = (owner: string, key: string): string => `${(owner || '').trim().toLowerCase()}:${key}`;
+export const clearSeenScenes = (owner: string, store: (SeenStore & { removeItem?: (key: string) => void }) | null = defaultStore()): void => {
+  try {
+    SCENE_KEYS.forEach((k) => store?.removeItem?.(SEEN_PREFIX + seenKeyOf(owner, k)));
+  } catch {
+    // 消せなくても、画面は動く
+  }
+};
+
 export const isSceneSeen = (key: string, store: SeenStore | null = defaultStore()): boolean => {
   try {
     return store?.getItem(SEEN_PREFIX + key) === '1';
