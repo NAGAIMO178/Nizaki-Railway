@@ -42,6 +42,7 @@ import { TicketSummary, reservationRibbon } from '../utils/ticketApi';
 import { calculateFare } from '../utils/fare';
 import { CompletionModal } from './CompletionModal';
 import { calcCancelPenalty } from '../utils/cancelPenalty';
+import { pickCurrentTrip, trainEnded } from '../utils/reservationTrain';
 
 // 列車位置の特急の詳細から、予約画面を、その列車を選んだ状態で開くための指定(公開後だけ。key が変わるたびに適用する)
 export interface ReservationPreset {
@@ -272,12 +273,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
   const currentMinutesFromMidnight = nowDate.getHours() * 60 + nowDate.getMinutes();
 
   // 列車が発車5分前または過去（予約不可）かどうかの判定
-  const isTrainEnded = (timeStr: string) => {
-    const [h, m] = timeStr.split(':').map(Number);
-    const trainMin = h * 60 + m;
-    // 発車5分前（発車時刻 - 5分）を過ぎた場合は予約不可
-    return currentMinutesFromMidnight >= trainMin - 5;
-  };
+  const isTrainEnded = (timeStr: string) => trainEnded(timeStr, currentMinutesFromMidnight);
 
   const availableTrains = trips;
 
@@ -297,8 +293,8 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
     }
   }, [expressType, boardingStation, destinationStation, diaTick, currentMinutesFromMidnight]);
 
-  const currentTrainInfo: ExpressTrip | undefined =
-    availableTrains.find((t) => t.code === selectedTrainCode) || availableTrains[0];
+  // 欄に見える列車と、判定に使う列車は、同じもの(選ばれた列車が予約できないときは、予約できる最初の列車)
+  const currentTrainInfo: ExpressTrip | undefined = pickCurrentTrip(availableTrains, selectedTrainCode, currentMinutesFromMidnight);
   const isCurrentTrainEnded = currentTrainInfo ? isTrainEnded(currentTrainInfo.depTime) : true;
   const isAllTrainsEnded = availableTrains.every((t) => isTrainEnded(t.depTime));
 
