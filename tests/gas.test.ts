@@ -1228,3 +1228,154 @@ describe('イベントの判定は、最初の内容だけを見る(更新で書
     expect(gas.handleClaimEventTare('ok', 'EQ-100')).toMatchObject({ code: 'event_not_yet' });
   });
 });
+
+// ---- 公開記念イベントに参加した時刻(joinEventTare): サーバーの時刻で、会員ごとに1回だけ ----
+describe('公開記念イベントの参加の時刻(joinEventTare)', () => {
+  const jst = (s: string) => Date.parse(s + '+09:00');
+  let joinRows: unknown[][];
+  let now: number;
+  let cache: Record<string, string>;
+  let props: Record<string, string>;
+  let lockFails: boolean;
+
+  const joinSheet = () => ({
+    getDataRange: () => ({ getValues: () => joinRows.map((r) => [...r]) }),
+    appendRow: (r: unknown[]) => void joinRows.push(r),
+    deleteRow: (n: number) => void joinRows.splice(n - 1, 1),
+  });
+
+  beforeEach(() => {
+    joinRows = [['会員ID', 'イベント', '参加時刻(ms)', '日時']];
+    now = jst('2026-11-01T09:00:00');
+    cache = {};
+    props = {};
+    lockFails = false;
+    gas.nowMs = () => now;
+    gas.nowText = () => '2026/11/01 09:00:00';
+    gas.getDataSpreadsheet = () => ({ getSheetByName: (n: string) => (n === 'イベント参加' ? joinSheet() : null) });
+    gas.getOrCreateSheetWithHeaders = (n: string) => (n === 'イベント参加' ? joinSheet() : { getDataRange: () => ({ getValues: () => rows.map((r) => [...r]) }), appendRow: (r: unknown[]) => void rows.push(r) });
+    gas.CacheService = {
+      getScriptCache: () => ({
+        get: (k: string) => cache[k] ?? null,
+        put: (k: string, v: string) => void (cache[k] = v),
+        remove: (k: string) => void delete cache[k],
+      }),
+    };
+    gas.LockService = {
+      getScriptLock: () => ({
+        waitLock: () => {
+          if (lockFails) throw new Error('busy');
+        },
+        releaseLock: () => undefined,
+      }),
+    };
+    gas.PropertiesService = { getScriptProperties: () => ({ getProperty: (k: string) => props[k] ?? '' }) };
+  });
+
+  const join = (token = 'ok') => gas.handleJoinEventTare(token);
+
+  it('ふつうに、サーバーの時刻で記録される', () => {
+    expect(join()).toEqual({ status: 'success', joinedAt: now, added: true });
+    expect(joinRows.length).toBe(2);
+    expect(joinRows[1].slice(0, 3)).toEqual(['M1', 'tare', now]);
+  });
+
+  it('2回目以降は、記録ずみの時刻を返すだけ(上書きしない・行を足さない)', () => {
+    const first = now;
+    join();
+    now += 3600 * 1000;
+    expect(join()).toEqual({ status: 'success', joinedAt: first, added: false });
+    for (let i = 0; i < 10; i++) join();
+    expect(joinRows.length).toBe(2);
+    expect(joinRows[1][2]).toBe(first);
+  });
+
+  it('同時に送られても、1回だけ(ロックの中で、もう一度確かめる)', () => {
+    const read = gas.readEventJoinedAt;
+    let calls = 0;
+    gas.readEventJoinedAt = (id: string) => (++calls === 1 ? null : read(id) ?? 111); // ロックを待つあいだに、ほかが書いた
+    expect(join()).toEqual({ status: 'success', joinedAt: 111, added: false });
+    expect(joinRows.length).toBe(1);
+  });
+
+  it('ほかの会員の記録は、混ざらない', () => {
+    joinRows.push(['M2', 'tare', 12345, 'x']);
+    expect(join()).toMatchObject({ added: true, joinedAt: now });
+    expect(joinRows.length).toBe(3);
+  });
+
+  it('開始(2026-11-01 0:00)より前は、断る(code: event_not_started・何も書かない)', () => {
+    now = jst('2026-10-31T23:59:59');
+    expect(join()).toEqual({ status: 'error', code: 'event_not_started', message: 'まだ受け付けていません。' });
+    expect(joinRows.length).toBe(1);
+    now = jst('2026-11-01T00:00:00');
+    expect(join().status).toBe('success');
+  });
+
+  it('スクリプトプロパティで、開始を前にずらせる(公開前の動作確認用)', () => {
+    now = jst('2026-10-30T12:00:00');
+    expect(join()).toMatchObject({ code: 'event_not_started' });
+    props.EVENT_TARE_START_MS = String(jst('2026-10-30T00:00:00'));
+    expect(join().status).toBe('success');
+  });
+
+  it('ログインの有効期限が切れているときは、断る', () => {
+    expect(join('bad')).toMatchObject({ status: 'error', code: 'session' });
+    expect(joinRows.length).toBe(1);
+  });
+
+  it('記録できていない会員の試しは、5回/10分まで。止まったあとは、開始後でも、しばらく断る', () => {
+    now = jst('2026-10-31T10:00:00');
+    for (let i = 0; i < 5; i++) expect(join()).toMatchObject({ code: 'event_not_started' });
+    now = jst('2026-11-01T10:00:00');
+    expect(join()).toMatchObject({ status: 'error', code: 'event_locked' });
+    cache = {}; // 10分たった
+    expect(join().status).toBe('success');
+    expect(cache['event_tare_join_M1']).toBeUndefined();
+  });
+
+  it('記録ずみの会員は、回数に関係なく、時刻を読める', () => {
+    join();
+    cache['event_tare_join_M1'] = '9';
+    lockFails = true;
+    expect(join()).toMatchObject({ status: 'success', added: false });
+  });
+
+  it('止まっているときは、ロックを待たずに断る。ロックを取れないときは、混み合っていると返す', () => {
+    cache['event_tare_join_M1'] = '5';
+    lockFails = true;
+    expect(join()).toMatchObject({ code: 'event_locked' });
+    cache = {};
+    expect(join()).toMatchObject({ status: 'error', code: 'event_busy' });
+    expect(joinRows.length).toBe(1);
+  });
+
+  it('ポイント・名札には関係しない(台帳に触れない)', () => {
+    put('welcome', 'welcome', 100);
+    const before = rows.length;
+    join();
+    expect(rows.length).toBe(before);
+  });
+
+  it('アカウントのデータに、参加の時刻(eventTareJoinedAt)が入る。未参加は null', () => {
+    const build = () => gas.buildAccountData('M1', { keys: {}, rows: [] }, { codes: [] }, { stage: 1, stamps: [], cleared: false });
+    expect(build().eventTareJoinedAt).toBeNull();
+    join();
+    expect(build().eventTareJoinedAt).toBe(now);
+  });
+
+  it('退会(アカウント削除)で、その会員の行が消える。ほかの会員は残る', () => {
+    joinRows.push(['M2', 'tare', 999, 'x']);
+    join();
+    gas.getDataSpreadsheet = () => ({ getSheetByName: (n: string) => (n === 'イベント参加' ? joinSheet() : null) });
+    gas.deleteCloudAccountData('M1');
+    expect(joinRows.map((r) => r[0])).toEqual(['会員ID', 'M2']);
+  });
+
+  it('doPost の joinEventTare は、ログイン証だけを受け取る', () => {
+    gas.ContentService = {};
+    const out = gas.doPost({ postData: { contents: JSON.stringify({ action: 'joinEventTare', sessionToken: 'ok', joinedAt: 1, memberId: 'M9' }) } });
+    expect(out).toMatchObject({ status: 'success', joinedAt: now });
+    expect(joinRows[1][0]).toBe('M1');
+  });
+});

@@ -56,3 +56,28 @@ describe('claimEventTare', () => {
     await expect(claimEventTare('t', 'EQ-1')).rejects.toThrow();
   });
 });
+
+describe('joinEventTare(参加の時刻)', () => {
+  it('送るのは、ログイン証だけ', async () => {
+    const { joinEventTare } = await import('../src/utils/cloudAccount');
+    reply({ status: 'success', joinedAt: 1793000000000, added: true });
+    expect(await joinEventTare('tok')).toEqual({ ok: true, joinedAt: 1793000000000, added: true });
+    expect(sent).toEqual([{ action: 'joinEventTare', sessionToken: 'tok' }]);
+  });
+
+  it('断られたときは、理由の種類を返す(まだ受け付けていない・回数・混み合い・ログイン切れ・ほか)', async () => {
+    const { joinEventTare } = await import('../src/utils/cloudAccount');
+    const cases: Array<[Record<string, unknown>, string]> = [
+      [{ status: 'error', code: 'event_not_started', message: 'まだ受け付けていません。' }, 'notStarted'],
+      [{ status: 'error', code: 'event_locked', message: 'x' }, 'locked'],
+      [{ status: 'error', code: 'event_busy', message: 'x' }, 'busy'],
+      [{ status: 'error', code: 'session', message: 'x' }, 'session'],
+      [{ status: 'error', message: 'x' }, 'error'],
+      [{ status: 'success' }, 'error'],
+    ];
+    for (const [body, reason] of cases) {
+      reply(body);
+      expect(await joinEventTare('t')).toMatchObject({ ok: false, reason });
+    }
+  });
+});

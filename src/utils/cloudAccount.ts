@@ -34,6 +34,7 @@ export interface CloudAccount {
   usedCoupons: string[];
   claimedEvents: string[]; // 受け取り済みの1回限りの報酬('launch2' など)。古い保存データには無い
   eventTareCleared: boolean; // 公開記念イベントのごほうびを受け取り済みか(サーバーが決める)
+  eventTareJoinedAt: number | null; // 公開記念イベントに参加した時刻(ミリ秒。サーバーの時刻。未参加は null)
   mystery: MysteryProgress;
   orders: OrderHistoryItem[];
   rides: RideRecord[];
@@ -169,6 +170,7 @@ interface RawAccount {
   usedCoupons: string[];
   claimedEvents?: string[];
   eventTareCleared?: boolean;
+  eventTareJoinedAt?: number | null;
   mystery: MysteryProgress;
   orders: OrderHistoryItem[];
   rides?: RideRecord[];
@@ -199,6 +201,7 @@ const toAccount = (raw: RawAccount): CloudAccount => ({
   usedCoupons: raw.usedCoupons,
   claimedEvents: raw.claimedEvents ?? [],
   eventTareCleared: raw.eventTareCleared ?? false,
+  eventTareJoinedAt: typeof raw.eventTareJoinedAt === 'number' && raw.eventTareJoinedAt > 0 ? raw.eventTareJoinedAt : null,
   mystery: raw.mystery,
   orders: raw.orders,
   rides: raw.rides ?? [],
@@ -214,6 +217,7 @@ interface CloudResponse {
   points?: number;
   balance?: number;
   mystery?: MysteryProgress;
+  joinedAt?: number;
 }
 
 const post = async (action: string, payload: Record<string, unknown>): Promise<CloudResponse> =>
@@ -249,6 +253,24 @@ export const claimEventTare = async (sessionToken: string, orderId: string): Pro
   const message = res.message || 'ごほうびを受け取れませんでした。';
   if (res.code === 'session') return { ok: false, reason: 'session', message };
   if (res.code === 'event_not_yet') return { ok: false, reason: 'notYet', message };
+  if (res.code === 'event_locked') return { ok: false, reason: 'locked', message };
+  if (res.code === 'event_busy') return { ok: false, reason: 'busy', message };
+  return { ok: false, reason: 'error', message };
+};
+
+// 公開記念イベントに参加した時刻を、サーバーに1回だけ記録してもらう(最初の参加だけ。2回目以降は、記録ずみの時刻が返る)。
+// ログイン証のある会員だけが呼ぶ(デモ会員は、端末の中だけ)。
+// reason: notStarted=まだ受け付けていない(端末の中だけで参加してよい) / locked / busy / session / error
+export type EventTareJoinResult =
+  | { ok: true; joinedAt: number; added: boolean }
+  | { ok: false; reason: 'notStarted' | 'locked' | 'busy' | 'session' | 'error'; message: string };
+
+export const joinEventTare = async (sessionToken: string): Promise<EventTareJoinResult> => {
+  const res = await post('joinEventTare', { sessionToken });
+  if (res.status === 'success' && typeof res.joinedAt === 'number') return { ok: true, joinedAt: res.joinedAt, added: !!res.added };
+  const message = res.message || '参加を記録できませんでした。';
+  if (res.code === 'session') return { ok: false, reason: 'session', message };
+  if (res.code === 'event_not_started') return { ok: false, reason: 'notStarted', message };
   if (res.code === 'event_locked') return { ok: false, reason: 'locked', message };
   if (res.code === 'event_busy') return { ok: false, reason: 'busy', message };
   return { ok: false, reason: 'error', message };
