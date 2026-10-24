@@ -1,4 +1,5 @@
 import React from 'react';
+import { ArrowRight } from 'lucide-react';
 import { TARE_BADGE, TARE_TITLE, UI } from '../data/eventTareScript';
 
 // 公開記念イベントの入口(公開後だけ。呼ぶ側が isLaunched() の内側で出す)。雅石のミステリーと同じ、暗い背景と琥珀色。
@@ -26,23 +27,38 @@ export const EventTareBand: React.FC<EntryProps> = ({ joined, cleared, onOpen })
   );
 };
 
-// イベントタブの先頭の、大きなカード
+// イベントタブのカード(雅石のミステリーのカードと同じ作り: 白いカード・上の細い帯・札・題名・説明・補足・右の紫のボタン)
 export const EventTareCard: React.FC<EntryProps> = ({ joined, cleared, onOpen }) => (
-  <div className="rounded-2xl border border-amber-600/50 bg-gradient-to-b from-[#1d1522] to-[#0C0A10] p-4 space-y-3">
-    <div className="flex items-center gap-1.5">
-      <span className="rounded-full bg-[#991B1B] px-2.5 py-0.5 text-[10px] font-extrabold text-red-100">{cleared ? UI.cardSolved : UI.cardOpen}</span>
-      <span className="rounded-full border border-amber-500/50 bg-amber-500/10 px-2.5 py-0.5 text-[10px] font-extrabold text-amber-400">{TARE_BADGE}</span>
+  <div
+    onClick={onOpen}
+    className="group bg-white rounded-2xl border border-[#E5E2EE] hover:border-[#5B21B6]/60 p-4 sm:p-5 shadow-xs hover:shadow-md transition-all cursor-pointer relative overflow-hidden"
+  >
+    <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-500 via-[#5B21B6] to-red-600" />
+    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div className="space-y-2 min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="bg-[#EDE9FE] text-[#5B21B6] text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border border-[#DDD8EB]">{TARE_BADGE}</span>
+          <span className="bg-rose-50 text-rose-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-rose-200">{cleared ? UI.cardSolved : UI.cardOpen}</span>
+        </div>
+        <div>
+          <h4 className="text-base sm:text-lg font-extrabold text-[#221C35] group-hover:text-[#5B21B6] transition-colors">{TARE_TITLE}</h4>
+          <p className="text-xs text-[#6B6380] mt-1 leading-relaxed">{UI.cardTagline}</p>
+        </div>
+        <div className="text-[11px] text-[#857D99] pt-1">{UI.cardReward}</div>
+      </div>
+      <div className="flex sm:flex-col items-center gap-2 w-full sm:w-auto shrink-0 pt-2 sm:pt-0">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpen();
+          }}
+          className="flex-1 sm:flex-none h-11 px-5 rounded-xl bg-[#5B21B6] hover:bg-[#4C1D95] text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer"
+        >
+          <span>{cleared ? UI.cardSeeAgain : joined ? UI.cardContinue : UI.join}</span>
+          <ArrowRight className="w-4 h-4" />
+        </button>
+      </div>
     </div>
-    <div>
-      <h4 className="font-serif text-lg font-extrabold leading-snug text-amber-100">{TARE_TITLE}</h4>
-      <p className="mt-1 text-xs text-stone-400">{UI.cardTagline}</p>
-    </div>
-    <button
-      type="button"
-      onClick={onOpen}
-      className="w-full h-11 rounded-xl bg-amber-500 hover:bg-amber-400 text-[#1c1410] text-sm font-black cursor-pointer"
-    >
-      {cleared ? UI.cardSeeAgain : joined ? UI.entryContinue : UI.join}
-    </button>
   </div>
 );

@@ -165,9 +165,6 @@ export const EventsTab: React.FC<EventsTabProps> = ({
           </span>
         </div>
 
-        {/* 公開記念イベント(公開後だけ) */}
-        {isLaunched() && eventTare && <EventTareCard {...eventTare} />}
-
         {/* 2. 公式イベントポスター枠（ヘッダーバナー画像） */}
         <DigitalStampRallyBanner customImageUrl={customPosterUrl} />
 
@@ -183,6 +180,9 @@ export const EventsTab: React.FC<EventsTabProps> = ({
             </div>
             <span className="text-xs text-[#6B6380]">2件の特命事件</span>
           </div>
+
+          {/* 公開記念イベント(公開後だけ。デジタルスタンプラリーの画像のすぐ下、雅石のカードの上) */}
+          {isLaunched() && eventTare && <EventTareCard {...eventTare} />}
 
           {/* イベントカード1: 斬丸と三つの雅石（メイン特命） */}
           <div 

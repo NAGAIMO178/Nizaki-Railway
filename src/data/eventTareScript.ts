@@ -158,6 +158,8 @@ export const UI = {
   cardSolved: '解決済み',
   cardTagline: '特急めぐりに乗って、失踪した職人を追え',
   cardSeeAgain: 'もう一度見る',
+  cardContinue: '続きから',
+  cardReward: '特典: 名札『味覚捜査班』 ＆ N-POINT +350',
   demoOnly: 'この画面を開いている間だけ',
   // 手順
   steps: [
