@@ -33,6 +33,7 @@ export interface CloudAccount {
   history: PointHistoryItem[];
   usedCoupons: string[];
   claimedEvents: string[]; // 受け取り済みの1回限りの報酬('launch2' など)。古い保存データには無い
+  eventTareCleared: boolean; // 公開記念イベントのごほうびを受け取り済みか(サーバーが決める)
   mystery: MysteryProgress;
   orders: OrderHistoryItem[];
   rides: RideRecord[];
@@ -167,6 +168,7 @@ interface RawAccount {
   history: { date: string; title: string; points: number; kind: string }[];
   usedCoupons: string[];
   claimedEvents?: string[];
+  eventTareCleared?: boolean;
   mystery: MysteryProgress;
   orders: OrderHistoryItem[];
   rides?: RideRecord[];
@@ -196,6 +198,7 @@ const toAccount = (raw: RawAccount): CloudAccount => ({
   })),
   usedCoupons: raw.usedCoupons,
   claimedEvents: raw.claimedEvents ?? [],
+  eventTareCleared: raw.eventTareCleared ?? false,
   mystery: raw.mystery,
   orders: raw.orders,
   rides: raw.rides ?? [],
@@ -231,6 +234,24 @@ export const earnEventReward = async (sessionToken: string, rewardId: string) =>
   const res = await post('earnEventReward', { sessionToken, rewardId });
   if (res.status !== 'success') throw new Error(res.message || '報酬を受け取れませんでした。');
   return { added: !!res.added, points: res.points ?? 0, balance: res.balance ?? 0 };
+};
+
+// 公開記念イベントのごほうび(350pt)を、サーバーに判定してもらって受け取る。送るのは、予約番号だけ(額は、サーバーが決める)。
+// ログイン証のある会員だけが呼ぶ(デモ会員は、画面の中だけ)。
+// reason: notYet=まだ対象ではない / locked=試した回数が多い(約10分あけて) / busy=混み合っている / session=ログインの有効期限切れ / error=ほか
+export type EventTareResult =
+  | { ok: true; added: boolean; points: number; balance: number }
+  | { ok: false; reason: 'notYet' | 'locked' | 'busy' | 'session' | 'error'; message: string };
+
+export const claimEventTare = async (sessionToken: string, orderId: string): Promise<EventTareResult> => {
+  const res = await post('claimEventTare', { sessionToken, orderId });
+  if (res.status === 'success') return { ok: true, added: !!res.added, points: res.points ?? 0, balance: res.balance ?? 0 };
+  const message = res.message || 'ごほうびを受け取れませんでした。';
+  if (res.code === 'session') return { ok: false, reason: 'session', message };
+  if (res.code === 'event_not_yet') return { ok: false, reason: 'notYet', message };
+  if (res.code === 'event_locked') return { ok: false, reason: 'locked', message };
+  if (res.code === 'event_busy') return { ok: false, reason: 'busy', message };
+  return { ok: false, reason: 'error', message };
 };
 
 export const redeemPointCode = async (sessionToken: string, code: string): Promise<{ ok: boolean; message: string }> => {
