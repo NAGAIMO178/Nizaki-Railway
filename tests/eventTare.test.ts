@@ -243,6 +243,85 @@ describe('遅れを入れた計算', () => {
   });
 });
 
+describe('参加の時刻(joinedAt): 参加より前に着いた予約は、対象にしない', () => {
+  // 遅れのない便(位置や時刻の計算が、きれいな数になる)
+  const clean = (() => {
+    let found = -1;
+    return () => {
+      if (found > 0) return found;
+      for (let i = 2; i < 37; i++) {
+        const s = getEventState(true, [orderOf(i)], sec(meguri()[i].depSec + 60));
+        if (s.delayMinutes.player === 0 && s.delayMinutes.father === 0) return (found = i);
+      }
+      throw new Error('遅れのない便が見つからない');
+    };
+  })();
+  const endOf = (i: number) => {
+    const data = getCachedExpressData('meguri')!;
+    const t = findExpressTrips(data, EXPRESS_TYPES.meguri.typeName, '東京', EVENT_TARE.fatherStation);
+    return Math.max(t[i].arrSec, t[i - 1].arrSec); // 土浦に着く予定(遅い方)。秒
+  };
+
+  it('参加より前に、すでに土浦に着いた予約は、対象外(予約なし)', () => {
+    const i = clean();
+    const joinedAt = sec(endOf(i) + 60).getTime();
+    const s = getEventState(true, [orderOf(i)], sec(endOf(i) + 120), { joinedAt });
+    expect(s.phase).toBe('no_reservation');
+    expect(s.orderId).toBeNull();
+    // 参加の時刻を渡さなければ、今までどおり(着いたあと)
+    expect(getEventState(true, [orderOf(i)], sec(endOf(i) + 120)).phase).toBe('arrived');
+    expect(getEventState(true, [orderOf(i)], sec(endOf(i) + 120), { joinedAt: 0 }).phase).toBe('arrived');
+  });
+
+  it('参加のあとに、土浦に着く予約・参加のとき乗車中の予約・参加のとき発車前の予約は、対象', () => {
+    const i = clean();
+    const dep = meguri()[i].depSec;
+    for (const joinedSec of [dep - 3600, dep - 60, dep + 600, endOf(i) - 1]) {
+      const s = getEventState(true, [orderOf(i)], sec(joinedSec + 5), { joinedAt: sec(joinedSec).getTime() });
+      expect(s.orderId, `参加 ${joinedSec}`).toBe(`o${i}`);
+    }
+    const riding = getEventState(true, [orderOf(i)], sec(dep + 600), { joinedAt: sec(dep + 300).getTime() });
+    expect(riding.phase).toBe('riding');
+    const before = getEventState(true, [orderOf(i)], sec(dep - 600), { joinedAt: sec(dep - 1200).getTime() });
+    expect(before.phase).toBe('before_departure');
+  });
+
+  it('土浦に着く予定の時刻ちょうどに参加した予約は、対象外(着いている)。その1秒前なら対象', () => {
+    const i = clean();
+    const end = endOf(i);
+    expect(getEventState(true, [orderOf(i)], sec(end + 5), { joinedAt: sec(end).getTime() }).phase).toBe('no_reservation');
+    expect(getEventState(true, [orderOf(i)], sec(end + 5), { joinedAt: sec(end - 1).getTime() }).orderId).toBe(`o${i}`);
+  });
+
+  it('親父さんの列車が、あとに着く予約は、プレイヤーが着いたあとに参加しても、対象(親父さんが着くまで)', () => {
+    disruptionManager.setLineDisruption(disruption({ maxDelayMinutes: 120 }));
+    let found = -1;
+    for (let i = 1; i < 37 && found < 0; i++) {
+      const s = getEventState(true, [orderOf(i)], sec(meguri()[i].depSec));
+      if (s.minutesToFatherArrival! > s.minutesToPlayerArrival! + 5) found = i;
+    }
+    expect(found).toBeGreaterThan(0);
+    const dep = meguri()[found].depSec;
+    const s0 = getEventState(true, [orderOf(found)], sec(dep));
+    const playerArr = dep + s0.minutesToPlayerArrival! * 60;
+    const fatherArr = dep + s0.minutesToFatherArrival! * 60;
+    const joinedAt = sec(playerArr + 60).getTime(); // プレイヤーの列車は着いたが、親父さんの列車は、まだ
+    expect(getEventState(true, [orderOf(found)], sec(playerArr + 90), { joinedAt }).orderId).toBe(`o${found}`);
+    expect(getEventState(true, [orderOf(found)], sec(fatherArr + 90), { joinedAt: sec(fatherArr + 60).getTime() }).phase).toBe('no_reservation');
+    disruptionManager.clearAllDisruptions();
+  });
+
+  it('古い予約と新しい予約があるときは、新しいほうが選ばれる。古い予約だけなら、なし', () => {
+    const oldI = clean();
+    const newI = Math.min(oldI + 6, 36);
+    const joinedAt = sec(endOf(oldI) + 600).getTime();
+    const now = sec(endOf(oldI) + 900);
+    expect(getEventState(true, [orderOf(oldI), orderOf(newI)], now, { joinedAt }).orderId).toBe(`o${newI}`);
+    expect(getEventState(true, [orderOf(newI), orderOf(oldI)], now, { joinedAt }).orderId).toBe(`o${newI}`);
+    expect(getEventState(true, [orderOf(oldI)], now, { joinedAt }).phase).toBe('no_reservation');
+  });
+});
+
 describe('n(何本前か)を変える', () => {
   it('n=2 なら、親父さんは、さらに30分前に着き、先頭の2本は対象外', () => {
     const i = 12;
@@ -272,19 +351,19 @@ describe('公開前は、何も起きない', () => {
 
 describe('参加・クリアの印', () => {
   it('はじめは、どちらもなし。参加の印をつけると残る。会員ごとに別。メールの大文字小文字は同じ', () => {
-    expect(readEventProgress('a@example.com')).toEqual({ joined: false, cleared: false });
-    markEventJoined('A@Example.com');
-    expect(readEventProgress('a@example.com')).toEqual({ joined: true, cleared: false });
-    expect(readEventProgress('b@example.com')).toEqual({ joined: false, cleared: false });
-    expect(readEventProgress('')).toEqual({ joined: false, cleared: false });
+    expect(readEventProgress('a@example.com')).toEqual({ joined: false, cleared: false, joinedAt: 0 });
+    markEventJoined('A@Example.com', undefined, 1000);
+    expect(readEventProgress('a@example.com')).toEqual({ joined: true, cleared: false, joinedAt: 1000 });
+    expect(readEventProgress('b@example.com')).toEqual({ joined: false, cleared: false, joinedAt: 0 });
+    expect(readEventProgress('')).toEqual({ joined: false, cleared: false, joinedAt: 0 });
   });
 
   it('サーバーの結果で、クリア済みを上書きできる(true にも false にも)', () => {
-    markEventJoined('a@example.com');
+    markEventJoined('a@example.com', undefined, 5000);
     setEventCleared('a@example.com', true);
-    expect(readEventProgress('a@example.com')).toEqual({ joined: true, cleared: true });
+    expect(readEventProgress('a@example.com')).toEqual({ joined: true, cleared: true, joinedAt: 5000 });
     setEventCleared('a@example.com', false);
-    expect(readEventProgress('a@example.com')).toEqual({ joined: true, cleared: false });
+    expect(readEventProgress('a@example.com')).toEqual({ joined: true, cleared: false, joinedAt: 5000 });
     // 参加の印が無くても、クリア済みなら、参加済み
     setEventCleared('c@example.com', true);
     expect(readEventProgress('c@example.com').joined).toBe(true);
@@ -299,8 +378,22 @@ describe('参加・クリアの印', () => {
     expect(readEventProgress('demo@example.com').joined).toBe(false);
   });
 
+  it('参加の時刻は、はじめて参加したときだけ記録する。押し直しても変えない。時刻の無い古い印は 0', () => {
+    markEventJoined('a@example.com', undefined, 1000);
+    markEventJoined('a@example.com', undefined, 9000);
+    expect(readEventProgress('a@example.com').joinedAt).toBe(1000);
+    // 時刻の無い古い印
+    localStorage.setItem('nizaki_event_tare-2026:old@example.com', JSON.stringify({ joined: true, cleared: false }));
+    expect(readEventProgress('old@example.com')).toEqual({ joined: true, cleared: false, joinedAt: 0 });
+    markEventJoined('old@example.com', undefined, 7000);
+    expect(readEventProgress('old@example.com').joinedAt).toBe(0);
+    // サーバーでクリア済みにしても、参加の時刻は変わらない。参加せずにクリア済みなら 0
+    setEventCleared('c@example.com', true);
+    expect(readEventProgress('c@example.com').joinedAt).toBe(0);
+  });
+
   it('壊れた保存データは、なしとして扱う', () => {
     const store: EventStore = { get: () => '{こわれた', set: () => undefined };
-    expect(readEventProgress('a@example.com', store)).toEqual({ joined: false, cleared: false });
+    expect(readEventProgress('a@example.com', store)).toEqual({ joined: false, cleared: false, joinedAt: 0 });
   });
 });

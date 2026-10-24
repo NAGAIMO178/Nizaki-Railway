@@ -187,7 +187,7 @@ export const getEventState = (
   joined: boolean,
   orders: EventOrder[],
   now: Date,
-  opts: { cleared?: boolean; prevN?: number } = {}
+  opts: { cleared?: boolean; prevN?: number; joinedAt?: number } = {}
 ): EventTareState => {
   if (!isLaunched()) return EMPTY_STATE('not_joined');
   if (opts.cleared) return EMPTY_STATE('cleared');
@@ -204,7 +204,10 @@ export const getEventState = (
       const f = stopOf(r.father.stops, station);
       return p && f ? { r, p, f, endMs: Math.max(p.arrMs, f.arrMs) } : null;
     })
-    .filter((x): x is NonNullable<typeof x> => x !== null);
+    .filter((x): x is NonNullable<typeof x> => x !== null)
+    // 参加より前に、土浦に着いた(着く予定が過ぎた)予約は、対象にしない。参加のときに乗車中の予約は、まだ着いていないので、対象。
+    // 参加の時刻(joinedAt)が渡されない・0のときは、この絞りをしない(今までどおり)
+    .filter((x) => !opts.joinedAt || x.endMs > opts.joinedAt);
   if (found.length === 0) return EMPTY_STATE('no_reservation');
 
   // 複数あるときは、まだ終わっていないもののうち、いちばん早く終わるもの。みな終わっていれば、いちばん最近のもの
@@ -257,28 +260,41 @@ export const localEventStore: EventStore = {
 
 const progressKey = (owner: string): string => `nizaki_event_${EVENT_TARE.id}:${(owner || '').trim().toLowerCase()}`;
 
-export const readEventProgress = (owner: string, store: EventStore = localEventStore): { joined: boolean; cleared: boolean } => {
+export interface EventProgress {
+  joined: boolean;
+  cleared: boolean;
+  joinedAt: number; // 参加した時刻(ms)。0は、時刻の記録が無い(古い印)
+}
+
+export const readEventProgress = (owner: string, store: EventStore = localEventStore): EventProgress => {
   try {
     const raw = JSON.parse(store.get(progressKey(owner)) || 'null');
-    if (raw && typeof raw === 'object') return { joined: raw.joined === true || raw.cleared === true, cleared: raw.cleared === true };
+    if (raw && typeof raw === 'object') {
+      return {
+        joined: raw.joined === true || raw.cleared === true,
+        cleared: raw.cleared === true,
+        joinedAt: typeof raw.joinedAt === 'number' && raw.joinedAt > 0 ? raw.joinedAt : 0,
+      };
+    }
   } catch {
     // 読めなければ、なし
   }
-  return { joined: false, cleared: false };
+  return { joined: false, cleared: false, joinedAt: 0 };
 };
 
-const writeProgress = (owner: string, store: EventStore, p: { joined: boolean; cleared: boolean }) =>
-  store.set(progressKey(owner), JSON.stringify(p));
+const writeProgress = (owner: string, store: EventStore, p: EventProgress) => store.set(progressKey(owner), JSON.stringify(p));
 
-export const markEventJoined = (owner: string, store: EventStore = localEventStore): void => {
+// 参加の印をつける。参加の時刻は、はじめて参加したときだけ記録する(押し直しても、変えない。時刻の無い古い印も、そのまま)
+export const markEventJoined = (owner: string, store: EventStore = localEventStore, nowMs: number = Date.now()): void => {
   if (!isLaunched()) return;
   const p = readEventProgress(owner, store);
-  writeProgress(owner, store, { ...p, joined: true });
+  if (p.joined) return;
+  writeProgress(owner, store, { ...p, joined: true, joinedAt: nowMs });
 };
 
 // サーバーの結果で上書きする(クリア済みなら true、まだなら false)。クリア済みは、参加済みでもある
 export const setEventCleared = (owner: string, cleared: boolean, store: EventStore = localEventStore): void => {
   if (!isLaunched()) return;
   const p = readEventProgress(owner, store);
-  writeProgress(owner, store, { joined: p.joined || cleared, cleared });
+  writeProgress(owner, store, { ...p, joined: p.joined || cleared, cleared });
 };
