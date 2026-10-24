@@ -39,12 +39,17 @@ export const ACT3_BEFORE_RESERVATION: ScriptLine[] = [
   L('指令員', '予約は、発車の5分前までだ。急げ'),
 ];
 
-// 第3幕(予約したあと、発車まで)
-export const ACT3_RESERVED: ScriptLine[] = [
+// 第3幕(予約したあと、発車まで)。親父さんの列車が、もう発車しているか(出発前か)で、3行目が変わる
+const ACT3_RESERVED_HEAD: ScriptLine[] = [
   L('指令員', '予約を確認した。ついでに、親父さんの予約も探した'),
   L('指令員', '…あった。A席。ただし、1本前のめぐりだ'),
-  L('指令員', 'もう出発している。同じ列車には乗れない'),
-  L('指令員', 'だが、追いかけられる。親父さんの列車が今どこかを、ダイヤから計算して伝える'),
+];
+const ACT3_RESERVED_TAIL: ScriptLine = L('指令員', 'だが、追いかけられる。親父さんの列車が今どこかを、ダイヤから計算して伝える');
+export const ACT3_RESERVED: ScriptLine[] = [...ACT3_RESERVED_HEAD, L('指令員', 'もう出発している。同じ列車には乗れない'), ACT3_RESERVED_TAIL];
+export const ACT3_RESERVED_FATHER_NOT_YET: ScriptLine[] = [
+  ...ACT3_RESERVED_HEAD,
+  L('指令員', '同じ列車には乗れない。1本、遅れて追いかける形になる'),
+  ACT3_RESERVED_TAIL,
 ];
 
 // 第4幕 乗車中(指令員の報告。状態で出す文が変わる)
@@ -96,6 +101,7 @@ export const CHAT_MINUTES = {
   noTrain: '予約した列車が走り出したら、時間を伝える',
 };
 export const CHAT_WHERE_NO_POSITION = '親父さんの列車は、まだ位置が分からない';
+export const CHAT_WHERE_FATHER_NOT_YET = (min: number) => `親父さんの列車は、まだ東京にいる。あと約${min}分で発車だ`;
 export const CHAT_SPEAKER: Speaker = '指令員';
 
 // 第5幕 土浦・発見
