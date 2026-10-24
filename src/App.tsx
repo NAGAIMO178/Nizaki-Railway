@@ -913,7 +913,17 @@ export default function App() {
         {/* Tab 3: 時刻表 */}
         {activeTab === 'timetable' && (
           <LazyBoundary fallback={<TabFallback />}>
-            <TimetableTab />
+            <TimetableTab
+              onReserve={
+                isLaunched()
+                  ? (preset) => {
+                      setReservationPreset({ ...preset, key: Date.now() });
+                      setReservationView('ticket');
+                      setActiveTab('reservation');
+                    }
+                  : undefined
+              }
+            />
           </LazyBoundary>
         )}
 

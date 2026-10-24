@@ -385,7 +385,7 @@ export interface DiaLiveTrain {
 }
 
 // 有料の特急の、見出しの名前と、号つきの名前(予約の画面と、同じ番号の付け方)
-const expressNames = (data: LineData, train: TrainRow): { band: string; name: string } | undefined => {
+export const expressNames = (data: LineData, train: TrainRow): { band: string; name: string } | undefined => {
   // 直通の特急は、2つの路線をつないだ番号の付け方(予約の画面と同じ)。つないだデータが、まだ読めていなければ、名前なし
   const joined = joinedKeyOf(data, train);
   if (joined) {

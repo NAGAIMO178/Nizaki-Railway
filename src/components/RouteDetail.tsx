@@ -8,6 +8,8 @@ import { crowdInfo } from '../utils/crowd';
 import { legShowsCrowd } from '../utils/crowdShown';
 import { isLaunched } from '../utils/launch';
 import { legPlatformParts } from '../utils/platform';
+import { legGou, reserveTargets } from '../utils/routeReserve';
+import type { ReservationPreset } from './ReservationTab';
 
 const DAY = 86400;
 
@@ -55,6 +57,7 @@ const LegBlock: React.FC<{ leg: RouteLeg }> = ({ leg }) => {
           <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
             <span className="text-xs font-black text-[#221C35]">{leg.lineName}</span>
             <span className={`text-[11px] font-bold ${leg.paid ? 'text-amber-600' : 'text-[#6B6380]'}`}>{leg.typeName}</span>
+            {isLaunched() && legGou(leg) && <span className="text-[11px] font-bold text-amber-600">{legGou(leg)}</span>}
           </div>
           <div className="text-[11px] text-[#6B6380] mt-0.5">{leg.destLabel}</div>
           {/* 番線(公開後のダイヤだけ。分からないほうは出さない) */}
@@ -140,9 +143,11 @@ interface RouteDetailProps {
   searchedAt: string;
   realtime: boolean;
   onBack: () => void;
+  // 公開後: 有料の特急の区間から、予約画面へ(その特急を選んだ状態で開く)。渡されなければ、ボタンを出さない
+  onReserve?: (preset: Omit<ReservationPreset, 'key'>) => void;
 }
 
-export const RouteDetail: React.FC<RouteDetailProps> = ({ result: r, from, to, vias, dayLabel, searchedAt, realtime, onBack }) => {
+export const RouteDetail: React.FC<RouteDetailProps> = ({ result: r, from, to, vias, dayLabel, searchedAt, realtime, onBack, onReserve }) => {
   const [feeOpen, setFeeOpen] = useState(false);
 
   return (
@@ -246,6 +251,18 @@ export const RouteDetail: React.FC<RouteDetailProps> = ({ result: r, from, to, v
               <span className="font-mono">¥{r.fare.toLocaleString()}</span>
             </div>
             {r.hasPaid && <div className="text-amber-700 font-bold">有料の列車の特急券は、運賃とは別に必要です（予約画面でお求めください）。</div>}
+            {isLaunched() &&
+              onReserve &&
+              reserveTargets(r.legs).map((t) => (
+                <button
+                  key={`${t.preset.trainCode}-${t.preset.boarding}`}
+                  type="button"
+                  onClick={() => onReserve(t.preset)}
+                  className="mt-1 w-full h-10 rounded-xl bg-[#5B21B6] hover:bg-[#4C1D95] text-white text-xs font-bold cursor-pointer"
+                >
+                  {t.label}
+                </button>
+              ))}
           </div>
         )}
       </div>
