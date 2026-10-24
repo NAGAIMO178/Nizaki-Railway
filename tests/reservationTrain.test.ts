@@ -46,6 +46,28 @@ describe('イベントの「特急めぐりを予約する」から飛んだと�
   });
 });
 
+describe('07:36 に飛んだとき(ユーザーの再現: 欄は13号 08:06発なのに「予約できません」)', () => {
+  it('07:35発・07:06発などが過ぎていても、予約できる最初の列車(08:06発 13号)が選ばれ、予約できる', () => {
+    const now = at(7, 36);
+    expect(trainEnded('07:35', now)).toBe(true);
+    expect(trainEnded('07:06', now)).toBe(true);
+    const cur = pickCurrentTrip(trips, '', now)!;
+    expect(cur.depTime).toBe('08:06');
+    expect(cur.trainName).toBe('特急めぐり 13号');
+    expect(trainEnded(cur.depTime, now)).toBe(false);
+    // 裏の選択が、過ぎた列車(07:35発・07:06発・その日の最初)のままでも、同じ
+    for (const t of ['07:35', '07:06', '05:05']) {
+      const stale = trips.find((x) => x.depTime === t);
+      expect(stale, t).toBeTruthy();
+      const c = pickCurrentTrip(trips, stale!.code, now)!;
+      expect(c.trainName, t).toBe('特急めぐり 13号');
+      expect(trainEnded(c.depTime, now), t).toBe(false);
+    }
+    // 欄に見える列車(予約できる最初の列車)と同じ
+    expect(pickCurrentTrip(trips, '', now)).toBe(firstShown(now));
+  });
+});
+
 describe('列車の指定があるとき', () => {
   it('指定の列車が予約できるなら、それ(経路検索の「予約画面へ」など)', () => {
     const t = byTime('22:35');
