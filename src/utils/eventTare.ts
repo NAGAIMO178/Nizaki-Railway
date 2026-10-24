@@ -292,6 +292,18 @@ export const markEventJoined = (owner: string, store: EventStore = localEventSto
   writeProgress(owner, store, { ...p, joined: true, joinedAt: nowMs });
 };
 
+// サーバーが覚えている参加の時刻を、端末の印に入れる(参加済みにもなる)。
+//  - earliest=false: サーバーの時刻にする(参加を押した直後。サーバーの時刻が正)
+//  - earliest=true: 端末に時刻があれば、早いほうを使う(別の端末の同期。時刻の無い古い印(0)は、サーバーの時刻にする)
+export const setEventJoinedAt = (owner: string, serverMs: number, store: EventStore = localEventStore, earliest = false): void => {
+  if (!isLaunched()) return;
+  if (!(typeof serverMs === 'number' && serverMs > 0)) return;
+  const p = readEventProgress(owner, store);
+  const joinedAt = earliest && p.joinedAt > 0 ? Math.min(p.joinedAt, serverMs) : serverMs;
+  if (p.joined && p.joinedAt === joinedAt) return;
+  writeProgress(owner, store, { ...p, joined: true, joinedAt });
+};
+
 // サーバーの結果で上書きする(クリア済みなら true、まだなら false)。クリア済みは、参加済みでもある
 export const setEventCleared = (owner: string, cleared: boolean, store: EventStore = localEventStore): void => {
   if (!isLaunched()) return;
