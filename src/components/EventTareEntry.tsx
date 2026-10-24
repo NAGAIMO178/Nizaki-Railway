@@ -1,6 +1,7 @@
 import React from 'react';
 import { ArrowRight } from 'lucide-react';
 import { TARE_BADGE, TARE_TITLE, UI } from '../data/eventTareScript';
+import { EventMetaRow } from './EventMetaRow';
 
 // 公開記念イベントの入口(公開後だけ。呼ぶ側が isLaunched() の内側で出す)。雅石のミステリーと同じ、暗い背景と琥珀色。
 interface EntryProps {
@@ -44,7 +45,7 @@ export const EventTareCard: React.FC<EntryProps> = ({ joined, cleared, onOpen })
           <h4 className="text-base sm:text-lg font-extrabold text-[#221C35] group-hover:text-[#5B21B6] transition-colors">{TARE_TITLE}</h4>
           <p className="text-xs text-[#6B6380] mt-1 leading-relaxed">{UI.cardTagline}</p>
         </div>
-        <div className="text-[11px] text-[#857D99] pt-1">{UI.cardReward}</div>
+        <EventMetaRow difficulty={2} items={[UI.cardReward]} />
       </div>
       <div className="flex sm:flex-col items-center gap-2 w-full sm:w-auto shrink-0 pt-2 sm:pt-0">
         <button
