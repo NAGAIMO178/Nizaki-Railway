@@ -115,7 +115,7 @@ export const getTrainTypeBadgeStyle = (trainType: string): { bg: string; text: s
 };
 
 // 4 Lines Data according to spec
-const LINES_DATA: DisplayLine[] = [
+export const LINES_DATA: DisplayLine[] = [
   {
     id: 'kanzaki',
     name: '神埼線',
@@ -126,7 +126,7 @@ const LINES_DATA: DisplayLine[] = [
     stations: [
       { id: 'Y01', code: 'Y01', name: '東京', transfers: ['NI', 'SC', 'JR', '新幹線', '地下鉄'] },
       { id: 'Y02', code: 'Y02', name: '浅草', transfers: ['地下鉄', '東武'] },
-      { id: 'Y03', code: 'Y03', name: '北千住', transfers: ['SC', 'JR', '地下鉄', '東武', 'TX'] },
+      { id: 'Y03', code: 'Y03', name: '北千住', transfers: ['SC', 'JR', '地下鉄', '東武', 'TX', 'バス'] },
       { id: 'Y04', code: 'Y04', name: '足立', transfers: ['バス'] },
       { id: 'Y05', code: 'Y05', name: '草加', transfers: ['東武'] },
       { id: 'Y06', code: 'Y06', name: '越谷レイクタウン', transfers: ['JR'] },
@@ -178,7 +178,7 @@ const LINES_DATA: DisplayLine[] = [
     stations: [
       { id: 'SC01', code: 'SC01', name: '東京', transfers: ['Y', 'NI', 'JR', '新幹線', '地下鉄'] },
       { id: 'SC02', code: 'SC02', name: '南千住', transfers: ['JR', '地下鉄', 'TX'] },
-      { id: 'SC03', code: 'SC03', name: '北千住', transfers: ['Y', 'JR', '地下鉄', '東武', 'TX'] },
+      { id: 'SC03', code: 'SC03', name: '北千住', transfers: ['Y', 'JR', '地下鉄', '東武', 'TX', 'バス'] },
       { id: 'SC04', code: 'SC04', name: '綾瀬', transfers: ['地下鉄', 'JR'] },
       { id: 'SC05', code: 'SC05', name: '松戸', transfers: ['TC', 'JR', '京成松戸線'] },
       { id: 'SC06', code: 'SC06', name: '柏', transfers: ['TC', 'JR', '東武'] },

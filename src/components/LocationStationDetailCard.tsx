@@ -37,7 +37,7 @@ interface OtherLineInfo {
   gateNotice?: string;
 }
 
-const OTHER_LINES_DATABASE: Record<string, OtherLineInfo[]> = {
+export const OTHER_LINES_DATABASE: Record<string, OtherLineInfo[]> = {
   '東京': [
     { name: 'JR東日本（山手線・京浜東北線・中央線・東海道線・横須賀線・総武快速線・京葉線等）', badge: 'JR', bgClass: 'bg-emerald-100 border-emerald-300', textClass: 'text-emerald-900', gateNotice: '1階 八重洲・丸の内中央改札口' },
     { name: '新幹線（東海道・山陽・東北・上越・北陸新幹線）', badge: '新幹線', bgClass: 'bg-blue-100 border-blue-300', textClass: 'text-blue-900', gateNotice: '八重洲北口 / 丸の内地下改札' },
@@ -53,6 +53,7 @@ const OTHER_LINES_DATABASE: Record<string, OtherLineInfo[]> = {
     { name: '東京メトロ（千代田線・日比谷線）', badge: '地下鉄', bgClass: 'bg-sky-100 border-sky-300', textClass: 'text-sky-900', gateNotice: '地下連絡通路' },
     { name: '東武スカイツリーライン（伊勢崎線）', badge: '東武', bgClass: 'bg-amber-100 border-amber-300', textClass: 'text-amber-900', gateNotice: '2階 東武正面改札' },
     { name: 'つくばエクスプレス（TX）', badge: 'TX', bgClass: 'bg-indigo-100 border-indigo-300', textClass: 'text-indigo-900', gateNotice: 'TX連絡改札口' },
+    { name: '神埼バス', badge: 'バス', bgClass: 'bg-stone-100 border-stone-300', textClass: 'text-stone-900' },
   ],
   '足立': [
     { name: '都営バス / 京成バス（足立区内主要路線・西新井・千住方面）', badge: 'バス', bgClass: 'bg-stone-100 border-stone-300', textClass: 'text-stone-900', gateNotice: '駅前バスターミナル 1〜3番のりば' },
