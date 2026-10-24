@@ -5,6 +5,7 @@ import { RouteSearch } from './RouteSearch';
 import { isLaunched } from '../utils/launch';
 import { TimetableLegend } from './TimetableLegend';
 import { destLabels, buildLegendRows } from '../utils/timetableLegend';
+import type { ReservationPreset } from './ReservationTab';
 import {
   loadTimetableLines,
   loadStationTimetable,
@@ -44,7 +45,7 @@ export const presetTimetableMode = (m: 'timetable' | 'route') => {
   lastMode = m;
 };
 
-export const TimetableTab: React.FC = () => {
+export const TimetableTab: React.FC<{ onReserve?: (preset: Omit<ReservationPreset, 'key'>) => void }> = ({ onReserve }) => {
   const [lines, setLines] = useState<TimetableLine[] | null>(null);
   const [linesError, setLinesError] = useState(false);
   const [linesRetry, setLinesRetry] = useState(0);
@@ -266,7 +267,7 @@ export const TimetableTab: React.FC = () => {
     return (
       <div className="max-w-md mx-auto px-4 py-4 pb-28 space-y-3 animate-fadeIn">
         {modeToggle}
-        <RouteSearch />
+        <RouteSearch onReserve={onReserve} />
       </div>
     );
   }

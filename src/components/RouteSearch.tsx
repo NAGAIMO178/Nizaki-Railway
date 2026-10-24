@@ -9,6 +9,7 @@ import { RouteCard } from './RouteCard';
 import { loadRouteStations, searchRoutes, RouteResult } from '../utils/routeSearch';
 import { planArrival, ArrivalPlan, ArrivalOption } from '../utils/arrivalPlan';
 import { isLaunched } from '../utils/launch';
+import type { ReservationPreset } from './ReservationTab';
 import { ArrivalTime, ArrivalDay, defaultArrival, arrivalClock, arrivalLabel } from '../utils/arrivalInput';
 import {
   RouteOptions,
@@ -60,7 +61,7 @@ interface Session {
 }
 let lastSession: Session | null = null;
 
-export const RouteSearch: React.FC = () => {
+export const RouteSearch: React.FC<{ onReserve?: (preset: Omit<ReservationPreset, 'key'>) => void }> = ({ onReserve }) => {
   const [stations, setStations] = useState<string[] | null>(null);
   const [stationsError, setStationsError] = useState(false);
   const [retry, setRetry] = useState(0);
@@ -241,6 +242,7 @@ export const RouteSearch: React.FC = () => {
         searchedAt={searchedAt}
         realtime={usedRealtime}
         onBack={() => setArrDetail(null)}
+        onReserve={planDay === 'today' ? onReserve : undefined}
       />
     );
   }
@@ -257,6 +259,7 @@ export const RouteSearch: React.FC = () => {
         searchedAt={searchedAt}
         realtime={usedRealtime}
         onBack={() => setDetailIdx(null)}
+        onReserve={dayLabel === dayLabelOf() ? onReserve : undefined}
       />
     );
   }
