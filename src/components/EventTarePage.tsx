@@ -28,6 +28,7 @@ import {
 } from '../utils/eventTare';
 import { EXTRA_CHOICES, VISIBLE_CHOICES, chatReply, commanderUpdates, showsChat } from '../utils/eventTareChat';
 import { claimEventTare } from '../utils/cloudAccount';
+import { useReveal } from '../utils/eventTareReveal';
 import type { ChatChoice } from '../data/eventTareScript';
 
 // 公開記念イベントの画面(公開後だけ。呼ぶ側が isLaunched() の内側で出す)。雅石のミステリーと同じ、暗い背景と琥珀色。
@@ -44,9 +45,11 @@ interface EventTarePageProps {
 
 interface LogItem {
   id: number;
-  kind: 'say' | 'nar' | 'me' | 'sys';
+  kind: 'say' | 'nar' | 'me' | 'sys' | 'block';
   who?: Speaker;
   text: string;
+  // 場面(複数行)。1つずつ出す。key は、見た場面の印
+  block?: { key: string; lines: ScriptLine[] };
 }
 
 const AVATAR: Record<string, string> = { 指令員: '司', 広報: '広', 若手: '若', 店主: '店', 親父: '親' };
@@ -76,30 +79,65 @@ const Bubble: React.FC<{ item: Pick<LogItem, 'kind' | 'who' | 'text'> }> = ({ it
 const fromScript = (lines: ScriptLine[]): Omit<LogItem, 'id'>[] =>
   lines.map((l) => (l.who === 'ナレーション' ? { kind: 'nar', text: l.text } : l.who === 'あなた' ? { kind: 'me', text: l.text } : { kind: 'say', who: l.who, text: l.text }));
 
-// 1つずつ、タップで進む場面(第5〜6幕と、エピローグ)
-const Scene: React.FC<{ lines: ScriptLine[]; onDone: () => void }> = ({ lines, onDone }) => {
-  const [n, setN] = useState(1);
-  const end = useRef<HTMLDivElement | null>(null);
+// 複数行の場面を、LINE のように、1つずつ出す(入力中の「…」→ふきだし)。タップ(skipSignal)で、残りを全部すぐ出す。
+// 見た場面と、「動きを減らす」設定のときは、全部すぐ出す。
+const RevealList: React.FC<{
+  lines: ScriptLine[];
+  revealKey: string;
+  skipSignal: number;
+  onTick?: () => void;
+  onDone?: () => void;
+}> = ({ lines, revealKey, skipSignal, onTick, onDone }) => {
+  const { count, typing, done } = useReveal(lines, revealKey, skipSignal);
   useEffect(() => {
-    end.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
-  }, [n]);
-  const last = n >= lines.length;
+    onTick?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [count, typing]);
+  useEffect(() => {
+    if (done) onDone?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [done]);
   return (
     <>
-      <div className="flex-1 space-y-2.5 px-4 py-4">
-        {fromScript(lines.slice(0, n)).map((it, i) => (
-          <Bubble key={i} item={it} />
-        ))}
-        <div ref={end} />
-      </div>
-      <div className="px-4 pb-5 pt-2">
-        <button type="button" onClick={() => (last ? onDone() : setN(n + 1))} className="w-full h-12 rounded-xl bg-amber-500 hover:bg-amber-400 text-[#1c1410] font-black text-sm cursor-pointer font-sans">
-          {UI.next}
-        </button>
-      </div>
+      {fromScript(lines.slice(0, count)).map((it, i) => (
+        <Bubble key={i} item={it} />
+      ))}
+      {typing && <TypingBubble />}
     </>
   );
 };
+
+const TypingBubble: React.FC = () => (
+  <div className="flex items-center gap-2">
+    <span className="w-7 h-7 shrink-0 rounded-full bg-[#991B1B]" />
+    <div className="animate-pulse rounded-2xl border border-amber-600/30 bg-white/[0.07] px-3 py-2 text-[13px] text-stone-400">…</div>
+  </div>
+);
+
+// 第5〜6幕と、エピローグ
+const Scene: React.FC<{ lines: ScriptLine[]; revealKey: string; onDone: () => void }> = ({ lines, revealKey, onDone }) => {
+  const [skip, setSkip] = useState(0);
+  const [done, setDone] = useState(false);
+  const end = useRef<HTMLDivElement | null>(null);
+  return (
+    <>
+      <div className="flex-1 space-y-2.5 px-4 py-4" onClick={() => setSkip((n) => n + 1)}>
+        <RevealList lines={lines} revealKey={revealKey} skipSignal={skip} onTick={() => end.current?.scrollIntoView({ block: 'end', behavior: 'smooth' })} onDone={() => setDone(true)} />
+        <div ref={end} />
+      </div>
+      {done && (
+        <div className="px-4 pb-5 pt-2">
+          <button type="button" onClick={onDone} className="w-full h-12 rounded-xl bg-amber-500 hover:bg-amber-400 text-[#1c1410] font-black text-sm cursor-pointer font-sans">
+            {UI.next}
+          </button>
+        </div>
+      )}
+    </>
+  );
+};
+
+const FOUND_LINES: ScriptLine[] = [...ACT5, ...ACT6];
+const ACT2_LINES: ScriptLine[] = [...ACT2, ...ACT3_BEFORE_RESERVATION];
 
 const lastTrainPassed = (now: Date): boolean => now.getHours() >= 23; // 最終便(23:05発)の、発車の5分前を過ぎた
 
@@ -113,6 +151,9 @@ export const EventTarePage: React.FC<EventTarePageProps> = ({ owner, sessionToke
   const [more, setMore] = useState(false);
   const [claim, setClaim] = useState<{ busy: boolean; message: string }>({ busy: false, message: '' });
   const [rewardShown, setRewardShown] = useState(false);
+  const [skip, setSkip] = useState(0); // タップの数(変わると、1つずつ出している場面が、残りを全部すぐ出す)
+  const [doneBlocks, setDoneBlocks] = useState<Set<string>>(new Set());
+  const [storyDone, setStoryDone] = useState(false);
   const known = useRef<Set<string>>(new Set());
   const counts = useRef<Record<string, number>>({});
   const seq = useRef(0);
@@ -150,8 +191,8 @@ export const EventTarePage: React.FC<EventTarePageProps> = ({ owner, sessionToke
       known.current.add(key);
       add.push(...items);
     };
-    if (state.phase === 'no_reservation') once('act2', [...fromScript(ACT2), ...fromScript(ACT3_BEFORE_RESERVATION)]);
-    if (state.phase === 'before_departure' || state.phase === 'riding' || state.phase === 'arrived') once('act3r', fromScript(ACT3_RESERVED));
+    if (state.phase === 'no_reservation') once('act2', [{ kind: 'block', text: '', block: { key: 'act2', lines: ACT2_LINES } }]);
+    if (state.phase === 'before_departure' || state.phase === 'riding' || state.phase === 'arrived') once('act3r', [{ kind: 'block', text: '', block: { key: 'act3r', lines: ACT3_RESERVED } }]);
     commanderUpdates(known.current, state, now).forEach((u) => {
       known.current.add(u.key);
       add.push({ kind: 'say', who: CHAT_SPEAKER, text: u.text });
@@ -159,9 +200,10 @@ export const EventTarePage: React.FC<EventTarePageProps> = ({ owner, sessionToke
     if (add.length > 0) push(add);
   }, [state, now, progress.joined, progress.cleared]);
 
+  const scrollDown = () => endRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
   useEffect(() => {
-    endRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
-  }, [log.length, typing]);
+    scrollDown();
+  }, [log.length, typing, doneBlocks]);
 
   const ask = (c: ChatChoice) => {
     const nth = (counts.current[c.id] = (counts.current[c.id] || 0) + 1);
@@ -220,6 +262,35 @@ export const EventTarePage: React.FC<EventTarePageProps> = ({ owner, sessionToke
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scene]);
 
+  // ログを順に出す。場面(複数行)が出終わるまで、その後ろは出さない
+  const renderLog = () => {
+    const out: React.ReactNode[] = [];
+    for (const it of log) {
+      if (it.kind === 'block' && it.block) {
+        const key = it.block.key;
+        out.push(
+          <RevealList
+            key={it.id}
+            lines={it.block.lines}
+            revealKey={key}
+            skipSignal={skip}
+            onTick={scrollDown}
+            onDone={() => setDoneBlocks((d) => (d.has(key) ? d : new Set(d).add(key)))}
+          />
+        );
+        if (!doneBlocks.has(key)) break;
+      } else {
+        out.push(<Bubble key={it.id} item={it} />);
+      }
+    }
+    return out;
+  };
+  // 場面を足す前(最初の1回)も、「出し終わるのを待つ」扱いにする(予約のボタンなどが、一瞬出ないように)
+  const awaitingBlock =
+    (state.phase === 'no_reservation' && !known.current.has('act2')) ||
+    ((state.phase === 'before_departure' || state.phase === 'riding' || state.phase === 'arrived') && !known.current.has('act3r'));
+  const blocksPending = awaitingBlock || log.some((it) => it.kind === 'block' && it.block && !doneBlocks.has(it.block.key));
+
   const phase = state.phase;
   const header = (
     <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-amber-600/25 bg-[#0C0A10]/95 px-4 py-3 backdrop-blur font-sans">
@@ -236,18 +307,21 @@ export const EventTarePage: React.FC<EventTarePageProps> = ({ owner, sessionToke
     body = (
       <div className="flex-1 space-y-4 px-4 py-5">
         <h2 className="font-serif text-2xl font-extrabold leading-snug text-amber-100">{TARE_TITLE}</h2>
-        <div className="space-y-2.5 rounded-2xl border border-amber-600/35 bg-black/50 p-3.5">
-          {fromScript(ACT1).map((it, i) => (
-            <Bubble key={i} item={it} />
-          ))}
+        <div className="space-y-2.5 rounded-2xl border border-amber-600/35 bg-black/50 p-3.5" onClick={() => setSkip((n) => n + 1)}>
+          <RevealList lines={ACT1} revealKey="act1" skipSignal={skip} onTick={scrollDown} onDone={() => setStoryDone(true)} />
         </div>
-        <div className="flex flex-wrap gap-2 font-sans">
-          <span className="rounded-full border border-amber-500/50 bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-extrabold text-amber-400">名札『{EVENT_TARE.tagName}』</span>
-          <span className="rounded-full border border-amber-500/50 bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-extrabold text-amber-400">N-POINT +{EVENT_TARE.rewardPoints}</span>
-        </div>
-        <button type="button" onClick={join} className="w-full h-12 rounded-xl bg-amber-500 hover:bg-amber-400 text-[#1c1410] font-black text-base cursor-pointer font-sans">
-          {UI.join}
-        </button>
+        {storyDone && (
+          <>
+            <div className="flex flex-wrap gap-2 font-sans">
+              <span className="rounded-full border border-amber-500/50 bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-extrabold text-amber-400">名札『{EVENT_TARE.tagName}』</span>
+              <span className="rounded-full border border-amber-500/50 bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-extrabold text-amber-400">N-POINT +{EVENT_TARE.rewardPoints}</span>
+            </div>
+            <button type="button" onClick={join} className="w-full h-12 rounded-xl bg-amber-500 hover:bg-amber-400 text-[#1c1410] font-black text-base cursor-pointer font-sans">
+              {UI.join}
+            </button>
+          </>
+        )}
+        <div ref={endRef} />
       </div>
     );
   } else if (phase === 'cleared' && scene === 'none') {
@@ -278,9 +352,9 @@ export const EventTarePage: React.FC<EventTarePageProps> = ({ owner, sessionToke
       </div>
     );
   } else if (scene === 'found') {
-    body = <Scene lines={[...ACT5, ...ACT6]} onDone={() => setScene('epilogue')} />;
+    body = <Scene lines={FOUND_LINES} revealKey="found" onDone={() => setScene('epilogue')} />;
   } else if (scene === 'epilogue') {
-    body = <Scene lines={EPILOGUE} onDone={() => setScene('reward')} />;
+    body = <Scene lines={EPILOGUE} revealKey="epilogue" onDone={() => setScene('reward')} />;
   } else if (scene === 'reward') {
     body = (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 py-8 text-center">
@@ -317,20 +391,13 @@ export const EventTarePage: React.FC<EventTarePageProps> = ({ owner, sessionToke
             ))}
           </div>
         )}
-        <div className="flex-1 space-y-2.5 px-4 py-4">
-          {log.map((it) => (
-            <Bubble key={it.id} item={it} />
-          ))}
-          {typing && (
-            <div className="flex items-center gap-2">
-              <span className="w-7 h-7 shrink-0 rounded-full bg-[#991B1B]" />
-              <div className="animate-pulse rounded-2xl border border-amber-600/30 bg-white/[0.07] px-3 py-2 text-[13px] text-stone-400">…</div>
-            </div>
-          )}
+        <div className="flex-1 space-y-2.5 px-4 py-4" onClick={() => setSkip((n) => n + 1)}>
+          {renderLog()}
+          {typing && <TypingBubble />}
           <div ref={endRef} />
         </div>
         <div className="sticky bottom-0 border-t border-amber-600/25 bg-[#0C0A10]/95 px-4 py-3 font-sans">
-          {phase === 'no_reservation' &&
+          {!blocksPending && phase === 'no_reservation' &&
             (lastTrainPassed(now) ? (
               <div className="py-1 text-center text-xs font-bold text-amber-400">{UI.reserveLastTrainPassed}</div>
             ) : (
@@ -338,7 +405,7 @@ export const EventTarePage: React.FC<EventTarePageProps> = ({ owner, sessionToke
                 {UI.reserve}
               </button>
             ))}
-          {showsChat(phase) && (
+          {!blocksPending && showsChat(phase) && (
             <div className="flex flex-wrap gap-2">
               {[...VISIBLE_CHOICES, ...(more ? EXTRA_CHOICES : [])].map((c) => (
                 <button key={c.id} type="button" disabled={typing} onClick={() => ask(c)} className="rounded-full border border-amber-500/50 px-3 py-1.5 text-xs font-bold text-amber-400 hover:bg-amber-500/10 disabled:opacity-50 cursor-pointer">
