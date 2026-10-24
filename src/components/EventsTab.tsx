@@ -4,12 +4,13 @@ import {
   Sparkles, Train, Award, Gem, 
   ArrowRight, ArrowLeft, RotateCcw, CheckCircle2, 
   Layers, Info, Image as ImageIcon, Calendar, MapPin,
-  ChevronRight, Clock, Star
+  ChevronRight, Clock
 } from 'lucide-react';
 import { KANZAKI_ALL_STATIONS_72 } from '../data/mysteryTrainData';
 import { DigitalStampRallyBanner } from './DigitalStampRallyBanner';
 import { isLaunched } from '../utils/launch';
 import { EventTareCard } from './EventTareEntry';
+import { EventMetaRow } from './EventMetaRow';
 
 // 謎解きの本体は大きいので、そのイベントを開くときに読み込む
 const MysteryTrainApp = lazy(() => import('./MysteryTrainApp').then((m) => ({ default: m.MysteryTrainApp })));
@@ -227,14 +228,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
                   </p>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-3 text-[11px] text-[#857D99] pt-1">
-                  <span className="flex items-center gap-1">
-                    <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-                    難易度: ★★★★☆
-                  </span>
-                  <span>・</span>
-                  <span>特典: S級探偵認定証 ＆ LINE限定コード</span>
-                </div>
+                <EventMetaRow difficulty={4} items={['特典: S級探偵認定証 ＆ LINE限定コード']} />
               </div>
 
               {/* 右側アクションボタン */}
@@ -301,16 +295,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
                     </p>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-3 text-[11px] text-[#857D99] pt-1">
-                    <span className="flex items-center gap-1">
-                      <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-                      難易度: ★★★☆☆
-                    </span>
-                    <span>・</span>
-                    <span>全3幕構成</span>
-                    <span>・</span>
-                    <span>電子スタンプ押印 ＆ 特典クーポン付き</span>
-                  </div>
+                  <EventMetaRow difficulty={3} items={['全3幕構成', '電子スタンプ押印 ＆ 特典クーポン付き']} />
                 </div>
 
                 {/* 右側アクションボタン */}
