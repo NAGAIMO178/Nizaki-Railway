@@ -1,7 +1,7 @@
 {
   "name": "nizaki-railway",
   "private": true,
-  "version": "3.49.14",
+  "version": "3.49.15",
   "type": "module",
   "scripts": {
     "dev": "vite",
