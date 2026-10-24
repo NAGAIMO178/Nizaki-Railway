@@ -25,9 +25,9 @@ import {
 } from '../utils/eventTare';
 import { EXTRA_CHOICES, VISIBLE_CHOICES, act3ReservedLines, chatReply, commanderUpdates, showsChat } from '../utils/eventTareChat';
 import { claimEventTare, joinEventTare } from '../utils/cloudAccount';
-import { joinEvent } from '../utils/eventTareJoin';
+import { canResetEvent, joinEvent, resetEvent } from '../utils/eventTareJoin';
 import { eventStateFor } from '../utils/eventTareState';
-import { scrollBehavior, useReveal } from '../utils/eventTareReveal';
+import { scrollBehavior, seenKeyOf, useReveal } from '../utils/eventTareReveal';
 import type { ChatChoice } from '../data/eventTareScript';
 
 // 公開記念イベントの画面(公開後だけ。呼ぶ側が isLaunched() の内側で出す)。雅石のミステリーと同じ、暗い背景と琥珀色。
@@ -80,6 +80,8 @@ const fromScript = (lines: ScriptLine[]): Omit<LogItem, 'id'>[] =>
 
 // 複数行の場面を、LINE のように、1つずつ出す(入力中の「…」→ふきだし)。タップ(skipSignal)で、残りを全部すぐ出す。
 // 見た場面は、全部すぐ出す(replay=参加前の導入は、見た印があっても、1つずつ出す)。
+const SeenOwner = React.createContext('');
+
 const RevealList: React.FC<{
   lines: ScriptLine[];
   revealKey: string;
@@ -88,7 +90,8 @@ const RevealList: React.FC<{
   onDone?: () => void;
   replay?: boolean;
 }> = ({ lines, revealKey, skipSignal, onTick, onDone, replay }) => {
-  const { count, typing, done } = useReveal(lines, revealKey, skipSignal, replay);
+  const seenOwner = React.useContext(SeenOwner);
+  const { count, typing, done } = useReveal(lines, seenKeyOf(seenOwner, revealKey), skipSignal, replay);
   useEffect(() => {
     onTick?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -141,7 +144,8 @@ const ACT2_LINES: ScriptLine[] = [...ACT2, ...ACT3_BEFORE_RESERVATION];
 
 const lastTrainPassed = (now: Date): boolean => now.getHours() >= 23; // 最終便(23:05発)の、発車の5分前を過ぎた
 
-export const EventTarePage: React.FC<EventTarePageProps> = ({ owner, sessionToken, store, orders, onClose, onReserve, onDemoReward, onRewarded }) => {
+const EventTarePageBody: React.FC<EventTarePageProps & { onRestart: () => void }> = ({ owner, sessionToken, store, orders, onClose, onReserve, onDemoReward, onRewarded, onRestart }) => {
+  const [confirmReset, setConfirmReset] = useState(false);
   const [progress, setProgress] = useState(() => readEventProgress(owner, store));
   const [now, setNow] = useState(() => new Date());
   const [ready, setReady] = useState(false);
@@ -297,6 +301,11 @@ export const EventTarePage: React.FC<EventTarePageProps> = ({ owner, sessionToke
         <ArrowLeft className="w-5 h-5" />
       </button>
       <span className="rounded-full border border-amber-500/50 bg-amber-500/10 px-2.5 py-0.5 text-[10px] font-extrabold text-amber-400">{TARE_BADGE}</span>
+      {canResetEvent(progress) && (
+        <button type="button" onClick={() => setConfirmReset(true)} className="ml-auto px-1 py-1 text-[11px] text-stone-500 hover:text-stone-300 cursor-pointer">
+          {UI.reset}
+        </button>
+      )}
     </div>
   );
 
@@ -434,6 +443,38 @@ export const EventTarePage: React.FC<EventTarePageProps> = ({ owner, sessionToke
         {header}
         {body}
       </div>
+      {confirmReset && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 px-6" role="alertdialog" aria-modal="true" aria-label={UI.resetAsk}>
+          <div className="w-full max-w-xs rounded-2xl border border-amber-600/35 bg-[#15111a] p-4 font-sans">
+            <p className="text-sm font-bold text-stone-100">{UI.resetAsk}</p>
+            <div className="mt-4 flex gap-2">
+              <button type="button" onClick={() => setConfirmReset(false)} className="h-11 flex-1 rounded-xl border border-stone-600 text-sm font-bold text-stone-300 cursor-pointer">
+                {UI.resetCancel}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (resetEvent(owner, store)) onRestart();
+                  else setConfirmReset(false);
+                }}
+                className="h-11 flex-1 rounded-xl bg-amber-500 text-sm font-black text-[#1c1410] cursor-pointer"
+              >
+                {UI.resetDo}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+  );
+};
+
+// 「最初からやり直す」のあとは、画面を作り直す(チャットの履歴・場面の進み方が、最初に戻る)
+export const EventTarePage: React.FC<EventTarePageProps> = (props) => {
+  const [epoch, setEpoch] = useState(0);
+  return (
+    <SeenOwner.Provider value={props.owner}>
+      <EventTarePageBody key={epoch} {...props} onRestart={() => setEpoch((n) => n + 1)} />
+    </SeenOwner.Provider>
   );
 };

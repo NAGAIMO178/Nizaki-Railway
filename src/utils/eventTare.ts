@@ -264,6 +264,7 @@ export interface EventProgress {
   joined: boolean;
   cleared: boolean;
   joinedAt: number; // 参加した時刻(ms)。0は、時刻の記録が無い(古い印)
+  resetAt: number; // 「最初からやり直す」を押した時刻(ms)。0は、押していない。これより前のサーバーの参加の時刻は、使わない
 }
 
 export const readEventProgress = (owner: string, store: EventStore = localEventStore): EventProgress => {
@@ -274,12 +275,13 @@ export const readEventProgress = (owner: string, store: EventStore = localEventS
         joined: raw.joined === true || raw.cleared === true,
         cleared: raw.cleared === true,
         joinedAt: typeof raw.joinedAt === 'number' && raw.joinedAt > 0 ? raw.joinedAt : 0,
+        resetAt: typeof raw.resetAt === 'number' && raw.resetAt > 0 ? raw.resetAt : 0,
       };
     }
   } catch {
     // 読めなければ、なし
   }
-  return { joined: false, cleared: false, joinedAt: 0 };
+  return { joined: false, cleared: false, joinedAt: 0, resetAt: 0 };
 };
 
 const writeProgress = (owner: string, store: EventStore, p: EventProgress) => store.set(progressKey(owner), JSON.stringify(p));
@@ -292,6 +294,16 @@ export const markEventJoined = (owner: string, store: EventStore = localEventSto
   writeProgress(owner, store, { ...p, joined: true, joinedAt: nowMs });
 };
 
+// 「最初からやり直す」: 参加の印・参加の時刻を消し、やり直した時刻(resetAt)を記録する(この会員の分だけ。端末の中だけ)。
+// クリア済みは、ごほうびが1人1回で戻せないので、やり直せない(false)。予約は、取り消さない。
+export const resetEventProgress = (owner: string, store: EventStore = localEventStore, nowMs: number = Date.now()): boolean => {
+  if (!isLaunched()) return false;
+  const p = readEventProgress(owner, store);
+  if (p.cleared) return false;
+  writeProgress(owner, store, { joined: false, cleared: false, joinedAt: 0, resetAt: nowMs });
+  return true;
+};
+
 // サーバーが覚えている参加の時刻を、端末の印に入れる(参加済みにもなる)。
 //  - earliest=false: サーバーの時刻にする(参加を押した直後。サーバーの時刻が正)
 //  - earliest=true: 端末に時刻があれば、早いほうを使う(別の端末の同期。時刻の無い古い印(0)は、サーバーの時刻にする)
@@ -299,6 +311,7 @@ export const setEventJoinedAt = (owner: string, serverMs: number, store: EventSt
   if (!isLaunched()) return;
   if (!(typeof serverMs === 'number' && serverMs > 0)) return;
   const p = readEventProgress(owner, store);
+  if (serverMs <= p.resetAt) return; // やり直す前の参加の時刻は、使わない(同期で、昔の参加に戻らない。参加し直したときは、端末の時刻のまま)
   const joinedAt = earliest && p.joinedAt > 0 ? Math.min(p.joinedAt, serverMs) : serverMs;
   if (p.joined && p.joinedAt === joinedAt) return;
   writeProgress(owner, store, { ...p, joined: true, joinedAt });
