@@ -4,7 +4,7 @@ import {
   CreditCard,
   Award,
   Bell,
-  QrCode,
+  Barcode,
   Smartphone,
   Sliders,
   Send,
@@ -286,7 +286,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                 onClick={onOpenNPointModal}
                 className="px-3 py-1.5 rounded-xl bg-[#5B21B6] hover:bg-[#4C1D95] text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0"
               >
-                <QrCode className="w-3.5 h-3.5" />
+                <Barcode className="w-3.5 h-3.5" />
                 <span>デジタル会員証</span>
               </button>
             </div>
