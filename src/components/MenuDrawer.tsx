@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { X, Settings, User, QrCode, Map, LogIn, ChevronRight, Sparkles } from 'lucide-react';
+import { X, Settings, User, Barcode, Map, LogIn, ChevronRight, Sparkles } from 'lucide-react';
 import { UserProfile } from '../types';
 
 interface MenuDrawerProps {
@@ -87,7 +87,7 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
         {isLoggedIn && currentUser ? (
           <>
             <Row icon={<User className="w-5 h-5" />} label="マイページ" note={`${currentUser.name} さん・利用履歴`} onClick={onOpenMyPage} />
-            <Row icon={<QrCode className="w-5 h-5" />} label="N-POINT" note="残高・履歴・コード" onClick={onOpenNPoint} />
+            <Row icon={<Barcode className="w-5 h-5" />} label="N-POINT" note="残高・履歴・コード" onClick={onOpenNPoint} />
           </>
         ) : (
           <Row icon={<LogIn className="w-5 h-5" />} label="神埼IDでログイン" note="予約・ポイントのご利用に必要です" onClick={onOpenLogin} />
