@@ -1379,3 +1379,76 @@ describe('公開記念イベントの参加の時刻(joinEventTare)', () => {
     expect(joinRows[1][0]).toBe('M1');
   });
 });
+
+// ---- 公開記念ボーナス(launch2)の日付の門: 公開(2026-11-01 0:00)より前は、受け取れない ----
+describe('公開記念ボーナス(launch2)の日付の門', () => {
+  const jst = (s: string) => Date.parse(s + '+09:00');
+  let now: number;
+  let props: Record<string, string>;
+  const invalid = { status: 'error', message: '報酬の内容が正しくありません。' };
+
+  beforeEach(() => {
+    now = jst('2026-10-31T23:59:59');
+    props = {};
+    gas.nowMs = () => now;
+    gas.PropertiesService = { getScriptProperties: () => ({ getProperty: (k: string) => props[k] ?? '' }) };
+    put('welcome', 'welcome', 100);
+  });
+
+  const earn = (id: string) => gas.handleEarnEventReward('ok', id);
+  const memberRows = () => rows.slice(1).filter((r) => r[1] === 'M1');
+
+  it('公開前は、断る(ない報酬の番号と、同じ返事。公開前だと、漏らさない)。台帳には何も書かない', () => {
+    expect(earn('launch2')).toEqual(invalid);
+    expect(earn('no-such-reward')).toEqual(invalid);
+    expect(memberRows().length).toBe(1);
+  });
+
+  it('2026-11-01 0:00(日本時間)ちょうどから、300pt付く。額は、サーバーの定数', () => {
+    now = jst('2026-11-01T00:00:00');
+    expect(earn('launch2')).toMatchObject({ status: 'success', added: true, points: 300, balance: 400 });
+    expect(memberRows().pop()?.slice(2, 5)).toEqual(['event', 'event:launch2', 300]);
+  });
+
+  it('公開後も、1回だけ(2回目は、何も付かない)', () => {
+    now = jst('2026-11-01T09:00:00');
+    earn('launch2');
+    expect(earn('launch2')).toMatchObject({ status: 'success', added: false, points: 0, balance: 400 });
+    expect(memberRows().filter((r) => r[3] === 'event:launch2').length).toBe(1);
+  });
+
+  it('終わりの日は、サーバーでは見ない(決まりのとおり。画面だけで区切る)', () => {
+    now = jst('2026-12-31T12:00:00');
+    expect(earn('launch2')).toMatchObject({ status: 'success', added: true, points: 300 });
+  });
+
+  it('スクリプトプロパティ EVENT_TARE_START_MS で、開始を前にずらせる(公開前の動作確認用)', () => {
+    now = jst('2026-10-30T12:00:00');
+    expect(earn('launch2')).toEqual(invalid);
+    props.EVENT_TARE_START_MS = String(jst('2026-10-30T00:00:00'));
+    expect(earn('launch2')).toMatchObject({ status: 'success', points: 300 });
+  });
+
+  it('ほかの報酬(ミステリーの各幕・制覇)は、公開前でも、これまでどおり受け取れる', () => {
+    expect(earn('stage1')).toMatchObject({ status: 'success', added: true, points: 150 });
+    expect(earn('mashin')).toMatchObject({ status: 'success', added: true, points: 300 });
+    expect(earn('tare')).toEqual(invalid); // イベントのごほうびは、別の API(claimEventTare)だけ
+  });
+
+  it('端末の申告(eventRewards)でも、公開前は、公開記念ボーナスを受け取れない・印も付けない', () => {
+    const ledger = () => ({ sheet: { appendRow: (r: unknown[]) => void rows.push(r) }, rows: [] as unknown[], keys: {} as Record<string, unknown> });
+    let l = ledger();
+    gas.mergeLocalClaims(l, 'M1', { eventRewards: ['launch2', 'stage1'] });
+    expect(Object.keys(l.keys)).toEqual(['event:stage1']);
+    l = ledger();
+    gas.ensureAccountInitialized(l, 'M1', { balance: 500, eventRewards: ['launch2', 'stage1'] });
+    expect(Object.keys(l.keys).sort()).toEqual(['event:stage1', 'migration']);
+  });
+
+  it('端末の申告でも、公開後は、これまでどおり受け取れる', () => {
+    now = jst('2026-11-01T00:00:00');
+    const l = { sheet: { appendRow: (r: unknown[]) => void rows.push(r) }, rows: [] as unknown[], keys: {} as Record<string, unknown> };
+    gas.mergeLocalClaims(l, 'M1', { eventRewards: ['launch2'] });
+    expect(Object.keys(l.keys)).toEqual(['event:launch2']);
+  });
+});

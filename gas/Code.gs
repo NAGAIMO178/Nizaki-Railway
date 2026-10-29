@@ -1745,12 +1745,21 @@ function normalizePointCodeServer(raw) {
   return String(raw === undefined || raw === null ? '' : raw).trim().toUpperCase().replace(/[\s_-]/g, '');
 }
 
+// 公開(2026-11-01 0:00 日本時間)より前は、受け取れない報酬。サーバーの時刻で見る(開始は、claimEventTare と同じ
+// eventTareStartMs。スクリプトプロパティ EVENT_TARE_START_MS で前にずらせる)。終わりの日は、サーバーでは見ない
+const EVENT_REWARDS_OPEN_AT_LAUNCH = ['launch2'];
+
+function isEventRewardOpen(id) {
+  return EVENT_REWARDS_OPEN_AT_LAUNCH.indexOf(id) === -1 || nowMs() >= eventTareStartMs();
+}
+
 function eventRewardsFrom(local) {
   const out = [];
   const arr = local && Array.isArray(local.eventRewards) ? local.eventRewards : [];
   arr.forEach(function (v) {
     const id = String(v);
-    if (EVENT_REWARD_TABLE[id] && out.indexOf(id) === -1) out.push(id);
+    // 公開前は、端末の申告でも、受け取り済みの印でも、公開記念ボーナスを扱わない
+    if (EVENT_REWARD_TABLE[id] && isEventRewardOpen(id) && out.indexOf(id) === -1) out.push(id);
   });
   return out;
 }
@@ -2005,7 +2014,8 @@ function handleEarnEventReward(sessionToken, rewardId) {
   if (a.error) return a.error;
   const id = String(rewardId === undefined || rewardId === null ? '' : rewardId);
   const def = EVENT_REWARD_TABLE[id];
-  if (!def) {
+  // 公開前の公開記念ボーナスは、ほかの断りと同じ返事にする(まだ公開前だと、漏らさない)
+  if (!def || !isEventRewardOpen(id)) {
     return createJsonResponse({ status: 'error', message: '報酬の内容が正しくありません。' });
   }
   return withScriptLock(function () {
