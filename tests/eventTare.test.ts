@@ -108,6 +108,9 @@ describe('取り消した予約・乗車日(リンクの指定で公開後の画
 
   it('公開前の画面の確認(preview)では、乗車日がイベントの開始より前でも、試せる', () => {
     // この確認では、本物の公開の判定(LAUNCH_AT)は、まだ来ていない
+    // (公開の日をすぎても通るように、時計を公開の前に合わせる)
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-31T12:00:00+09:00'));
     expect(isEventEligibleOrder(orderOf(5, '土浦', { reservedDate: '2026-10-01' }))).toBe(true);
   });
 });

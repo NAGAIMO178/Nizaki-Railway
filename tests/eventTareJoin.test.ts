@@ -1,5 +1,5 @@
 // 公開記念イベントの参加を、サーバーの時刻とつなぐ(端末の印・サーバーの時刻・早いほう・デモ会員)
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readEventProgress, setEventJoinedAt, type EventStore } from '../src/utils/eventTare';
 import { joinEvent, syncJoinedFromServer } from '../src/utils/eventTareJoin';
 import type { EventTareJoinResult } from '../src/utils/cloudAccount';
@@ -17,7 +17,10 @@ beforeEach(() => {
   win.location.search = '?preview=1';
   localStorage.clear();
 });
-afterEach(() => localStorage.clear());
+afterEach(() => {
+  localStorage.clear();
+  vi.useRealTimers();
+});
 
 describe('参加を押したとき(joinEvent)', () => {
   it('すぐ端末の中で参加にして、サーバーが時刻を返したら、その時刻を端末の joinedAt にする', async () => {
@@ -124,6 +127,9 @@ describe('アカウントの同期(syncJoinedFromServer)', () => {
     store.set('nizaki_event_tare-2026:a@example.com', JSON.stringify({ joined: true, cleared: true, joinedAt: T - 1 }));
     await syncJoinedFromServer('a@example.com', store, 'tok', T, async () => ok(0));
     expect(readEventProgress('a@example.com', store)).toMatchObject({ cleared: true, joinedAt: T - 1 });
+    // 公開の前に時計を合わせる(公開の日をすぎても、「公開前」の確認が崩れないように)
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-31T12:00:00+09:00'));
     win.location.search = '';
     localStorage.clear();
     const s2 = memory();

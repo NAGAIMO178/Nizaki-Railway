@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LAUNCH_AT } from '../src/utils/launch';
 import { buildTicketUrl, parseTicketHash, ticketRouteToken } from '../src/utils/ticketToken';
 
@@ -7,6 +7,7 @@ const win = (globalThis as unknown as { window: { location: { search: string } }
 afterEach(() => {
   win.location.search = '?preview=1';
   localStorage.clear();
+  vi.useRealTimers();
 });
 
 const TOKEN = 'EQ-12345.AbCdEfGh_-Ij';
@@ -30,6 +31,9 @@ describe('QR乗車券のリンク', () => {
   });
 
   it('公開前の普通の利用者がリンクを開いても、検札の画面にならない(いつものアプリのまま)', () => {
+    // 公開の前に時計を合わせる(公開の日をすぎても、「公開前」の確認が崩れないように)
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-31T12:00:00+09:00'));
     win.location.search = '?preview=0';
     expect(ticketRouteToken(`#/t/${TOKEN}`)).toBeNull();
   });
