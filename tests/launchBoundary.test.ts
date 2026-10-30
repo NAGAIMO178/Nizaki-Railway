@@ -12,6 +12,7 @@ vi.mock('../src/utils/accountApi', () => ({ callGas: vi.fn(async () => ({ status
 
 import LaunchCountdown from '../src/components/LaunchCountdown';
 import { EventsTab } from '../src/components/EventsTab';
+import { LaunchWelcome } from '../src/components/LaunchWelcome';
 import { NPointModal } from '../src/components/NPointModal';
 import { ReservationTab } from '../src/components/ReservationTab';
 import { SettingsTab } from '../src/components/SettingsTab';
@@ -208,6 +209,27 @@ describe('1・2. 画面(その時刻の見え方)', () => {
     expect(reservation()).toContain('特急券・座席指定予約');
     setClock(AT);
     expect(reservation()).not.toContain('特急券・座席指定予約');
+  });
+});
+
+describe('公開後、初めて開いた人にだけ「NIZAKI 2.0 のご案内」が出る(LaunchWelcome)', () => {
+  const welcome = () =>
+    strip(
+      renderToString(
+        createElement(LaunchWelcome, {
+          cloudOn: false, ready: true, error: false, claimedEvents: undefined, isLoggedIn: false,
+          onClaim: async () => null, onStep: () => undefined, onLogin: () => undefined, loginOpen: false, replayKey: 0,
+        })
+      )
+    );
+
+  it('公開前は出ない。公開後、初めて開いたときだけ出て、見たあと(この端末の記憶)は、もう出ない', () => {
+    setClock(BEFORE);
+    expect(welcome()).toBe('');
+    setClock(AT);
+    expect(welcome()).toContain('NIZAKI 2.0 へようこそ');
+    localStorage.setItem('nizaki_v2_tour_seen', '1'); // 案内を見終わったときに、この端末に残る印
+    expect(welcome()).toBe('');
   });
 });
 

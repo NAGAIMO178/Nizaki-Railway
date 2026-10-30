@@ -1,5 +1,5 @@
 // 公開記念イベントの「最初からやり直す」(端末の中だけ。サーバーは変えない)
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { markEventJoined, readEventProgress, setEventCleared, setEventJoinedAt, type EventStore } from '../src/utils/eventTare';
 import { canResetEvent, joinEvent, resetEvent, syncJoinedFromServer } from '../src/utils/eventTareJoin';
 import { clearSeenScenes, isSceneSeen, markSceneSeen, seenKeyOf, SCENE_KEYS } from '../src/utils/eventTareReveal';
@@ -20,7 +20,10 @@ beforeEach(() => {
   win.location.search = '?preview=1';
   localStorage.clear();
 });
-afterEach(() => localStorage.clear());
+afterEach(() => {
+  localStorage.clear();
+  vi.useRealTimers();
+});
 
 const seenAll = (owner: string) => SCENE_KEYS.forEach((k) => markSceneSeen(seenKeyOf(owner, k)));
 
@@ -50,6 +53,9 @@ describe('やり直しで消えるもの', () => {
     setEventCleared(A, true);
     expect(resetEvent(A, undefined, RESET)).toBe(false);
     expect(readEventProgress(A)).toMatchObject({ joined: true, cleared: true, resetAt: 0 });
+    // 公開の前に時計を合わせる(公開の日をすぎても、「公開前」の確認が崩れないように)
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-31T12:00:00+09:00'));
     win.location.search = '';
     localStorage.clear();
     expect(resetEvent(B, undefined, RESET)).toBe(false);

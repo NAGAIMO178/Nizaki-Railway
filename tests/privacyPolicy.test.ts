@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PrivacyPolicyModal } from '../src/components/PrivacyPolicyModal';
 
 const win = (globalThis as unknown as { window: { location: { search: string } } }).window;
@@ -12,10 +12,18 @@ const text = (): string => html().replace(/<[^>]+>/g, '');
 afterEach(() => {
   win.location.search = '?preview=1';
   localStorage.clear();
+  vi.useRealTimers();
 });
+
+// 「公開前」の確認は、時計を公開の前に合わせる(公開の日をすぎても、通るように)
+const beforeLaunch = () => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-10-31T12:00:00+09:00'));
+};
 
 describe('公開前', () => {
   it('今の文のまま(画面の中身が、1文字も変わらない)', () => {
+    beforeLaunch();
     win.location.search = '';
     localStorage.clear();
     const h = createHash('sha256').update(html()).digest('hex');
@@ -25,6 +33,7 @@ describe('公開前', () => {
 
 describe('公開後', () => {
   const pre = (): string => {
+    beforeLaunch();
     win.location.search = '';
     localStorage.clear();
     return html();
