@@ -379,8 +379,7 @@ describe('7. 版番号・お知らせ', () => {
 
   it('ビルドは、package.json の版と release-notes.json の中身を、そのまま version.json と画面の版数に使う', () => {
     const config = read('vite.config.ts');
-    expect(config).toContain('version: pkg.version');
-    expect(config).toContain('notes: releaseNotes.notes');
+    expect(config).toContain('buildVersionJson(pkg.version, releaseNotes)'); // version.json の版と、お知らせ(updateNotice.test.ts で、出力を確かめる)
     expect(config).toContain('__APP_VERSION__: JSON.stringify(pkg.version)');
   });
 
