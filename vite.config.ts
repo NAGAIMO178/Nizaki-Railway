@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import fs from 'fs';
 import path from 'path';
 import {defineConfig} from 'vite';
+import { buildVersionJson } from './src/utils/updateNotice';
 
 const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf-8'));
 const releaseNotes = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'release-notes.json'), 'utf-8'));
@@ -13,7 +14,8 @@ const emitVersionJson = () => ({
     this.emitFile({
       type: 'asset',
       fileName: 'version.json',
-      source: JSON.stringify({ version: pkg.version, notes: releaseNotes.notes }),
+      // お知らせを、ある時刻まで保留したいときだけ、release-notes.json の showAfter が、そのまま載る(無ければ、これまでと同じ)
+      source: buildVersionJson(pkg.version, releaseNotes),
     });
   },
 });

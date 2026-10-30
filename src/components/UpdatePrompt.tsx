@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { checkForUpdate, delayUntilRecheck } from '../utils/updateNotice';
 
 const CHECK_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -6,16 +7,17 @@ export const UpdatePrompt: React.FC = () => {
   const [notes, setNotes] = useState<string[] | null>(null);
 
   useEffect(() => {
+    let recheckTimer: number | undefined;
+
     const check = async () => {
-      try {
-        const res = await fetch(`./version.json?t=${Date.now()}`, { cache: 'no-store' });
-        if (!res.ok) return;
-        const data = await res.json();
-        if (typeof data.version === 'string' && data.version !== __APP_VERSION__) {
-          setNotes(Array.isArray(data.notes) ? data.notes : []);
-        }
-      } catch {
-        // オフラインや開発環境(version.jsonなし)では何もしない
+      const result = await checkForUpdate((input, init) => fetch(input, init), __APP_VERSION__, Date.now());
+      if (result.kind === 'show') {
+        setNotes(result.notes);
+      } else if (result.kind === 'held') {
+        // 保留中(公開の時刻まで、お知らせを出さない): 時刻の直後に、もう一度確かめる(5分ごとの確認でも、拾える)
+        window.clearTimeout(recheckTimer);
+        const delay = delayUntilRecheck(result.showAtMs, Date.now());
+        if (delay !== null) recheckTimer = window.setTimeout(check, delay);
       }
     };
 
@@ -27,6 +29,7 @@ export const UpdatePrompt: React.FC = () => {
     document.addEventListener('visibilitychange', onVisible);
     return () => {
       clearInterval(timer);
+      window.clearTimeout(recheckTimer);
       document.removeEventListener('visibilitychange', onVisible);
     };
   }, []);
