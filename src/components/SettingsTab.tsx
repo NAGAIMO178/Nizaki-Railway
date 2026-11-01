@@ -39,7 +39,7 @@ import { formatSeats } from '../utils/seatUtils';
 
 // 管理者の画面は大きいので、開くときに読み込む
 const AdminConsoleModal = lazy(() => import('./AdminConsoleModal').then((m) => ({ default: m.AdminConsoleModal })));
-import { useDelayNotifyMode, DelayNotifyMode } from '../utils/delayNotifySettings';
+import { useDelayNotifyMode, useDelayNotifyLines, DELAY_NOTIFY_LINES, DelayNotifyMode } from '../utils/delayNotifySettings';
 
 interface SettingsTabProps {
   nPointBalance: number;
@@ -72,6 +72,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   const [lastSentTime, setLastSentTime] = useState<string | null>(null);
   // 遅れの知らせ(NIZAKI 2.0。公開後だけ出す)
   const [delayMode, setDelayMode] = useDelayNotifyMode();
+  const [delayLines, setDelayLines] = useDelayNotifyLines();
   const showDelaySetting = isLaunched();
 
   // 4. Admin Console Modal State
@@ -351,7 +352,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-[#E6E2EE]" role="radiogroup" aria-label="列車の遅れの知らせ">
                 {([
                   ['all', 'すべて'],
-                  ['mystation', 'マイ駅だけ'],
+                  ['lines', '路線'],
                   ['off', 'オフ'],
                 ] as [DelayNotifyMode, string][]).map(([value, label]) => (
                   <button
@@ -368,8 +369,29 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                   </button>
                 ))}
               </div>
+              {delayMode === 'lines' && (
+                <div className="flex flex-wrap gap-1.5" role="group" aria-label="知らせる路線">
+                  {DELAY_NOTIFY_LINES.map((l) => {
+                    const on = delayLines.includes(l.id);
+                    return (
+                      <button
+                        key={l.id}
+                        type="button"
+                        aria-pressed={on}
+                        onClick={() => setDelayLines(on ? delayLines.filter((id) => id !== l.id) : [...delayLines, l.id])}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold cursor-pointer transition-all ${
+                          on ? 'border-[#5B21B6] bg-[#F3EEFC] text-[#221C35]' : 'border-[#E6E2EE] bg-white text-[#6B6380]'
+                        }`}
+                      >
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: l.color }} />
+                        {l.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
               <p className="text-[10px] text-[#857D99] leading-relaxed">
-                アプリを開いているあいだ、どの画面を見ていても、遅れを知らせます。「マイ駅だけ」は、登録したマイ駅に、これから停まる列車の遅れだけです。アプリを閉じているあいだは、知らせられません。
+                アプリを開いているあいだ、どの画面を見ていても、遅れを知らせます。アプリを閉じているあいだは、知らせられません。
               </p>
             </div>
           )}

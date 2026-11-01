@@ -6,15 +6,13 @@
 //  - アプリを開いた直後に、すでに遅れている列車が2本以上あるときは、まとめて1回だけ知らせる。
 //  - アプリを閉じているあいだは、知らせられない(ブラウザの仕組みによる)。
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { computeLiveTrains, getCachedLineData, loadLineData, normalizeStationName } from './diaTimetable';
+import { computeLiveTrains, getCachedLineData, loadLineData } from './diaTimetable';
 import { DelayNotifyMode } from './delayNotifySettings';
 import { getNotificationPermissionState, sendLocalPushNotification } from './pushNotification';
-import { markNotified, NotifiedState, NotifyCandidate, planNotification } from './delayNotifyPlan';
+import { filterByLines, markNotified, NotifiedState, NotifyCandidate, planNotification } from './delayNotifyPlan';
 
 const SCAN_INTERVAL_MS = 30 * 1000;
 const NOTICE_SHOW_MS = 20 * 1000; // 画面の帯を出しておく時間
-const MYSTATION_WINDOW_MIN = 60; // 「マイ駅に関係する」: この分数以内に、マイ駅に着く(通る)予定
-const PAST_GRACE_MIN = 5; // 着く時刻をこの分数すぎても、まだ「関係する」とみなす
 const MIN_DELAY_MIN = 1; // これ以上の遅れを知らせる(分)
 const SUSPENDED_DELAY = 99; // 運転見合わせの印(列車位置と同じ)
 const STORAGE_KEY = 'nizaki_delay_notified';
@@ -32,10 +30,7 @@ export interface DelayNotice {
   text: string;
 }
 
-interface DelayedTrain extends NotifyCandidate {
-  stopNames: string[];
-  stopTimes: string[];
-}
+type DelayedTrain = NotifyCandidate;
 
 const todayKey = (now: Date): string => `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
 
@@ -70,19 +65,12 @@ const writeNotified = (day: string, state: NotifiedState) => {
   }
 };
 
-// "HH:MM" が、いまから何分後か(0〜1439)。いまより前は、1439に近い大きな数になる
-const minutesFromNow = (hhmm: string, now: Date): number => {
-  const [h, m] = hhmm.split(':').map(Number);
-  if (Number.isNaN(h) || Number.isNaN(m)) return Infinity;
-  return (((h * 60 + m) - (now.getHours() * 60 + now.getMinutes())) % 1440 + 1440) % 1440;
-};
-
 export function useDelayWatcher(opts: {
   enabled: boolean; // 公開後 かつ 設定が「オフ」でない
   mode: DelayNotifyMode;
-  myStationNames: string[];
+  lines: string[]; // 「路線」のとき、知らせる路線のID
 }): { notice: DelayNotice | null; dismiss: () => void } {
-  const { enabled, mode, myStationNames } = opts;
+  const { enabled, mode, lines } = opts;
   const [notice, setNotice] = useState<DelayNotice | null>(null);
   const noticeTimerRef = useRef<number | undefined>(undefined);
   const noticeKeyRef = useRef(0);
@@ -91,8 +79,8 @@ export function useDelayWatcher(opts: {
   // 最新の設定を、タイマーの中から読む
   const modeRef = useRef(mode);
   modeRef.current = mode;
-  const stationsRef = useRef(myStationNames);
-  stationsRef.current = myStationNames;
+  const linesRef = useRef(lines);
+  linesRef.current = lines;
 
   const dismiss = useCallback(() => {
     window.clearTimeout(noticeTimerRef.current);
@@ -142,27 +130,13 @@ export function useDelayWatcher(opts: {
               lineId: line.id,
               lineName: line.name,
               text: `${line.name} ${t.trainType}（${t.destination}行）で約 ${t.delayMinutes} 分の遅れが発生しています。`,
-              stopNames: t.timetable.map((s) => normalizeStationName(s.stationName)),
-              // 遅れた列車の「着く見込みの時刻」で、マイ駅に近いかを調べる
-              stopTimes: t.timetable.map((s) => s.estimatedTime),
             });
           }
         }
       }
 
-      // 設定が「マイ駅に関係するものだけ」のときは、マイ駅に、これから停まる列車に絞る
-      let candidates = delayed;
-      if (modeRef.current === 'mystation') {
-        const mine = stationsRef.current.map(normalizeStationName);
-        candidates = delayed.filter((d) =>
-          d.stopNames.some((name, i) => {
-            if (!mine.includes(name)) return false;
-            const m = minutesFromNow(d.stopTimes[i], now);
-            // これから60分以内に着く見込み(着く時刻を、数分すぎたところも含める)
-            return m <= MYSTATION_WINDOW_MIN || m >= 1440 - PAST_GRACE_MIN;
-          })
-        );
-      }
+      // 設定が「路線」のときは、選んだ路線の遅れだけにする
+      const candidates = modeRef.current === 'lines' ? filterByLines(delayed, linesRef.current) : delayed;
       const plan = planNotification({
         candidates,
         state: notified,

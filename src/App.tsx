@@ -23,7 +23,7 @@ import { calcDeliveryAddPoints, calcReservationPoints } from './utils/points';
 import LaunchCountdown from './components/LaunchCountdown';
 import { useCloudAccount } from './utils/useCloudAccount';
 import { joinEventTare, rewardIdFromTitle } from './utils/cloudAccount';
-import { useDelayNotifyMode } from './utils/delayNotifySettings';
+import { useDelayNotifyLines, useDelayNotifyMode } from './utils/delayNotifySettings';
 import { useDelayWatcher } from './utils/useDelayWatcher';
 import { useReservationWatcher } from './utils/useReservationWatcher';
 import { computeMileage, Mileage } from './utils/mileage';
@@ -506,12 +506,13 @@ export default function App() {
     } catch {}
   }, [registeredStations]);
 
-  // NIZAKI 2.0(公開後): どのタブを見ていても、全路線の列車の遅れを見張って、知らせる(設定で、マイ駅だけ・オフにも変えられる)
+  // NIZAKI 2.0(公開後): どのタブを見ていても、全路線の列車の遅れを見張って、知らせる(設定で、選んだ路線だけ・オフにも変えられる)
   const [delayMode] = useDelayNotifyMode();
+  const [delayLines] = useDelayNotifyLines();
   const delayWatch = useDelayWatcher({
     enabled: isLaunched() && delayMode !== 'off',
     mode: delayMode,
-    myStationNames: registeredStations.map((s) => s.name),
+    lines: delayLines,
   });
 
   // NIZAKI 2.0(公開後): ご予約の特急の、発車のリマインド・列車の遅れ・デリバリーのお届けを知らせる(アプリを開いているあいだ)
