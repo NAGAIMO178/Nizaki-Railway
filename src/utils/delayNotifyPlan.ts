@@ -25,6 +25,9 @@ export type NotifyPlan =
   | { kind: 'summary'; trains: NotifyCandidate[]; lineNames: string[] }
   | { kind: 'single'; train: NotifyCandidate; group: NotifyCandidate[] };
 
+// 選んだ路線の遅れだけにする(lineIds は、路線の画面ID)
+export const filterByLines = <T extends { lineId: string }>(all: T[], lineIds: string[]): T[] => all.filter((d) => lineIds.includes(d.lineId));
+
 // まだ知らせていない列車(同じ列車の重複は1本。同じ内容を、最近知らせていれば、除く)
 export const freshCandidates = (all: NotifyCandidate[], state: NotifiedState, nowMs: number): NotifyCandidate[] => {
   const seen = new Set<string>();

@@ -10,6 +10,8 @@ import { loadRouteStations, searchRoutes, RouteResult } from '../utils/routeSear
 import { planArrival, ArrivalPlan, ArrivalOption } from '../utils/arrivalPlan';
 import { isLaunched } from '../utils/launch';
 import { locateDepartureStation } from '../utils/departureFromLocation';
+import { StationPickerSheet } from './StationPickerSheet';
+import { saveRecentStation } from '../utils/stationPicker';
 import type { ReservationPreset } from './ReservationTab';
 import { ArrivalTime, ArrivalDay, defaultArrival, arrivalClock, arrivalLabel } from '../utils/arrivalInput';
 import {
@@ -62,6 +64,14 @@ interface Session {
 }
 let lastSession: Session | null = null;
 
+// 駅を選ぶ欄(押すと、駅を選ぶシートが開く)
+const StationField: React.FC<{ className: string; label: string; value: string; placeholder?: string; onOpen: () => void }> = ({ className, label, value, placeholder, onOpen }) => (
+  <button type="button" onClick={onOpen} aria-label={label} aria-haspopup="dialog" className={`${className} flex items-center justify-between gap-1 text-left`}>
+    <span className={`truncate ${value ? '' : 'text-[#B4ADC4] font-semibold'}`}>{value || placeholder}</span>
+    <ChevronDown className="w-4 h-4 text-[#857D99] shrink-0" />
+  </button>
+);
+
 export const RouteSearch: React.FC<{ onReserve?: (preset: Omit<ReservationPreset, 'key'>) => void }> = ({ onReserve }) => {
   const [stations, setStations] = useState<string[] | null>(null);
   const [stationsError, setStationsError] = useState(false);
@@ -99,6 +109,9 @@ export const RouteSearch: React.FC<{ onReserve?: (preset: Omit<ReservationPreset
   const [planKey, setPlanKey] = useState(0);
   const [arrDetail, setArrDetail] = useState<ArrivalOption | null>(null);
   const optionsChanged = useRef(false);
+  // 駅を選ぶシート: 開いているもの(出発・到着・何番目の経由駅)と、最寄り駅(位置情報が許可されて、分かったとき)
+  const [picker, setPicker] = useState<'from' | 'to' | { via: number } | null>(null);
+  const [nearest, setNearest] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     let alive = true;
@@ -126,7 +139,9 @@ export const RouteSearch: React.FC<{ onReserve?: (preset: Omit<ReservationPreset
     if (!stations || triedLocate.current || hadFrom.current) return;
     triedLocate.current = true;
     locateDepartureStation(stations).then((name) => {
-      if (!name || fromTouched.current) return;
+      if (!name) return;
+      setNearest(name);
+      if (fromTouched.current) return;
       setFrom(name);
       setTo((t) => (t === name ? (name === '東京' ? '大宮' : '東京') : t)); // 出発と同じ駅にならないように(到着が、初めの駅のままのとき)
     });
@@ -291,23 +306,11 @@ export const RouteSearch: React.FC<{ onReserve?: (preset: Omit<ReservationPreset
           <div className="flex-1 min-w-0 divide-y divide-[#EFEDF5]">
             <label className="flex items-center gap-2">
               <span className="shrink-0 w-10 text-center text-[11px] font-black text-white bg-[#3B82F6] rounded py-1">出発</span>
-              <select className={selectClass} value={from} onChange={(e) => { fromTouched.current = true; setFrom(e.target.value); }} aria-label="出発駅">
-                {stations.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
+              <StationField className={selectClass} label="出発駅" value={from} onOpen={() => setPicker('from')} />
             </label>
             <label className="flex items-center gap-2">
               <span className="shrink-0 w-10 text-center text-[11px] font-black text-white bg-[#EC4899] rounded py-1">到着</span>
-              <select className={selectClass} value={to} onChange={(e) => setTo(e.target.value)} aria-label="到着駅">
-                {stations.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
+              <StationField className={selectClass} label="到着駅" value={to} onOpen={() => setPicker('to')} />
             </label>
           </div>
           <button
@@ -326,21 +329,13 @@ export const RouteSearch: React.FC<{ onReserve?: (preset: Omit<ReservationPreset
             {vias.map((v, i) => (
               <div key={i} className="flex items-center gap-2">
                 <span className="shrink-0 w-10 text-center text-[11px] font-black text-[#6B6380] bg-[#E6E2EE] rounded py-1">経由</span>
-                <select
-                  className="flex-1 min-w-0 border border-[#E6E2EE] rounded-lg px-2 py-1.5 bg-transparent text-sm font-bold text-[#221C35] cursor-pointer"
+                <StationField
+                  className="flex-1 min-w-0 border border-[#E6E2EE] rounded-lg px-2 py-1.5 text-sm font-bold text-[#221C35] cursor-pointer"
+                  label={`経由駅${i + 1}`}
                   value={v}
-                  onChange={(e) => setVias((vs) => vs.map((x, k) => (k === i ? e.target.value : x)))}
-                  aria-label={`経由駅${i + 1}`}
-                >
-                  <option value="">駅を選んでください</option>
-                  {stations
-                    .filter((s) => s === v || (s !== from && s !== to && !vias.includes(s)))
-                    .map((s) => (
-                      <option key={s} value={s}>
-                        {s}
-                      </option>
-                    ))}
-                </select>
+                  placeholder="駅を選んでください"
+                  onOpen={() => setPicker({ via: i })}
+                />
                 <button
                   type="button"
                   onClick={() => setVias((vs) => vs.filter((_, k) => k !== i))}
@@ -500,6 +495,28 @@ export const RouteSearch: React.FC<{ onReserve?: (preset: Omit<ReservationPreset
         onClose={() => setArrivalSheetOpen(false)}
       />
 
+      <StationPickerSheet
+        isOpen={picker !== null}
+        title={picker === 'from' ? '出発駅' : picker === 'to' ? '到着駅' : '経由駅'}
+        value={picker === 'from' ? from : picker === 'to' ? to : picker ? vias[picker.via] ?? '' : ''}
+        stations={stations}
+        exclude={picker !== null && typeof picker === 'object' ? [from, to, ...vias] : []}
+        nearest={picker === 'from' ? nearest : undefined}
+        onSelect={(name) => {
+          saveRecentStation(name);
+          if (picker === 'from') {
+            fromTouched.current = true;
+            setFrom(name);
+          } else if (picker === 'to') {
+            setTo(name);
+          } else if (picker) {
+            const i = picker.via;
+            setVias((vs) => vs.map((x, k) => (k === i ? name : x)));
+          }
+          setPicker(null);
+        }}
+        onClose={() => setPicker(null)}
+      />
       <RouteFilterSheet isOpen={sheetOpen} options={options} onChange={handleOptionsChange} onClose={closeSheet} />
     </div>
   );
