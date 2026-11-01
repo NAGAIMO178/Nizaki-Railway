@@ -9,6 +9,7 @@ import { RouteCard } from './RouteCard';
 import { loadRouteStations, searchRoutes, RouteResult } from '../utils/routeSearch';
 import { planArrival, ArrivalPlan, ArrivalOption } from '../utils/arrivalPlan';
 import { isLaunched } from '../utils/launch';
+import { locateDepartureStation } from '../utils/departureFromLocation';
 import type { ReservationPreset } from './ReservationTab';
 import { ArrivalTime, ArrivalDay, defaultArrival, arrivalClock, arrivalLabel } from '../utils/arrivalInput';
 import {
@@ -67,6 +68,9 @@ export const RouteSearch: React.FC<{ onReserve?: (preset: Omit<ReservationPreset
   const [retry, setRetry] = useState(0);
 
   const restored = lastSession;
+  // すでに出発駅が入っている(前の検索・直前の検索条件がある)ときは、最寄り駅で上書きしない
+  const hadFrom = useRef(!!(restored?.from ?? loadLastQuery()?.from));
+  const fromTouched = useRef(false); // 自分で出発駅を選んだら、あとから決まった最寄り駅で、上書きしない
   const [from, setFrom] = useState(() => restored?.from ?? loadLastQuery()?.from ?? '東京');
   const [to, setTo] = useState(() => restored?.to ?? loadLastQuery()?.to ?? '大宮');
   // 経由駅(通ってほしい駅)。空の行は、まだ駅を選んでいないもの
@@ -115,6 +119,18 @@ export const RouteSearch: React.FC<{ onReserve?: (preset: Omit<ReservationPreset
       alive = false;
     };
   }, [retry]);
+
+  // 出発駅が空のとき(はじめて)だけ、いまいる場所の最寄り駅にする。許可されたときだけ。ふつうに直せる
+  const triedLocate = useRef(false);
+  useEffect(() => {
+    if (!stations || triedLocate.current || hadFrom.current) return;
+    triedLocate.current = true;
+    locateDepartureStation(stations).then((name) => {
+      if (!name || fromTouched.current) return;
+      setFrom(name);
+      setTo((t) => (t === name ? (name === '東京' ? '大宮' : '東京') : t)); // 出発と同じ駅にならないように(到着が、初めの駅のままのとき)
+    });
+  }, [stations]);
 
   const runSearch = async (fromV: string, toV: string, timeV: string, optsV: RouteOptions, viasV: string[]) => {
     setMessage(null);
@@ -201,6 +217,7 @@ export const RouteSearch: React.FC<{ onReserve?: (preset: Omit<ReservationPreset
   };
 
   const swap = () => {
+    fromTouched.current = true;
     setFrom(to);
     setTo(from);
     setResults(null);
@@ -274,7 +291,7 @@ export const RouteSearch: React.FC<{ onReserve?: (preset: Omit<ReservationPreset
           <div className="flex-1 min-w-0 divide-y divide-[#EFEDF5]">
             <label className="flex items-center gap-2">
               <span className="shrink-0 w-10 text-center text-[11px] font-black text-white bg-[#3B82F6] rounded py-1">出発</span>
-              <select className={selectClass} value={from} onChange={(e) => setFrom(e.target.value)} aria-label="出発駅">
+              <select className={selectClass} value={from} onChange={(e) => { fromTouched.current = true; setFrom(e.target.value); }} aria-label="出発駅">
                 {stations.map((s) => (
                   <option key={s} value={s}>
                     {s}
