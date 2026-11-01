@@ -116,6 +116,8 @@ export default function App() {
   // 予約タブの中の切り替え(特急券・座席 / デリバリー)と、ヘッダーのメニュー
   const [reservationView, setReservationView] = useState<'ticket' | 'delivery'>('ticket');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  // 下のタブを、もう一度タップした回数(列車位置・時刻表が、自分の最初の表示に戻るために見る)
+  const [reselect, setReselect] = useState<{ tab: TabType; n: number }>({ tab: 'home', n: 0 });
   const [headerStationName, setHeaderStationName] = useState<string>('松戸');
   const [headerPlatform, setHeaderPlatform] = useState<1 | 2>(1);
 
@@ -791,6 +793,29 @@ export default function App() {
     setEventTareOpen(true);
   };
 
+  // 開いているタブを、もう一度タップしたとき: 予約はデリバリー→特急券、列車位置・時刻表は、それぞれの最初の表示へ
+  const handleReselect = (tab: TabType) => {
+    if (tab === 'reservation') {
+      if (reservationView === 'delivery') setReservationView('ticket');
+    } else if (tab === 'location' || tab === 'timetable') {
+      setReselect((r) => ({ tab, n: r.n + 1 }));
+    }
+  };
+
+  // ヘッダーの「神埼線アプリ」: 開いているモーダルを閉じて、ホームへ
+  const goHome = () => {
+    setIsMenuOpen(false);
+    setIsLoginModalOpen(false);
+    setPendingAction(null);
+    setIsEDeliveryModalOpen(false);
+    setEventTareOpen(false);
+    setIsNPointModalOpen(false);
+    setIsRouteMapModalOpen(false);
+    setIsQRCodeModalOpen(false);
+    setIsMyPageOpen(false);
+    setActiveTab('home');
+  };
+
   return (
     <PhoneContainer>
       {/* 1. Header */}
@@ -801,6 +826,7 @@ export default function App() {
         onOpenQRCodeModal={() => setIsQRCodeModalOpen(true)}
         onOpenMyPage={() => setIsMyPageOpen(true)}
         onOpenMenu={() => setIsMenuOpen(true)}
+        onGoHome={goHome}
         activeTab={activeTab}
         onChangeTab={setActiveTab}
         currentStationName={headerStationName}
@@ -900,6 +926,7 @@ export default function App() {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-28 md:pb-12">
             <LazyBoundary fallback={<TabFallback />}>
               <TrainLocationTab
+                reselectKey={reselect.tab === 'location' ? reselect.n : 0}
                 onOpenReservation={(preset) => {
                   setReservationPreset(preset);
                   setReservationView('ticket');
@@ -914,6 +941,7 @@ export default function App() {
         {activeTab === 'timetable' && (
           <LazyBoundary fallback={<TabFallback />}>
             <TimetableTab
+              reselectKey={reselect.tab === 'timetable' ? reselect.n : 0}
               onReserve={
                 isLaunched()
                   ? (preset) => {
@@ -1039,6 +1067,7 @@ export default function App() {
       <FooterNav
         activeTab={activeTab}
         onChangeTab={setActiveTab}
+        onReselect={handleReselect}
         hasActiveOrder={!!activeOrder}
       />
 

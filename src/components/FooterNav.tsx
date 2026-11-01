@@ -5,12 +5,15 @@ import { TabType } from '../types';
 interface FooterNavProps {
   activeTab: TabType;
   onChangeTab: (tab: TabType) => void;
+  // いま開いているタブを、もう一度タップしたとき
+  onReselect?: (tab: TabType) => void;
   hasActiveOrder?: boolean;
 }
 
 export const FooterNav: React.FC<FooterNavProps> = ({
   activeTab,
   onChangeTab,
+  onReselect,
   hasActiveOrder,
 }) => {
   const tabs: { id: TabType; label: string; icon: React.ReactNode; badge?: boolean }[] = [
@@ -51,7 +54,7 @@ export const FooterNav: React.FC<FooterNavProps> = ({
           return (
             <button
               key={tab.id}
-              onClick={() => onChangeTab(tab.id)}
+              onClick={() => (isActive ? onReselect?.(tab.id) : onChangeTab(tab.id))}
               className={`relative flex flex-col items-center justify-center py-1 px-3 rounded-xl transition-all cursor-pointer ${
                 isActive
                   ? 'text-[#5B21B6] font-bold'
