@@ -25,6 +25,7 @@ import { deleteAccount } from '../utils/accountApi';
 import { MileageCard } from './MileageCard';
 import type { Mileage } from '../utils/mileage';
 import { formatSeats, getSeatClassLabel, seatTitle } from '../utils/seatUtils';
+import { parseActivityTime, sortNewestFirst, UPCOMING_AT } from '../utils/activityOrder';
 import { isLaunched } from '../utils/launch';
 import { TicketSummary, ticketBadgeLabel } from '../utils/ticketApi';
 import { calcReservationPoints } from '../utils/points';
@@ -106,7 +107,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
   };
 
   // 動的なアカウント利用履歴データの生成
-  const activities: AccountActivityItem[] = [
+  const unsortedActivities: AccountActivityItem[] = [
     // 1. アクティブな特急券予約
     ...(activeOrder
       ? [
@@ -116,6 +117,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
             title: `${activeOrder.trainName} ${seatTitle(activeOrder.carNo, activeOrder.seatNo)}`,
             subtitle: `${activeOrder.boardingStation || '—'} (${activeOrder.departureTime || '—'}) → ${activeOrder.destinationStation || '—'} (${activeOrder.arrivalTime || '—'})`,
             date: '本日乗車予定',
+            at: UPCOMING_AT,
             status: '予約確定・乗車前',
             statusColor: 'emerald',
             amount: `¥${activeOrder.totalPrice.toLocaleString()}`,
@@ -139,6 +141,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
             title: `車内デリバリー注文 (${activeOrder.items.length}商品)`,
             subtitle: `${activeOrder.items.map((i) => i.item.name).join('、')} (${activeOrder.deliveryStation}発車後にお届け)`,
             date: '本日デリバリー予定',
+            at: UPCOMING_AT,
             status: activeOrder.status === 'delivered' ? 'お届け済み' : activeOrder.status === 'delivering' ? '配達中' : '準備中',
             statusColor: 'purple',
             amount: `¥${Math.max(0, activeOrder.items.reduce((sum, i) => sum + i.item.price * i.quantity, 0) - (activeOrder.itemDiscount || 0)).toLocaleString()}`,
@@ -158,6 +161,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
           title: `${h.trainName} ${seatTitle(h.carNo, h.seatNo)}`,
           subtitle: `${h.boardingStation || ''} (${h.departureTime || ''}) → ${h.destinationStation || ''} (${h.arrivalTime || ''})`,
           date,
+          at: parseActivityTime(h.reservedDate, h.departureTime),
           status: done ? '乗車済み' : 'キャンセル',
           statusColor: done ? 'indigo' : 'slate',
           amount: `¥${h.ticketPrice.toLocaleString()}`,
@@ -171,6 +175,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
           title: `車内デリバリー注文 (${h.items.length}商品)`,
           subtitle: h.items.map((i) => i.name).join('、'),
           date,
+          at: parseActivityTime(h.reservedDate, h.departureTime),
           status: done ? '利用済み' : 'キャンセル',
           statusColor: done ? 'indigo' : 'slate',
           amount: `¥${deliveryTotal.toLocaleString()}`,
@@ -187,12 +192,16 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
         title: p.title,
         subtitle: isEventReward ? 'イベント報酬 (N-POINT付与)' : p.points < 0 ? 'N-POINT 取消' : `N-POINT 獲得・付与`,
         date: p.date,
+        at: parseActivityTime(p.date),
         status: p.points < 0 ? '取消' : '付与済',
         statusColor: p.points < 0 ? 'slate' : isEventReward ? 'indigo' : 'amber',
         amount: `${p.points < 0 ? '−' : '+'}${Math.abs(p.points)} pt`,
       };
     }),
   ];
+
+  // 予約・デリバリー・ポイントを、まとめて、日時の新しい順に(これから乗る予約は、いちばん上)
+  const activities = sortNewestFirst(unsortedActivities);
 
   // 「ポイント」タブにはイベント報酬のポイントも含める
   const filteredActivities = activities.filter((act) => {

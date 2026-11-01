@@ -763,7 +763,6 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
               <>
                 <div className="space-y-1">
                   <h3 className="text-sm font-bold text-slate-100">管理トークンを入力</h3>
-                  <p className="text-[11px] text-slate-400">GAS のスクリプトプロパティ ADMIN_TOKEN と同じ文字列です</p>
                 </div>
 
                 <form
@@ -2442,7 +2441,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                       <span>管理トークン（運行情報をサーバーへ保存するための鍵）</span>
                     </div>
                     <p className="text-[11px] text-slate-400 leading-relaxed">
-                      GAS のスクリプトプロパティ ADMIN_TOKEN と同じ文字列を入力します。この端末にだけ保存され、一致しないとサーバーへ運行情報を保存できません。
+                      この端末にだけ保存され、一致しないとサーバーへ運行情報を保存できません。
                     </p>
                     <div className="flex gap-2">
                       <input

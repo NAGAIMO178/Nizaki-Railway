@@ -162,6 +162,7 @@ const EventTarePageBody: React.FC<EventTarePageProps & { onRestart: () => void }
   const counts = useRef<Record<string, number>>({});
   const seq = useRef(0);
   const endRef = useRef<HTMLDivElement | null>(null);
+  const barRef = useRef<HTMLDivElement | null>(null); // 下に貼りついている、選択肢・ボタンの帯
 
   useEffect(() => {
     let alive = true;
@@ -204,7 +205,13 @@ const EventTarePageBody: React.FC<EventTarePageProps & { onRestart: () => void }
     if (add.length > 0) push(add);
   }, [state, now, progress.joined, progress.cleared]);
 
-  const scrollDown = () => endRef.current?.scrollIntoView({ block: 'end', behavior: scrollBehavior() });
+  // いちばん新しい行が、下の帯(選択肢・ボタン)にかくれないところまで、下へ送る
+  const scrollDown = () => {
+    const end = endRef.current;
+    if (!end) return;
+    end.style.scrollMarginBottom = `${(barRef.current?.offsetHeight ?? 0) + 8}px`;
+    end.scrollIntoView({ block: 'end', behavior: scrollBehavior() });
+  };
   useEffect(() => {
     scrollDown();
   }, [log.length, typing, doneBlocks]);
@@ -404,7 +411,7 @@ const EventTarePageBody: React.FC<EventTarePageProps & { onRestart: () => void }
           {typing && <TypingBubble />}
           <div ref={endRef} />
         </div>
-        <div className="sticky bottom-0 border-t border-amber-600/25 bg-[#0C0A10]/95 px-4 py-3 font-sans">
+        <div ref={barRef} className="sticky bottom-0 border-t border-amber-600/25 bg-[#0C0A10]/95 px-4 py-3 font-sans">
           {!blocksPending && phase === 'no_reservation' &&
             (lastTrainPassed(now) ? (
               <div className="py-1 text-center text-xs font-bold text-amber-400">{UI.reserveLastTrainPassed}</div>

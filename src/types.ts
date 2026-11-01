@@ -97,5 +97,6 @@ export interface AccountActivityItem {
   amount?: string;
   pointsEarned?: number;
   details?: Record<string, string>;
+  at?: number; // 並べ替え用の日時(ms)。これから乗る予約は、いちばん上
 }
 
