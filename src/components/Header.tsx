@@ -11,6 +11,7 @@ interface HeaderProps {
   onOpenNotificationModal?: () => void;
   onOpenMyPage?: () => void;
   onOpenMenu?: () => void;
+  onGoHome?: () => void; // 「神埼線アプリ」の文字をタップしたとき
   activeTab?: TabType;
   onChangeTab?: (tab: TabType) => void;
   currentStationName?: string;
@@ -26,6 +27,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenQRCodeModal,
   onOpenMyPage,
   onOpenMenu,
+  onGoHome,
   isLoggedIn = false,
   currentUser = null,
   onOpenLoginModal,
@@ -55,7 +57,9 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* Title: 神埼線アプリ */}
             <h1 className="text-base sm:text-lg font-black text-[#221C35] tracking-tight truncate">
-              神埼線アプリ
+              <button type="button" onClick={onGoHome} className="max-w-full truncate cursor-pointer text-left">
+                神埼線アプリ
+              </button>
             </h1>
           </div>
 

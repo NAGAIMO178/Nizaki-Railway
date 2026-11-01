@@ -45,7 +45,7 @@ export const presetTimetableMode = (m: 'timetable' | 'route') => {
   lastMode = m;
 };
 
-export const TimetableTab: React.FC<{ onReserve?: (preset: Omit<ReservationPreset, 'key'>) => void }> = ({ onReserve }) => {
+export const TimetableTab: React.FC<{ onReserve?: (preset: Omit<ReservationPreset, 'key'>) => void; reselectKey?: number }> = ({ onReserve, reselectKey = 0 }) => {
   const [lines, setLines] = useState<TimetableLine[] | null>(null);
   const [linesError, setLinesError] = useState(false);
   const [linesRetry, setLinesRetry] = useState(0);
@@ -64,6 +64,18 @@ export const TimetableTab: React.FC<{ onReserve?: (preset: Omit<ReservationPrese
     lastMode = m;
     setModeState(m);
   };
+
+  // 下のタブ「時刻表」を、もう一度タップしたとき、経路検索を開いていたら、時刻表の「神埼線」にする
+  const seenReselect = useRef(reselectKey); // 開いたときの値は、タップとは数えない
+  useEffect(() => {
+    if (reselectKey === seenReselect.current) return;
+    seenReselect.current = reselectKey;
+    if (!showRoute || mode !== 'route') return;
+    setMode('timetable');
+    setLineCode('Y');
+    setStationIdx(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reselectKey]);
 
   useEffect(() => {
     let alive = true;

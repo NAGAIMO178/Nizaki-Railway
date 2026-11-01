@@ -31,6 +31,8 @@ export interface DisplayLine {
 interface TrainLocationTabProps {
   // 特急の詳細の「空席を予約画面で見る」から、予約画面を、その列車を選んだ状態で開く(公開後だけ)
   onOpenReservation?: (preset: ReservationPreset) => void;
+  // 下のタブ「列車位置」を、もう一度タップした回数(増えるたびに、神埼線の大宮・横浜方面に戻す)
+  reselectKey?: number;
 }
 
 export interface LiveTrainPos {
@@ -240,7 +242,7 @@ const DIA_LINE_CODES: Record<string, string> = {
   tsuchiura: 'TC',
 };
 
-export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReservation }) => {
+export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReservation, reselectKey = 0 }) => {
   const [activeLineId, setActiveLineId] = useState<string>('kanzaki');
   const [direction, setDirection] = useState<1 | 2>(1); // 1=下り/方向1, 2=上り/方向2
   const [selectedTrain, setSelectedTrain] = useState<LiveTrainPos | null>(null);
@@ -419,6 +421,15 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
     }, 60);
   };
 
+  // 開いているタブをもう一度タップしたら、神埼線の大宮・横浜方面にする(すでにそうなら、何もしない)
+  const seenReselect = useRef(reselectKey); // 開いたときの値は、タップとは数えない
+  useEffect(() => {
+    if (reselectKey === seenReselect.current) return;
+    seenReselect.current = reselectKey;
+    setActiveLineId('kanzaki');
+    setDirection(1);
+  }, [reselectKey]);
+
   // アプリ起動時 / 路線切り替え時 / 方向切り替え時に【リセット → 設置】を実行
   useEffect(() => {
     performResetAndSet();
@@ -589,7 +600,16 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
   };
 
   return (
-    <div className="min-h-screen bg-[#F9F8FD] text-[#221C35] pb-24 max-w-md mx-auto relative font-sans">
+    <div
+      className="min-h-screen bg-[#F9F8FD] text-[#221C35] pb-24 max-w-md mx-auto relative font-sans"
+      onClick={(e) => {
+        // 何もないところをタップしたら、選んだ列車(枠と赤い三角)を外す。列車・札・ボタンと、下の詳細のシートは、そのまま
+        const t = e.target as HTMLElement;
+        if (t.closest('button, a, input, select, textarea, [role="button"]')) return;
+        if (detailCardRef.current?.contains(t)) return;
+        setSelectedTrain(null);
+      }}
+    >
       {/* Top Header Bar */}
       <div className="sticky top-0 z-30 bg-white border-b border-[#E6E2EE] shadow-2xs">
         <div className="p-3 pb-2 flex items-center justify-between">
