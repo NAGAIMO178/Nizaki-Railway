@@ -67,31 +67,10 @@ export const ArrivalResults: React.FC<ArrivalResultsProps> = ({ plan, deadlineTe
     );
   }
 
-  const pick = plan.options[plan.pickIndex];
-  const others = plan.options.filter((_, i) => i !== plan.pickIndex);
-
+  // 出発の早い順に、同じ作りのカードで並べる(おすすめの1本を、特別に先頭へ出さない)
   return (
     <div className="space-y-2.5 animate-fadeIn">
-      <button
-        type="button"
-        onClick={() => onOpen(pick)}
-        className="w-full text-left bg-white border-2 border-[#5B21B6] rounded-2xl p-4 shadow-xs cursor-pointer active:bg-[#F9F8FD] space-y-2.5"
-      >
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-xs font-black text-white bg-[#5B21B6] rounded px-2.5 py-0.5">おすすめ</span>
-          <span className="text-sm font-black text-[#221C35]">¥{pick.route.fare.toLocaleString()}</span>
-        </div>
-        <TimeRange option={pick} className="block text-[34px] leading-tight tracking-tight" />
-        <Tags option={pick} showPaid />
-        <div className="border-t border-[#EFEDF5] pt-2 flex items-center gap-2">
-          <div className="flex-1 min-w-0">
-            <Legs option={pick} lineColor={lineColor} />
-          </div>
-          <ChevronRight className="w-4 h-4 text-[#B4ADC4] shrink-0" />
-        </div>
-      </button>
-
-      {others.map((o) => (
+      {plan.options.map((o) => (
         <button
           type="button"
           key={`${o.depSec}-${o.arrSec}`}
