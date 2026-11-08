@@ -25,6 +25,7 @@ import { deleteAccount } from '../utils/accountApi';
 import { MileageCard } from './MileageCard';
 import type { Mileage } from '../utils/mileage';
 import { formatSeats, getSeatClassLabel, seatTitle } from '../utils/seatUtils';
+import { usePushEnabled } from '../utils/notifySettings';
 import { parseActivityTime, sortNewestFirst, UPCOMING_AT } from '../utils/activityOrder';
 import { isLaunched } from '../utils/launch';
 import { TicketSummary, ticketBadgeLabel } from '../utils/ticketApi';
@@ -72,7 +73,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
   const [activeHistoryTab, setActiveHistoryTab] = useState<'all' | 'ticket' | 'delivery' | 'event' | 'point'>('all');
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [isPolicyOpen, setIsPolicyOpen] = useState(false);
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [notificationsEnabled, setNotificationsEnabled] = usePushEnabled(); // 保存して、通知の見張りに反映する(設定のスイッチと同じ設定)
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
@@ -497,6 +498,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setNotificationsEnabled(!notificationsEnabled)}
+                  aria-pressed={notificationsEnabled}
                   className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer ${
                     notificationsEnabled ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'
                   }`}

@@ -6,9 +6,11 @@
 //  - アプリを開いた直後に、すでに遅れている列車が2本以上あるときは、まとめて1回だけ知らせる。
 //  - アプリを閉じているあいだは、知らせられない(ブラウザの仕組みによる)。
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { safeStorage } from './safeStorage';
 import { computeLiveTrains, getCachedLineData, loadLineData } from './diaTimetable';
 import { DelayNotifyMode } from './delayNotifySettings';
 import { getNotificationPermissionState, sendLocalPushNotification } from './pushNotification';
+import { isPushEnabled } from './notifySettings';
 import { filterByLines, markNotified, NotifiedState, NotifyCandidate, planNotification } from './delayNotifyPlan';
 
 const SCAN_INTERVAL_MS = 30 * 1000;
@@ -37,7 +39,7 @@ const todayKey = (now: Date): string => `${now.getFullYear()}-${now.getMonth() +
 const readNotified = (day: string): NotifiedState => {
   const state: NotifiedState = { keys: new Set<string>(), contents: new Map<string, number>() };
   try {
-    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+    const raw = JSON.parse(safeStorage.getItem(STORAGE_KEY) || 'null');
     if (raw && raw.day === day) {
       if (Array.isArray(raw.keys)) raw.keys.forEach((k: unknown) => typeof k === 'string' && state.keys.add(k));
       if (raw.contents && typeof raw.contents === 'object') {
@@ -52,7 +54,7 @@ const readNotified = (day: string): NotifiedState => {
 
 const writeNotified = (day: string, state: NotifiedState) => {
   try {
-    localStorage.setItem(
+    safeStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
         day,
@@ -105,7 +107,7 @@ export function useDelayWatcher(opts: {
     const notify = (title: string, body: string, tag: string) => {
       show(body);
       // 通知の許可がすでにあるときだけ、端末の通知を出す(ここで、許可を求めるお願いは出さない)
-      if (getNotificationPermissionState() === 'granted') {
+      if (isPushEnabled() && getNotificationPermissionState() === 'granted') {
         sendLocalPushNotification({ title, body, tag }).catch(() => undefined);
       }
     };

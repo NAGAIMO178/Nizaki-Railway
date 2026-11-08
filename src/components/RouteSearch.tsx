@@ -9,6 +9,7 @@ import { RouteCard } from './RouteCard';
 import { loadRouteStations, searchRoutes, RouteResult } from '../utils/routeSearch';
 import { planArrival, ArrivalPlan, ArrivalOption } from '../utils/arrivalPlan';
 import { isLaunched } from '../utils/launch';
+import { emptyResultText } from '../utils/routeEmptyMessage';
 import { locateDepartureStation } from '../utils/departureFromLocation';
 import { StationPickerSheet } from './StationPickerSheet';
 import { saveRecentStation } from '../utils/stationPicker';
@@ -469,9 +470,20 @@ export const RouteSearch: React.FC<{ onReserve?: (preset: Omit<ReservationPreset
 
           {results.length === 0 && (
             <div className="bg-white border border-[#E6E2EE] rounded-2xl p-5 text-center text-xs text-[#6B6380]">
-              この条件で、乗れる列車が見つかりませんでした。
-              <br />
-              （{lastSession && lastSession.vias.length > 0 ? '経由駅を減らすか、' : ''}出発の時刻を早めるか、絞り込みを変えてお試しください）
+              {(() => {
+                const t = emptyResultText(lastSession?.timeText, !!lastSession && lastSession.vias.length > 0);
+                return (
+                  <>
+                    {t.head}
+                    {t.hint && (
+                      <>
+                        <br />
+                        {t.hint}
+                      </>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           )}
 

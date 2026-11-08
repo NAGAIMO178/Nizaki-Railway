@@ -23,6 +23,7 @@ import { calcDeliveryAddPoints, calcReservationPoints } from './utils/points';
 import LaunchCountdown from './components/LaunchCountdown';
 import { useCloudAccount } from './utils/useCloudAccount';
 import { joinEventTare, rewardIdFromTitle } from './utils/cloudAccount';
+import { sendReservationWithRetry } from './utils/reservationSync';
 import { useDelayNotifyLines, useDelayNotifyMode } from './utils/delayNotifySettings';
 import { useDelayWatcher } from './utils/useDelayWatcher';
 import { useReservationWatcher } from './utils/useReservationWatcher';
@@ -556,6 +557,8 @@ export default function App() {
   // 予約状態が更新されたらローカルストレージに保存し、ログイン済みの会員ならGAS(予約台帳)にも記録する
   // (LINEの「予約確認」はこの台帳を見る。デモ会員など、ログイン証が無い場合は端末内のみ)
   const sessionToken = currentUser?.sessionToken;
+  const currentOrderIdRef = React.useRef<string | undefined>(undefined);
+  currentOrderIdRef.current = activeOrder?.orderId;
   React.useEffect(() => {
     if (activeOrder) {
       try {
@@ -589,13 +592,16 @@ export default function App() {
               awardPoints: true,
             }
           : { sessionToken, order: base };
-        callGas('createReservation', payload)
-          .then(() => {
-            if (awardOnServer) void cloud.refresh(); // 付いたポイントを、画面に反映する
-            // QR乗車券のトークンを、先に受け取って端末に残す(電波の届かない場所でも、QR を出せるように)
-            if (isLaunched()) fetchAndCacheTicket(sessionToken, orderId).catch(() => {});
-          })
-          .catch((err) => console.warn('Failed to sync reservation:', err));
+        // 送れなかったときは、間をあけて、もう一度送る(やり直しても直らない失敗は、送り直さない)。待っているあいだに、その予約が無くなったら、やめる
+        void sendReservationWithRetry(() => callGas('createReservation', payload), { shouldContinue: () => currentOrderIdRef.current === orderId }).then((r) => {
+          if (!r.ok) {
+            console.warn('Failed to sync reservation:', r.reason);
+            return;
+          }
+          if (awardOnServer) void cloud.refresh(); // 付いたポイントを、画面に反映する
+          // QR乗車券のトークンを、先に受け取って端末に残す(電波の届かない場所でも、QR を出せるように)
+          if (isLaunched()) fetchAndCacheTicket(sessionToken, orderId).catch(() => {});
+        });
       }
     }
   }, [activeOrder, sessionToken, currentUser?.email, cloudOn, cloud.ready, cloud.error]);

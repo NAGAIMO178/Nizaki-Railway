@@ -1,10 +1,12 @@
-import React, { useEffect, useState } from 'react';
-import { checkForUpdate, delayUntilRecheck } from '../utils/updateNotice';
+import React, { useEffect, useRef, useState } from 'react';
+import { checkForUpdate, delayUntilRecheck, isDismissed } from '../utils/updateNotice';
 
 const CHECK_INTERVAL_MS = 5 * 60 * 1000;
 
 export const UpdatePrompt: React.FC = () => {
-  const [notes, setNotes] = useState<string[] | null>(null);
+  const [info, setInfo] = useState<{ notes: string[]; version: string } | null>(null);
+  // 「あとで」で閉じた版(その版では、もう出さない。新しい版が来たら、また出る)
+  const dismissedRef = useRef<string | null>(null);
 
   useEffect(() => {
     let recheckTimer: number | undefined;
@@ -12,7 +14,7 @@ export const UpdatePrompt: React.FC = () => {
     const check = async () => {
       const result = await checkForUpdate((input, init) => fetch(input, init), __APP_VERSION__, Date.now());
       if (result.kind === 'show') {
-        setNotes(result.notes);
+        if (!isDismissed(dismissedRef.current, result.version)) setInfo({ notes: result.notes, version: result.version });
       } else if (result.kind === 'held') {
         // 保留中(公開の時刻まで、お知らせを出さない): 時刻の直後に、もう一度確かめる(5分ごとの確認でも、拾える)
         window.clearTimeout(recheckTimer);
@@ -34,7 +36,8 @@ export const UpdatePrompt: React.FC = () => {
     };
   }, []);
 
-  if (notes === null) return null;
+  if (info === null) return null;
+  const notes = info.notes;
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
@@ -53,7 +56,17 @@ export const UpdatePrompt: React.FC = () => {
             </ul>
           </div>
         )}
-        <div className="mt-5 flex justify-end">
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              dismissedRef.current = info.version;
+              setInfo(null);
+            }}
+            className="cursor-pointer rounded-md bg-white/10 px-4 py-2 text-sm font-bold text-white hover:bg-white/20"
+          >
+            あとで
+          </button>
           <button
             type="button"
             onClick={() => window.location.reload()}

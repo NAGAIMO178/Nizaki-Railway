@@ -39,6 +39,7 @@ import { formatSeats } from '../utils/seatUtils';
 
 // 管理者の画面は大きいので、開くときに読み込む
 const AdminConsoleModal = lazy(() => import('./AdminConsoleModal').then((m) => ({ default: m.AdminConsoleModal })));
+import { usePushEnabled } from '../utils/notifySettings';
 import { useDelayNotifyMode, useDelayNotifyLines, DELAY_NOTIFY_LINES, DelayNotifyMode } from '../utils/delayNotifySettings';
 
 interface SettingsTabProps {
@@ -67,7 +68,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   onOpenMyPage,
 }) => {
   // 3. Push Notification Permission State
-  const [notifyService, setNotifyService] = useState(true);
+  const [notifyService, setNotifyService] = usePushEnabled(); // 保存して、遅れの見張りなどにも反映する(マイページのスイッチと同じ設定)
   const [permissionState, setPermissionState] = useState<string>('default');
   const [lastSentTime, setLastSentTime] = useState<string | null>(null);
   // 遅れの知らせ(NIZAKI 2.0。公開後だけ出す)
@@ -339,6 +340,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                 type="checkbox"
                 checked={notifyService && permissionState === 'granted'}
                 onChange={(e) => handleTogglePush(e.target.checked)}
+                aria-label="運行遅延・お知らせリアルタイム通知"
                 className="sr-only peer"
               />
               <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#5B21B6]"></div>

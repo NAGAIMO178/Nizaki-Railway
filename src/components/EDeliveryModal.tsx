@@ -254,6 +254,7 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
 
           <button
             onClick={onClose}
+            aria-label="閉じる"
             className="p-2 rounded-full hover:bg-black/5 text-[#857D99] hover:text-[#221C35] transition-colors cursor-pointer shrink-0 ml-2"
           >
             <X className="w-5 h-5" />

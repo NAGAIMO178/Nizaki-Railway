@@ -4,6 +4,7 @@
 //   off   … 知らせない
 // 以前の「マイ駅だけ」('mystation')を保存していた端末は、「すべて」に読み替える。
 import { useEffect, useState } from 'react';
+import { safeStorage } from './safeStorage';
 
 export type DelayNotifyMode = 'all' | 'lines' | 'off';
 
@@ -36,7 +37,7 @@ export const parseDelayNotifyLines = (raw: string | null): string[] => {
 
 export const getDelayNotifyMode = (): DelayNotifyMode => {
   try {
-    return parseDelayNotifyMode(localStorage.getItem(KEY));
+    return parseDelayNotifyMode(safeStorage.getItem(KEY));
   } catch {
     return 'all';
   }
@@ -44,7 +45,7 @@ export const getDelayNotifyMode = (): DelayNotifyMode => {
 
 export const getDelayNotifyLines = (): string[] => {
   try {
-    return parseDelayNotifyLines(localStorage.getItem(LINES_KEY));
+    return parseDelayNotifyLines(safeStorage.getItem(LINES_KEY));
   } catch {
     return [...LINE_IDS];
   }
@@ -59,7 +60,7 @@ const announce = () => window.dispatchEvent(new CustomEvent<Detail>(EVENT, { det
 
 export const setDelayNotifyMode = (mode: DelayNotifyMode) => {
   try {
-    localStorage.setItem(KEY, mode);
+    safeStorage.setItem(KEY, mode);
   } catch {
     // 保存できなくても、この画面を開いているあいだは、変わる
   }
@@ -68,7 +69,7 @@ export const setDelayNotifyMode = (mode: DelayNotifyMode) => {
 
 export const setDelayNotifyLines = (lines: string[]) => {
   try {
-    localStorage.setItem(LINES_KEY, JSON.stringify(LINE_IDS.filter((id) => lines.includes(id))));
+    safeStorage.setItem(LINES_KEY, JSON.stringify(LINE_IDS.filter((id) => lines.includes(id))));
   } catch {
     // 同上
   }

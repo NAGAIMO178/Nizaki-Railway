@@ -1929,7 +1929,8 @@ function readMemberOrders(memberId) {
       departureTime: cellText(row[col['出発時刻']], 'HH:mm'),
       arrivalTime: cellText(row[col['到着時刻']], 'HH:mm'),
       reservedDate: cellText(row[col['予約日']], 'yyyy-MM-dd'),
-      ticketPrice: Math.max(0, total + itemDiscount - itemsTotal),
+      // 合計金額は、N-POINT で払った分を引いたあとの額。N-POINT で払った分(特急券でもデリバリーでも)を足し戻して、特急券の金額にする
+      ticketPrice: Math.max(0, total + itemDiscount + (Number(detail.pointsUsed) || 0) - itemsTotal),
       items: items,
       itemDiscount: itemDiscount,
       result: cancelled ? 'cancelled' : 'completed',
@@ -1963,7 +1964,8 @@ function readMemberRides(memberId) {
       reservedDate: cellText(row[col['予約日']], 'yyyy-MM-dd'),
       departureTime: cellText(row[col['出発時刻']], 'HH:mm'),
       seatType: String(row[col['席種']]),
-      totalPrice: Number(row[col['合計金額']]) || 0,
+      // 合計金額は、N-POINT で払った分を引いたあとの額。足し戻して、払う前の額にする(マイレージの記録の金額)
+      totalPrice: (Number(row[col['合計金額']]) || 0) + readPointsUsed(col['明細'] !== undefined ? row[col['明細']] : ''),
       sortKey: cellText(row[col['予約日時']])
     });
   }
@@ -2306,6 +2308,16 @@ function readPointBasis(detailCell) {
   if (!detailCell) return 0;
   try {
     return Math.max(0, Math.floor(Number(JSON.parse(String(detailCell)).pointBasis)) || 0);
+  } catch (err) {
+    return 0;
+  }
+}
+
+// 予約の明細の列から、N-POINT で払った額(特急券とデリバリーの合計)を読む(無ければ0)
+function readPointsUsed(detailCell) {
+  if (!detailCell) return 0;
+  try {
+    return Math.max(0, Math.floor(Number(JSON.parse(String(detailCell)).pointsUsed)) || 0);
   } catch (err) {
     return 0;
   }

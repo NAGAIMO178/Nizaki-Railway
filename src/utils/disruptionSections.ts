@@ -27,6 +27,9 @@ export const getStationsForLine = (lineId: string): string[] => {
   return LINE_STATIONS[lineId] || LINE_STATIONS.kanzaki || [];
 };
 
+// 環状線(埼千環状線)。最後の駅(新宿)から、最初の駅(東京)へ、つながっている
+const isLoopLine = (lineId: string): boolean => lineId === 'saichi_loop' || lineId === 'saichi';
+
 // 駅名の読み仮名「（おおみか）」を除いた名前
 const stripStationReading = (name: string): string => name.replace(/（.*?）/g, '');
 
@@ -35,6 +38,8 @@ const stripStationReading = (name: string): string => name.replace(/（.*?）/g,
  *  - 「全線」「上り線のみ」「下り線のみ」や、駅名が読み取れない文言 → null(全線に反映)
  *  - 「大宮 〜 池袋 間」のように駅名が2つ以上読み取れる → その2駅の間
  *  - 駅名が1つだけ → その駅のみ
+ *  - 環状線で、短いほうが、並びの端(新宿 → 東京)をまたぐとき → [大きい添字, 小さい添字](from > to は、端をまたぐ印)。
+ *    例: 埼千環状線の「新宿 〜 東京 間」は [19, 0](新宿と東京の間の1区間だけ)。
  */
 export const getAffectedStationRange = (lineId: string, section: string): [number, number] | null => {
   const text = (section || '').trim();
@@ -56,7 +61,11 @@ export const getAffectedStationRange = (lineId: string, section: string): [numbe
   found.sort((a, b) => a.pos - b.pos);
   const first = found[0].idx;
   const second = found.length > 1 ? found[1].idx : first;
-  return [Math.min(first, second), Math.max(first, second)];
+  const lo = Math.min(first, second);
+  const hi = Math.max(first, second);
+  // 環状線は、並びの端をまたぐ側のほうが短いなら、そちらの区間(端をまたぐ印は、from > to)
+  if (isLoopLine(lineId) && lo !== hi && names.length - (hi - lo) < hi - lo) return [hi, lo];
+  return [lo, hi];
 };
 
 /** 列車の位置(駅に停車中/次の駅との間)が、影響区間に含まれるか */
@@ -70,5 +79,9 @@ export const isTrainInAffectedRange = (
   const stationIdx = getStationsForLine(lineId).map(stripStationReading).indexOf(stripStationReading(stationName));
   if (stationIdx === -1) return false;
   const [from, to] = range;
+  if (from > to) {
+    // 環状線の、並びの端をまたぐ区間(from から最後の駅、最初の駅から to)。駅間は、そこから次の駅への間が、区間に収まるとき
+    return isBetween ? stationIdx >= from || stationIdx + 1 <= to : stationIdx >= from || stationIdx <= to;
+  }
   return isBetween ? stationIdx >= from && stationIdx + 1 <= to : stationIdx >= from && stationIdx <= to;
 };

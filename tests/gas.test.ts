@@ -1452,3 +1452,57 @@ describe('公開記念ボーナス(launch2)の日付の門', () => {
     expect(Object.keys(l.keys)).toEqual(['event:launch2']);
   });
 });
+
+describe('履歴・マイレージの金額は、N-POINT で払った分を足し戻す(readMemberOrders・readMemberRides)', () => {
+  const H = ['予約日時', '予約番号', 'LINE_USER_ID', '列車名', '号車', '座席番号', '席種', '乗車駅', '降車駅', '合計金額', 'ステータス', '会員ID', '予約日', '出発時刻', '到着時刻', '乗車日時', '初回登録日時', '明細'];
+  let grid: unknown[][];
+  const row = (id: string, total: number, detail: unknown, status = '予約済み', member = 'M1') => [
+    '2026/10/01 08:00:00', id, '', '特急めぐり 15号', 1, '1A', '指定席', '東京駅', '土浦駅', total, status, member, '2026-10-01', '10:05', '11:00', '', '', detail === null ? '' : JSON.stringify(detail),
+  ];
+
+  beforeEach(() => {
+    grid = [[...H]];
+    const sheet = { getDataRange: () => ({ getValues: () => grid.map((r) => [...r]) }) };
+    gas.getDataSpreadsheet = () => ({ getSheetByName: () => sheet });
+  });
+
+  it('特急券だけ: 全額をポイントで払っても、特急券の金額(払う前の額)が出る', () => {
+    grid.push(row('EQ-1', 0, { items: [], itemDiscount: 0, pointsUsed: 3000 })); // 特急券 3000 を、全額 N-POINT で
+    expect(gas.readMemberOrders('M1')[0].ticketPrice).toBe(3000);
+    expect(gas.readMemberRides('M1')[0].totalPrice).toBe(3000);
+  });
+
+  it('特急券とデリバリー: ポイントで払った分を足し戻すと、特急券の金額になる(どちらに使っても同じ)', () => {
+    // 特急券 3000 + デリバリー 1000(割引 100)− N-POINT 500 = 合計 3400
+    grid.push(row('EQ-2', 3400, { items: [{ name: '弁当', quantity: 1, price: 1000 }], itemDiscount: 100, pointsUsed: 500 }));
+    const o = gas.readMemberOrders('M1')[0];
+    expect(o.ticketPrice).toBe(3000);
+    expect(o.itemDiscount).toBe(100);
+    // マイレージの記録は、払う前の、注文の合計(3900)
+    expect(gas.readMemberRides('M1')[0].totalPrice).toBe(3900);
+  });
+
+  it('ポイントを使っていない予約・古い台帳(明細なし・壊れた明細)は、これまでどおり', () => {
+    grid.push(row('EQ-3', 3000, { items: [], itemDiscount: 0 }));
+    grid.push(row('EQ-4', 2500, null));
+    grid.push(row('EQ-5', 2000, 'こわれた' as unknown));
+    const orders = gas.readMemberOrders('M1');
+    const byId = (id: string) => orders.find((o: { orderId: string }) => o.orderId === id);
+    expect(byId('EQ-3').ticketPrice).toBe(3000);
+    expect(byId('EQ-4').ticketPrice).toBe(2500);
+    const rides = gas.readMemberRides('M1');
+    expect(rides.find((r: { orderId: string }) => r.orderId === 'EQ-4').totalPrice).toBe(2500);
+    expect(rides.find((r: { orderId: string }) => r.orderId === 'EQ-3').totalPrice).toBe(3000);
+  });
+
+  it('取り消した予約も、特急券の金額に足し戻す(ポイントは戻らないが、金額の表示は、払う前の額)。マイレージには入らない', () => {
+    grid.push(row('EQ-6', 0, { items: [], itemDiscount: 0, pointsUsed: 1200 }, 'キャンセル'));
+    expect(gas.readMemberOrders('M1')[0]).toMatchObject({ ticketPrice: 1200, result: 'cancelled' });
+    expect(gas.readMemberRides('M1')).toEqual([]);
+  });
+
+  it('ほかの会員の予約は、混ざらない', () => {
+    grid.push(row('EQ-7', 0, { items: [], itemDiscount: 0, pointsUsed: 900 }, '予約済み', 'M2'));
+    expect(gas.readMemberOrders('M1')).toEqual([]);
+  });
+});

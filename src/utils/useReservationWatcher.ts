@@ -8,6 +8,7 @@ import type { ActiveOrder } from '../types';
 import { EXPRESS_TYPES, expressSourceLines, findExpressTrips, getCachedLineData, loadExpressData, resolveTrainDelay } from './diaTimetable';
 import { departurePlatform, platformLabel } from './platform';
 import { getNotificationPermissionState, sendLocalPushNotification } from './pushNotification';
+import { isPushEnabled } from './notifySettings';
 import { formatSeats } from './seatUtils';
 
 const SCAN_INTERVAL_MS = 30 * 1000;
@@ -152,7 +153,7 @@ export function useReservationWatcher(opts: {
     const notify = (title: string, body: string, tag: string) => {
       show(body);
       // 通知の許可がすでにあるときだけ、端末の通知も出す(ここで、許可を求めるお願いは出さない)
-      if (getNotificationPermissionState() === 'granted') {
+      if (isPushEnabled() && getNotificationPermissionState() === 'granted') {
         sendLocalPushNotification({ title, body, tag }).catch(() => undefined);
       }
     };
