@@ -1,5 +1,6 @@
 // Disruption Dispatcher & Train Delay Manager for 神埼鉄道 NIZAKI App
 
+import { safeStorage } from './safeStorage';
 import { callGas } from './accountApi';
 import { getAffectedStationRange, isTrainInAffectedRange } from './disruptionSections';
 
@@ -120,7 +121,7 @@ const ADMIN_TOKEN_STORAGE_KEY = 'nizaki_admin_token';
 
 export const getAdminToken = (): string => {
   try {
-    return localStorage.getItem(ADMIN_TOKEN_STORAGE_KEY) || '';
+    return safeStorage.getItem(ADMIN_TOKEN_STORAGE_KEY) || '';
   } catch {
     return '';
   }
@@ -128,8 +129,8 @@ export const getAdminToken = (): string => {
 
 export const setAdminToken = (token: string): void => {
   try {
-    if (token) localStorage.setItem(ADMIN_TOKEN_STORAGE_KEY, token);
-    else localStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY);
+    if (token) safeStorage.setItem(ADMIN_TOKEN_STORAGE_KEY, token);
+    else safeStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY);
   } catch {}
 };
 
@@ -153,7 +154,7 @@ export const disruptionManager = {
    */
   getAllDisruptions: (): Record<string, LineDisruption> => {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = safeStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed: Record<string, LineDisruption> = JSON.parse(raw);
         const now = Date.now();
@@ -194,7 +195,7 @@ export const disruptionManager = {
     };
 
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
+      safeStorage.setItem(STORAGE_KEY, JSON.stringify(all));
     } catch (e) {
       console.warn('Failed to save disruption to storage:', e);
     }
@@ -213,7 +214,7 @@ export const disruptionManager = {
     if (lineId === 'saichi_loop') delete all['saichi'];
 
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
+      safeStorage.setItem(STORAGE_KEY, JSON.stringify(all));
     } catch (e) {
       console.warn('Failed to clear disruption in storage:', e);
     }
@@ -227,7 +228,7 @@ export const disruptionManager = {
    */
   clearAllDisruptions: (): void => {
     try {
-      localStorage.removeItem(STORAGE_KEY);
+      safeStorage.removeItem(STORAGE_KEY);
     } catch (e) {}
 
     pushDisruptionsToServer({}, disruptionManager.getOperationForecasts());
@@ -335,7 +336,7 @@ export const disruptionManager = {
    */
   getOperationForecasts: (): OperationForecast[] => {
     try {
-      const raw = localStorage.getItem(FORECAST_STORAGE_KEY);
+      const raw = safeStorage.getItem(FORECAST_STORAGE_KEY);
       if (!raw) return [];
       const parsed: OperationForecast[] = JSON.parse(raw);
       if (!Array.isArray(parsed)) return [];
@@ -358,7 +359,7 @@ export const disruptionManager = {
       // もし期限切れで数が減っていたらストレージを自動更新
       if (activeForecasts.length !== parsed.length) {
         try {
-          localStorage.setItem(FORECAST_STORAGE_KEY, JSON.stringify(activeForecasts));
+          safeStorage.setItem(FORECAST_STORAGE_KEY, JSON.stringify(activeForecasts));
         } catch (e) {}
       }
 
@@ -387,7 +388,7 @@ export const disruptionManager = {
     ];
 
     try {
-      localStorage.setItem(FORECAST_STORAGE_KEY, JSON.stringify(updated));
+      safeStorage.setItem(FORECAST_STORAGE_KEY, JSON.stringify(updated));
     } catch (e) {
       console.warn('Failed to save forecast to storage:', e);
     }
@@ -405,7 +406,7 @@ export const disruptionManager = {
     const filtered = existing.filter((f) => f.id !== forecastId);
 
     try {
-      localStorage.setItem(FORECAST_STORAGE_KEY, JSON.stringify(filtered));
+      safeStorage.setItem(FORECAST_STORAGE_KEY, JSON.stringify(filtered));
     } catch (e) {
       console.warn('Failed to update forecast storage:', e);
     }
@@ -419,7 +420,7 @@ export const disruptionManager = {
    */
   clearAllOperationForecasts: (): void => {
     try {
-      localStorage.removeItem(FORECAST_STORAGE_KEY);
+      safeStorage.removeItem(FORECAST_STORAGE_KEY);
     } catch (e) {}
 
     pushDisruptionsToServer(disruptionManager.getAllDisruptions(), []);
@@ -431,7 +432,7 @@ export const disruptionManager = {
    */
   checkAndCleanupExpiredForecasts: (): boolean => {
     try {
-      const raw = localStorage.getItem(FORECAST_STORAGE_KEY);
+      const raw = safeStorage.getItem(FORECAST_STORAGE_KEY);
       if (!raw) return false;
       const parsed: OperationForecast[] = JSON.parse(raw);
       if (!Array.isArray(parsed)) return false;
@@ -440,7 +441,7 @@ export const disruptionManager = {
       const valid = parsed.filter((f) => f.isActive && (!f.expiresAtTimestamp || now < f.expiresAtTimestamp));
 
       if (valid.length !== parsed.length) {
-        localStorage.setItem(FORECAST_STORAGE_KEY, JSON.stringify(valid));
+        safeStorage.setItem(FORECAST_STORAGE_KEY, JSON.stringify(valid));
         notifyListeners();
         return true; // 失効があり更新された
       }
@@ -520,7 +521,7 @@ export const disruptionManager = {
    */
   checkAndCleanupExpiredDisruptions: (): boolean => {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = safeStorage.getItem(STORAGE_KEY);
       if (!raw) return false;
       const parsed: Record<string, LineDisruption> = JSON.parse(raw);
       const now = Date.now();
@@ -529,7 +530,7 @@ export const disruptionManager = {
         if (!value.expiresAtTimestamp || now < value.expiresAtTimestamp) valid[key] = value;
       }
       if (Object.keys(valid).length !== Object.keys(parsed).length) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(valid));
+        safeStorage.setItem(STORAGE_KEY, JSON.stringify(valid));
         notifyListeners();
         return true;
       }
@@ -562,14 +563,14 @@ export const disruptionManager = {
       const nextForecasts = JSON.stringify(result.forecasts || []);
       let changed = false;
       try {
-        if (localStorage.getItem(STORAGE_KEY) !== nextDisruptions) {
-          localStorage.setItem(STORAGE_KEY, nextDisruptions);
+        if (safeStorage.getItem(STORAGE_KEY) !== nextDisruptions) {
+          safeStorage.setItem(STORAGE_KEY, nextDisruptions);
           changed = true;
         }
       } catch (e) {}
       try {
-        if (localStorage.getItem(FORECAST_STORAGE_KEY) !== nextForecasts) {
-          localStorage.setItem(FORECAST_STORAGE_KEY, nextForecasts);
+        if (safeStorage.getItem(FORECAST_STORAGE_KEY) !== nextForecasts) {
+          safeStorage.setItem(FORECAST_STORAGE_KEY, nextForecasts);
           changed = true;
         }
       } catch (e) {}

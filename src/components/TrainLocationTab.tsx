@@ -5,6 +5,7 @@ import { TrainDetailV2 } from './TrainDetailV2';
 import type { ReservationPreset } from './ReservationTab';
 import { LocationStationDetailCard, LocationStationInfo } from './LocationStationDetailCard';
 import { sendLocalPushNotification } from '../utils/pushNotification';
+import { isPushEnabled } from '../utils/notifySettings';
 import { disruptionManager } from '../utils/disruptionManager';
 import { useDragToDismiss } from '../utils/useDragToDismiss';
 import { isLaunched } from '../utils/launch';
@@ -293,14 +294,16 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
           const lineName = lineNames[train.lineId] || '神埼鉄道';
           const notificationMsg = `${lineName} ${train.trainType}（${train.destination}行）で約 ${train.delayMinutes} 分の遅延が発生しています。`;
 
-          // 1. Web Push Notification 送信
-          sendLocalPushNotification({
-            title: `【列車遅延発生】${lineName}`,
-            body: notificationMsg,
-            tag: `delay-${train.id}`,
-          }).catch((err) => {
-            console.warn('Notification send ignored:', err);
-          });
+          // 1. Web Push Notification 送信(設定で、通知を止めているときは、送らない)
+          if (isPushEnabled()) {
+            sendLocalPushNotification({
+              title: `【列車遅延発生】${lineName}`,
+              body: notificationMsg,
+              tag: `delay-${train.id}`,
+            }).catch((err) => {
+              console.warn('Notification send ignored:', err);
+            });
+          }
 
           // 2. アプリ内トースト通知バナー表示
           setLatestDelayNotice(`${lineName}：${train.trainType}（${train.destination}行）で約 ${train.delayMinutes}分遅れが発生中`);

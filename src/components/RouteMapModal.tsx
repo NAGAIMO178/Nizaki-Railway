@@ -102,6 +102,7 @@ export const RouteMapModal: React.FC<RouteMapModalProps> = ({
 
             <button
               onClick={onClose}
+              aria-label="閉じる"
               className="p-2 rounded-full hover:bg-[#EFE8FA] text-[#6B6380] hover:text-[#221C35] transition-colors cursor-pointer"
             >
               <X className="w-5 h-5" />

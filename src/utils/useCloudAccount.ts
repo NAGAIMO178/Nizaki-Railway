@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { UserProfile } from '../types';
 import { isLaunched } from './launch';
+import { createSyncGate } from './syncGate';
 import {
   CloudAccount,
   MysteryProgress,
@@ -91,8 +92,8 @@ export function useCloudAccount(user: UserProfile | null): CloudApi {
   tokenRef.current = token;
   const memberRef = useRef(memberId);
   memberRef.current = memberId;
-  // 最初の同期。これが済むまで、他の操作は待たせる
-  const firstSyncRef = useRef<Promise<boolean>>(Promise.resolve(false));
+  // 最初の同期。これが済むまで、他の操作は待たせる(失敗のままなら、次の操作の前に、やり直す)
+  const gate = useRef(createSyncGate()).current;
 
   const apply = useCallback((a: CloudAccount) => {
     setAccount(a);
@@ -108,36 +109,37 @@ export function useCloudAccount(user: UserProfile | null): CloudApi {
       setAccount(null);
       setReady(false);
       setError(false);
-      firstSyncRef.current = Promise.resolve(false);
+      gate.reset();
       return;
     }
     let alive = true;
     const cached = readCache(memberId);
     if (cached) setAccount(cached); // 通信が終わるまで、前回の内容を見せる
     setReady(false);
-    const p = syncAccount(token, collectLocalData(email, memberId))
-      .then((a) => {
-        if (alive) {
-          apply(a);
-          setReady(true);
-        }
-        return true;
-      })
-      .catch(() => {
-        if (alive) {
-          setError(true);
-          setReady(true);
-        }
-        return false;
-      });
-    firstSyncRef.current = p;
+    gate.begin(() =>
+      syncAccount(token, collectLocalData(email, memberId))
+        .then((a) => {
+          if (alive) {
+            apply(a);
+            setReady(true);
+          }
+          return true;
+        })
+        .catch(() => {
+          if (alive) {
+            setError(true);
+            setReady(true);
+          }
+          return false;
+        })
+    );
     return () => {
       alive = false;
     };
-  }, [active, token, memberId, email, apply]);
+  }, [active, token, memberId, email, apply, gate]);
 
   const refresh = useCallback(async (): Promise<boolean> => {
-    if (!(await firstSyncRef.current)) return false;
+    if (!(await gate.ensure())) return false;
     const t = tokenRef.current;
     if (!t) return false;
     try {
@@ -147,11 +149,11 @@ export function useCloudAccount(user: UserProfile | null): CloudApi {
       setError(true);
       return false;
     }
-  }, [apply]);
+  }, [apply, gate]);
 
   const earnEvent = useCallback(
     async (rewardId: string) => {
-      if (!(await firstSyncRef.current)) return null;
+      if (!(await gate.ensure())) return null;
       const t = tokenRef.current;
       if (!t) return null;
       try {
@@ -175,12 +177,12 @@ export function useCloudAccount(user: UserProfile | null): CloudApi {
         return null;
       }
     },
-    [refresh]
+    [refresh, gate]
   );
 
   const redeemCode = useCallback(
     async (code: string) => {
-      if (!(await firstSyncRef.current)) return { ok: false, message: '通信できませんでした。しばらくしてからもう一度お試しください。' };
+      if (!(await gate.ensure())) return { ok: false, message: '通信できませんでした。しばらくしてからもう一度お試しください。' };
       const t = tokenRef.current;
       if (!t) return { ok: false, message: 'ログインしてください。' };
       try {
@@ -191,13 +193,13 @@ export function useCloudAccount(user: UserProfile | null): CloudApi {
         return { ok: false, message: '通信できませんでした。しばらくしてからもう一度お試しください。' };
       }
     },
-    [refresh]
+    [refresh, gate]
   );
 
   const spendPoints = useCallback(
     async (orderId: string, points: number, title: string) => {
       const failed = { ok: false, message: '通信できませんでした。しばらくしてからもう一度お試しください。' };
-      if (!(await firstSyncRef.current)) return failed;
+      if (!(await gate.ensure())) return failed;
       const t = tokenRef.current;
       if (!t) return { ok: false, message: 'ログインしてください。' };
       try {
@@ -216,7 +218,7 @@ export function useCloudAccount(user: UserProfile | null): CloudApi {
         return failed;
       }
     },
-    [refresh]
+    [refresh, gate]
   );
 
   const markCouponUsed = useCallback((code: string) => {
@@ -229,7 +231,7 @@ export function useCloudAccount(user: UserProfile | null): CloudApi {
       return next;
     });
     void (async () => {
-      if (!(await firstSyncRef.current)) return;
+      if (!(await gate.ensure())) return;
       const t = tokenRef.current;
       if (t) {
         try {
@@ -239,13 +241,13 @@ export function useCloudAccount(user: UserProfile | null): CloudApi {
         }
       }
     })();
-  }, []);
+  }, [gate]);
 
   const pushMystery = useCallback(() => {
     // 画面が、端末の保存先に書き終わるのを、少し待ってから読む
     window.setTimeout(() => {
       void (async () => {
-        if (!(await firstSyncRef.current)) return;
+        if (!(await gate.ensure())) return;
         const t = tokenRef.current;
         const local: MysteryProgress | null = readLocalMystery();
         if (!t || !local) return;
@@ -256,7 +258,7 @@ export function useCloudAccount(user: UserProfile | null): CloudApi {
         }
       })();
     }, 600);
-  }, []);
+  }, [gate]);
 
   return { active, ready, error, account, refresh, earnEvent, redeemCode, spendPoints, markCouponUsed, pushMystery };
 }

@@ -12,7 +12,7 @@ export interface VersionInfo {
 export type UpdateCheck =
   | { kind: 'none' } // 新しい版は無い(または、確認できない)
   | { kind: 'held'; showAtMs: number } // 新しい版はあるが、showAfter の時刻まで、お知らせを出さない
-  | { kind: 'show'; notes: string[] };
+  | { kind: 'show'; notes: string[]; version: string }; // version: お知らせの対象の版(「あとで」で閉じたあと、新しい版が来たら、また出すために使う)
 
 // showAfter を、ミリ秒の時刻にする。無い・文字でない・日時として読めないときは、null(保留しない)
 export const parseShowAfter = (value: unknown): number | null => {
@@ -27,7 +27,7 @@ export const evaluateUpdate = (data: unknown, appVersion: string, nowMs: number)
   if (typeof info.version !== 'string' || info.version === appVersion) return { kind: 'none' };
   const showAt = parseShowAfter(info.showAfter);
   if (showAt !== null && nowMs < showAt) return { kind: 'held', showAtMs: showAt };
-  return { kind: 'show', notes: Array.isArray(info.notes) ? info.notes.filter((n): n is string => typeof n === 'string') : [] };
+  return { kind: 'show', version: info.version, notes: Array.isArray(info.notes) ? info.notes.filter((n): n is string => typeof n === 'string') : [] };
 };
 
 // version.json を取りに行って、出すか・保留するかを決める。取れない・読めないときは、none(何もしない)
@@ -55,3 +55,6 @@ export const delayUntilRecheck = (showAtMs: number, nowMs: number): number | nul
   const delay = showAtMs - nowMs + 1000;
   return delay > 0 && delay <= MAX_TIMEOUT_MS ? delay : null;
 };
+
+// 「あとで」で閉じた版では、もう出さない(新しい版が来たら、また出す)
+export const isDismissed = (dismissedVersion: string | null, version: string): boolean => dismissedVersion !== null && dismissedVersion === version;

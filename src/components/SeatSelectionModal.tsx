@@ -145,6 +145,7 @@ export const SeatSelectionModal: React.FC<SeatSelectionModalProps> = ({
 
           <button
             onClick={onClose}
+            aria-label="閉じる"
             className="p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all cursor-pointer"
           >
             <X className="w-4 h-4" />

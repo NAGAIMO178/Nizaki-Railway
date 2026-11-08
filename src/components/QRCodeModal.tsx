@@ -21,6 +21,7 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({
         {/* Close Button */}
         <button
           onClick={onClose}
+          aria-label="閉じる"
           className="absolute top-4 right-4 p-1.5 rounded-xl text-[#6B6380] hover:bg-[#F4F3F8] transition-all cursor-pointer border border-transparent hover:border-[#E6E2EE]"
         >
           <X className="w-5 h-5" />

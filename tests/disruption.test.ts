@@ -109,6 +109,58 @@ describe('影響区間の読み取り', () => {
   });
 });
 
+describe('環状線の、並びの端をまたぐ区間', () => {
+  const st = getStationsForLine('saichi_loop');
+  const idx = (n: string) => st.indexOf(n);
+  const last = st.length - 1;
+
+  it('「新宿 〜 東京 間」は、全線ではなく、端をまたぐ1区間(from > to)。書いた順は関係ない', () => {
+    expect(idx('新宿')).toBe(last);
+    expect(idx('東京')).toBe(0);
+    expect(getAffectedStationRange('saichi_loop', '新宿 〜 東京 間')).toEqual([last, 0]);
+    expect(getAffectedStationRange('saichi_loop', '東京 〜 新宿 間')).toEqual([last, 0]);
+    expect(getAffectedStationRange('saichi', '新宿〜東京間')).toEqual([last, 0]);
+  });
+
+  it('端をまたぐほうが短いときだけ、またぐ。短いほうが、またがないなら、これまでどおり', () => {
+    expect(getAffectedStationRange('saichi_loop', '大宮 〜 池袋 間')).toEqual([idx('大宮'), idx('池袋')]);
+    // 東京と池袋(18)は、端をまたぐほうが 2 駅分で短い
+    expect(getAffectedStationRange('saichi_loop', '池袋 〜 東京 間')).toEqual([idx('池袋'), 0]);
+    // 同じくらいの距離のときは、またがない
+    const mid = Math.floor(st.length / 2);
+    expect(getAffectedStationRange('saichi_loop', `${st[0]} 〜 ${st[mid]} 間`)).toEqual([0, mid]);
+  });
+
+  it('環状線でない神埼線は、端をまたがない(東京 〜 横浜 は、全部)', () => {
+    const k = getStationsForLine('kanzaki');
+    expect(getAffectedStationRange('kanzaki', '横浜 〜 東京 間')).toEqual([0, k.length - 1]);
+  });
+
+  it('停車中: 新宿と東京は対象。池袋・南千住は対象外', () => {
+    const range = getAffectedStationRange('saichi_loop', '新宿 〜 東京 間');
+    expect(isTrainInAffectedRange('saichi_loop', range, '新宿', false)).toBe(true);
+    expect(isTrainInAffectedRange('saichi_loop', range, '東京', false)).toBe(true);
+    expect(isTrainInAffectedRange('saichi_loop', range, '池袋', false)).toBe(false);
+    expect(isTrainInAffectedRange('saichi_loop', range, '南千住', false)).toBe(false);
+  });
+
+  it('駅間: 新宿から東京への間だけ対象。池袋→新宿の間・東京→南千住の間は対象外', () => {
+    const range = getAffectedStationRange('saichi_loop', '新宿 〜 東京 間');
+    expect(isTrainInAffectedRange('saichi_loop', range, '新宿', true)).toBe(true);
+    expect(isTrainInAffectedRange('saichi_loop', range, '池袋', true)).toBe(false);
+    expect(isTrainInAffectedRange('saichi_loop', range, '東京', true)).toBe(false);
+  });
+
+  it('3駅にまたがる区間(池袋〜南千住)でも、端をまたぐ駅間が正しい', () => {
+    const range = getAffectedStationRange('saichi_loop', '池袋 〜 南千住 間'); // 池袋 → 新宿 → 東京 → 南千住
+    expect(range).toEqual([idx('池袋'), idx('南千住')]);
+    expect(isTrainInAffectedRange('saichi_loop', range, '新宿', true)).toBe(true);
+    expect(isTrainInAffectedRange('saichi_loop', range, '東京', true)).toBe(true);
+    expect(isTrainInAffectedRange('saichi_loop', range, '南千住', true)).toBe(false);
+    expect(isTrainInAffectedRange('saichi_loop', range, '小竹向原', false)).toBe(false);
+  });
+});
+
 describe('列車が影響区間にいるか', () => {
   const lineId = 'kanzaki';
   const idx = (name: string) => getStationsForLine(lineId).indexOf(name);

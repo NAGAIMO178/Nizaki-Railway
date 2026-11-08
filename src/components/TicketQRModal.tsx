@@ -89,6 +89,7 @@ export const TicketQRModal: React.FC<TicketQRModalProps> = ({ isOpen, onClose, a
       <div className="bg-white rounded-3xl max-w-sm w-full max-h-[92dvh] overflow-y-auto p-5 space-y-4 shadow-2xl border border-[#E0D7F3] relative animate-scaleUp text-[#221C35]">
         <button
           onClick={onClose}
+          aria-label="閉じる"
           className="absolute top-4 right-4 p-1.5 rounded-xl text-[#6B6380] hover:bg-[#F4F3F8] transition-all cursor-pointer border border-transparent hover:border-[#E6E2EE]"
         >
           <X className="w-5 h-5" />

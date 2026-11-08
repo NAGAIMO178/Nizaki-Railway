@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  isDismissed,
   buildVersionJson,
   checkForUpdate,
   delayUntilRecheck,
@@ -33,18 +34,18 @@ describe('出す・保留する・何もしない', () => {
   });
 
   it('showAfter が無いときは、今までどおり、版が違えば出す', () => {
-    expect(evaluateUpdate(NEW, APP, 0)).toEqual({ kind: 'show', notes: NEW.notes });
-    expect(evaluateUpdate({ version: '4.0.0' }, APP, 0)).toEqual({ kind: 'show', notes: [] });
-    expect(evaluateUpdate({ version: '4.0.0', notes: 'x' }, APP, 0)).toEqual({ kind: 'show', notes: [] });
-    expect(evaluateUpdate({ version: '4.0.0', notes: ['a', 1, null, 'b'] }, APP, 0)).toEqual({ kind: 'show', notes: ['a', 'b'] });
+    expect(evaluateUpdate(NEW, APP, 0)).toEqual({ kind: 'show', version: NEW.version, notes: NEW.notes });
+    expect(evaluateUpdate({ version: '4.0.0' }, APP, 0)).toEqual({ kind: 'show', version: '4.0.0', notes: [] });
+    expect(evaluateUpdate({ version: '4.0.0', notes: 'x' }, APP, 0)).toEqual({ kind: 'show', version: '4.0.0', notes: [] });
+    expect(evaluateUpdate({ version: '4.0.0', notes: ['a', 1, null, 'b'] }, APP, 0)).toEqual({ kind: 'show', version: '4.0.0', notes: ['a', 'b'] });
   });
 
   it('showAfter があり、まだ前なら、出さない(保留)。時刻ちょうどと、それより後は、出す', () => {
     const data = { ...NEW, showAfter: '2026-11-01T00:00:00+09:00' };
     expect(evaluateUpdate(data, APP, LAUNCH - 1)).toEqual({ kind: 'held', showAtMs: LAUNCH });
     expect(evaluateUpdate(data, APP, LAUNCH - 24 * 3600 * 1000)).toEqual({ kind: 'held', showAtMs: LAUNCH });
-    expect(evaluateUpdate(data, APP, LAUNCH)).toEqual({ kind: 'show', notes: NEW.notes });
-    expect(evaluateUpdate(data, APP, LAUNCH + 1)).toEqual({ kind: 'show', notes: NEW.notes });
+    expect(evaluateUpdate(data, APP, LAUNCH)).toEqual({ kind: 'show', version: NEW.version, notes: NEW.notes });
+    expect(evaluateUpdate(data, APP, LAUNCH + 1)).toEqual({ kind: 'show', version: NEW.version, notes: NEW.notes });
   });
 
   it('showAfter が壊れているときは、保留せず、出す(更新を止めない)', () => {
@@ -58,7 +59,7 @@ describe('version.json を取りに行く', () => {
   const okFetch = (data: unknown): typeof fetch => (async () => ({ ok: true, json: async () => data })) as unknown as typeof fetch;
 
   it('取れたら判定する。取れない・読めないときは、何もしない', async () => {
-    expect(await checkForUpdate(okFetch(NEW), APP, 0)).toEqual({ kind: 'show', notes: NEW.notes });
+    expect(await checkForUpdate(okFetch(NEW), APP, 0)).toEqual({ kind: 'show', version: NEW.version, notes: NEW.notes });
     expect(await checkForUpdate((async () => ({ ok: false })) as unknown as typeof fetch, APP, 0)).toEqual({ kind: 'none' });
     expect(await checkForUpdate((async () => { throw new Error('offline'); }) as unknown as typeof fetch, APP, 0)).toEqual({ kind: 'none' });
     expect(await checkForUpdate((async () => ({ ok: true, json: async () => { throw new Error('bad json'); } })) as unknown as typeof fetch, APP, 0)).toEqual({ kind: 'none' });
@@ -119,5 +120,13 @@ describe('version.json の中身(ビルド)', () => {
     const m = /export const LAUNCH_AT: string \| null = '([^']*)'/.exec(src);
     expect(m, 'launch.ts の LAUNCH_AT').not.toBeNull();
     expect(Date.parse(notes.showAfter)).toBe(Date.parse(m![1]));
+  });
+});
+
+describe('「あとで」で閉じたあと', () => {
+  it('閉じた版では、もう出さない。新しい版が来たら、また出る。まだ閉じていなければ、出る', () => {
+    expect(isDismissed('4.1.1', '4.1.1')).toBe(true);
+    expect(isDismissed('4.1.1', '4.1.2')).toBe(false);
+    expect(isDismissed(null, '4.1.1')).toBe(false);
   });
 });
