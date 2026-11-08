@@ -3,6 +3,7 @@ import { X, Armchair, Check } from 'lucide-react';
 import { getTodayDateString, generateOccupiedSeats, isTodayWeekend, MAX_SEATS } from '../utils/seatUtils';
 import { pickDefaultSeat, sortSeats, toggleSeat } from '../utils/seatPick';
 
+import { useBackClose } from '../utils/backClose';
 interface SeatSelectionModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -97,6 +98,7 @@ export const SeatSelectionModal: React.FC<SeatSelectionModalProps> = ({
 
   const isSpecialCar = selectedCarNo === 1;
 
+  useBackClose(isOpen, onClose);
   if (!isOpen) return null;
 
   const handleCarChange = (carNo: number) => {

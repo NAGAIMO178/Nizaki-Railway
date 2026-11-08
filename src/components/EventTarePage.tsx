@@ -30,6 +30,7 @@ import { eventStateFor } from '../utils/eventTareState';
 import { scrollBehavior, seenKeyOf, useReveal } from '../utils/eventTareReveal';
 import type { ChatChoice } from '../data/eventTareScript';
 
+import { useBackClose } from '../utils/backClose';
 // 公開記念イベントの画面(公開後だけ。呼ぶ側が isLaunched() の内側で出す)。雅石のミステリーと同じ、暗い背景と琥珀色。
 interface EventTarePageProps {
   owner: string; // 会員のメール(小文字)
@@ -479,6 +480,7 @@ const EventTarePageBody: React.FC<EventTarePageProps & { onRestart: () => void }
 // 「最初からやり直す」のあとは、画面を作り直す(チャットの履歴・場面の進み方が、最初に戻る)
 export const EventTarePage: React.FC<EventTarePageProps> = (props) => {
   const [epoch, setEpoch] = useState(0);
+  useBackClose(true, props.onClose); // 開いているあいだ、「戻る」で閉じる
   return (
     <SeenOwner.Provider value={props.owner}>
       <EventTarePageBody key={epoch} {...props} onRestart={() => setEpoch((n) => n + 1)} />

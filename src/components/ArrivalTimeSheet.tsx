@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useDragToDismiss } from '../utils/useDragToDismiss';
 import { ArrivalTime, ArrivalDay, arrivalFromDate, shiftArrival } from '../utils/arrivalInput';
 
+import { useBackClose } from '../utils/backClose';
 interface ArrivalTimeSheetProps {
   isOpen: boolean;
   value: ArrivalTime;
@@ -44,6 +45,7 @@ export const ArrivalTimeSheet: React.FC<ArrivalTimeSheetProps> = ({ isOpen, valu
     return () => window.removeEventListener('keydown', onKey);
   }, [isOpen, onClose]);
 
+  useBackClose(isOpen, onClose);
   if (!isOpen) return null;
 
   const today = new Date();

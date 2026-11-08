@@ -4,6 +4,7 @@ import { loadMasterSummary } from '../utils/diaTimetable';
 import { buildNetworkMap, buildTsuchiuraRows, NetworkMap, TcRow } from '../utils/routeMapLayout';
 import { NetworkMapSvg, TsuchiuraList } from './RouteMapSvg';
 
+import { useBackClose } from '../utils/backClose';
 interface RouteMapModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -43,6 +44,7 @@ export const RouteMapModal: React.FC<RouteMapModalProps> = ({
     };
   }, [isOpen, network, retry]);
 
+  useBackClose(isOpen, onClose);
   if (!isOpen) return null;
 
   const handleZoomIn = () => setZoomLevel((prev) => Math.min(prev + 0.5, 4.0));

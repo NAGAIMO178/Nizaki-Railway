@@ -12,6 +12,7 @@ import { isLaunched } from '../utils/launch';
 import { trainIconCenter, isCompactTrainIcons, COMPACT_SCALE } from '../utils/trainIconLayout';
 import { crowdInfo, loadAllCrowdTrains } from '../utils/crowd';
 
+import { useBackClose } from '../utils/backClose';
 export interface StationNode {
   id: string;
   code?: string;
@@ -254,6 +255,9 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
   // 駅・列車のシートは、つまみを下に引いて(ちょんと押しても)閉じられる
   const stationSheetDrag = useDragToDismiss(() => setSelectedStation(null));
   const trainSheetDrag = useDragToDismiss(() => setSelectedTrain(null));
+  // 駅・列車のシートが開いているあいだ、「戻る」で閉じる
+  useBackClose(selectedTrain !== null, () => setSelectedTrain(null));
+  useBackClose(selectedStation !== null, () => setSelectedStation(null));
 
   // 列車詳細プルダウン（アコーディオン）状態
   const [isAccordionOpen, setIsAccordionOpen] = useState<boolean>(true);

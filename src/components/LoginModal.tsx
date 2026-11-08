@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Lock, Mail, ShieldCheck, ArrowRight, Sparkles, Train, KeyRound } from 'lucide-react';
 import { UserProfile } from '../types';
 import { PrivacyPolicyModal } from './PrivacyPolicyModal';
+import { useBackClose } from '../utils/backClose';
 import {
   loginWithPassword,
   startLineVerification,
@@ -73,6 +74,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     setResendCooldown(0);
   };
 
+  useBackClose(isOpen, onClose);
   if (!isOpen) return null;
 
   // 簡単デモログイン（実演用・パスワード不要）

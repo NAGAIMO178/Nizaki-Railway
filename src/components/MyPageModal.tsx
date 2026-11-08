@@ -32,6 +32,7 @@ import { TicketSummary, ticketBadgeLabel } from '../utils/ticketApi';
 import { calcReservationPoints } from '../utils/points';
 import { PrivacyPolicyModal } from './PrivacyPolicyModal';
 
+import { useBackClose } from '../utils/backClose';
 interface MyPageModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -80,6 +81,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  useBackClose(isOpen && !!currentUser, onClose);
   if (!isOpen || !currentUser) return null;
 
   const handleDeleteAccount = async () => {

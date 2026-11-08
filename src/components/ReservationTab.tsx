@@ -43,7 +43,9 @@ import { calculateFare } from '../utils/fare';
 import { CompletionModal } from './CompletionModal';
 import { calcCancelPenalty } from '../utils/cancelPenalty';
 import { pickCurrentTrip, trainEnded } from '../utils/reservationTrain';
+import { newOrderId } from '../utils/orderId';
 
+import { useBackClose } from '../utils/backClose';
 // 列車位置の特急の詳細から、予約画面を、その列車を選んだ状態で開くための指定(公開後だけ。key が変わるたびに適用する)
 export interface ReservationPreset {
   key: number;
@@ -306,6 +308,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
 
   // Safety Confirmation Modal State
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
+  useBackClose(isCancelModalOpen, () => setIsCancelModalOpen(false));
   const [showCancelSuccessNotice, setShowCancelSuccessNotice] = useState(false);
 
   // Execute Cancellation Action
@@ -442,7 +445,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
     const trainName = currentTrainInfo.trainName;
 
     const finalTotalPrice = prices.total + (isSpecialCar ? specialCarFee : 0);
-    const orderId = `EQ-${Math.floor(10000 + Math.random() * 90000)}`;
+    const orderId = newOrderId(); // 他の予約と重ならない番号(以前の EQ-5桁 の番号も、そのまま使える)
 
     // N-POINT で払うときは、予約を確定する前に、サーバーでポイントを引く(引けなければ、予約しない)
     const pointsUsed = usePoints && canUsePoints && onSpendPoints ? Math.min(pointsAmount, pointBalance ?? 0, finalTotalPrice) : 0;

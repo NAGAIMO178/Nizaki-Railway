@@ -11,6 +11,7 @@ import { ImagePreview } from './ImagePreview';
 import { buildTicketUrl } from '../utils/ticketToken';
 import { shouldDrawQr, ticketQrPhase } from '../utils/ticketQrPhase';
 
+import { useBackClose } from '../utils/backClose';
 interface TicketQRModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -80,6 +81,7 @@ export const TicketQRModal: React.FC<TicketQRModalProps> = ({ isOpen, onClose, a
     }
   }, [activeOrder, token, drawQr, saving]);
 
+  useBackClose(isOpen, onClose);
   if (!isOpen) return null;
 
   const box = matrix ? matrix.length + QR_QUIET * 2 : 0;

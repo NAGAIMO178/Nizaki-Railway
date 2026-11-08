@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { RouteOptions } from '../utils/routeOptions';
 import { useDragToDismiss } from '../utils/useDragToDismiss';
 
+import { useBackClose } from '../utils/backClose';
 interface RouteFilterSheetProps {
   isOpen: boolean;
   options: RouteOptions;
@@ -79,6 +80,7 @@ export const RouteFilterSheet: React.FC<RouteFilterSheetProps> = ({ isOpen, opti
     return () => window.removeEventListener('keydown', onKey);
   }, [isOpen, onClose]);
 
+  useBackClose(isOpen, onClose);
   if (!isOpen) return null;
 
   return (

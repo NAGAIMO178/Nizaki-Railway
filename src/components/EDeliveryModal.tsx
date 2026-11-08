@@ -9,6 +9,7 @@ import { isLaunched } from '../utils/launch';
 import { CompletionModal, CompletionRow } from './CompletionModal';
 import { DeliverySeatList } from './SeatList';
 
+import { useBackClose } from '../utils/backClose';
 interface EDeliveryModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -71,6 +72,7 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
   const spendIdRef = React.useRef<string | null>(null);
   const canUsePoints = !!onSpendPoints && (pointBalance ?? 0) > 0;
 
+  useBackClose(isOpen, onClose);
   if (!isOpen) return null;
 
   // 判定: 自由席での予約有無 & 未予約有無 (指定席・めぐシート1号車などはデリバリー可能)

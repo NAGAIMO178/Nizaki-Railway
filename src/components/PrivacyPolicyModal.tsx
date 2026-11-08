@@ -3,6 +3,7 @@ import { X, ShieldCheck } from 'lucide-react';
 import { LINE_OA_ADD_FRIEND_URL } from '../utils/accountApi';
 import { isLaunched } from '../utils/launch';
 
+import { useBackClose } from '../utils/backClose';
 interface PrivacyPolicyModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -26,6 +27,7 @@ const Bullets: React.FC<{ items: string[] }> = ({ items }) => (
 );
 
 export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, onClose }) => {
+  useBackClose(isOpen, onClose);
   if (!isOpen) return null;
 
   // NIZAKI 2.0(公開後)は、会員のデータをサーバーにも残すので、その実態に合わせた文にする。公開前は、これまでの文のまま

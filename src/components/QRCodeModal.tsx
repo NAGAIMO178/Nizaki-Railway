@@ -2,6 +2,7 @@ import React from 'react';
 import { X, QrCode } from 'lucide-react';
 import { ActiveOrder } from '../types';
 
+import { useBackClose } from '../utils/backClose';
 interface QRCodeModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -13,6 +14,7 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({
   onClose,
   activeOrder,
 }) => {
+  useBackClose(isOpen, onClose);
   if (!isOpen) return null;
 
   return (
