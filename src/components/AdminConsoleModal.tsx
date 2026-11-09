@@ -36,6 +36,7 @@ import {
 } from 'lucide-react';
 import { systemLogger, SystemLogEntry, SystemMetrics } from '../utils/systemLogger';
 import { checkStoredAdminKey, submitAdminKey, type AdminAccess } from '../utils/adminAccess';
+import { useBackClose } from '../utils/backClose';
 import {
   disruptionManager,
   getAdminToken,
@@ -584,6 +585,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
     };
   }, [isOpen]);
 
+  useBackClose(isOpen, onClose);
   if (!isOpen) return null;
 
   // 鍵を入力して、サーバーに確かめてもらう。認められたときだけ入れる

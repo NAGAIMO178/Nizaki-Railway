@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { newOrderId, ORDER_ID_PATTERN, ORDER_ID_RANDOM_LENGTH } from '../src/utils/orderId';
 
 type Row = [string, string, string, string, number, string];
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1504,5 +1505,63 @@ describe('履歴・マイレージの金額は、N-POINT で払った分を足�
   it('ほかの会員の予約は、混ざらない', () => {
     grid.push(row('EQ-7', 0, { items: [], itemDiscount: 0, pointsUsed: 900 }, '予約済み', 'M2'));
     expect(gas.readMemberOrders('M1')).toEqual([]);
+  });
+});
+
+describe('予約番号の新しい形(EQ- + 12文字)と、古い形(EQ- + 5桁)が、サーバーの検証を通る', () => {
+  it('新しい番号: 形・長さ・読み間違えやすい文字を使わない・サーバーの検証(予約番号・QRのトークン・支払い番号)を通る', () => {
+    const tokenPattern: RegExp = vm.runInContext('TICKET_TOKEN_PATTERN', gas as vm.Context);
+    for (let i = 0; i < 200; i++) {
+      const id = newOrderId();
+      expect(id).toMatch(new RegExp(`^EQ-[A-HJ-NP-Z2-9]{${ORDER_ID_RANDOM_LENGTH}}$`));
+      expect(ORDER_ID_PATTERN.test(id)).toBe(true);
+      expect(tokenPattern.test(`${id}.AbCdEfGhIjKl`)).toBe(true); // QR乗車券のトークン
+      expect(`${id}-D${Date.now().toString(36)}`.length).toBeLessThanOrEqual(40); // デリバリーの支払い番号
+    }
+  });
+
+  it('ポイントを使う(spendPoints)の検証: 新しい番号も、古い番号も、デリバリーの支払い番号も通る', () => {
+    put('welcome', 'welcome', 10000);
+    const fresh = newOrderId();
+    expect(gas.handleSpendPoints('ok', fresh, 100, 't')).toMatchObject({ status: 'success', spent: 100 });
+    expect(gas.handleSpendPoints('ok', `${fresh}-D${Date.now().toString(36)}`, 100, 't')).toMatchObject({ status: 'success', spent: 100 });
+    expect(gas.handleSpendPoints('ok', 'EQ-12345', 100, 't')).toMatchObject({ status: 'success', spent: 100 }); // 古い形
+    expect(gas.handleSpendPoints('ok', 'EQ-12345', 100, 't')).toMatchObject({ status: 'success', spent: 100, added: false }); // 同じ番号は1回だけ
+    expect(gas.handleSpendPoints('ok', 'EQ-12345.x', 100, 't').status).toBe('error'); // 検証は、これまでどおり厳しい
+  });
+
+  it('予約の登録(createReservation)の検証を通る(新しい番号・古い番号)。形の悪い番号は断る', () => {
+    gas.verifySessionToken = () => 'M1';
+    gas.findMemberById = () => ({ memberId: 'M1', lineUserId: '' });
+    gas.checkOrderLimits = () => null;
+    gas.LockService = { getScriptLock: () => ({ waitLock: () => { throw new Error('busy'); }, releaseLock: () => undefined }) };
+    const order = (orderId: string) => ({ orderId, trainName: '特急めぐり 15号', carNo: 1, seatNo: '1A', seatType: '指定席', totalPrice: 3000, reservedDate: '2026-11-01', departureTime: '10:05', arrivalTime: '12:00' });
+    // 検証を通ると、ロックの取得(わざと失敗させた)まで進んで、「混み合っています」になる。検証で断られると、「予約内容が正しくありません」
+    for (const id of [newOrderId(), 'EQ-12345', 'EQ-84920']) {
+      expect(gas.handleCreateReservation('t', order(id), false).message, id).toContain('混み合っています');
+    }
+    for (const id of ['', 'AB', 'EQ_123', 'EQ-' + 'A'.repeat(40), '=1+1']) {
+      expect(gas.handleCreateReservation('t', order(id), false).message, id).toContain('予約内容が正しくありません');
+    }
+  });
+});
+
+describe('予約番号の重なりにくさ', () => {
+  it('2万件つくっても、1つも重ならない(5桁の数字なら、重なる確率が高かった)', () => {
+    const seen = new Set<string>();
+    for (let i = 0; i < 20000; i++) seen.add(newOrderId());
+    expect(seen.size).toBe(20000);
+    // 前の作り方(5桁)なら、2万件で、ほぼ確実に重なる
+    const old = new Set<string>();
+    for (let i = 0; i < 20000; i++) old.add(`EQ-${Math.floor(10000 + Math.random() * 90000)}`);
+    expect(old.size).toBeLessThan(20000);
+  });
+
+  it('文字が、かたよらない(32種類が、ほぼ同じ回数)', () => {
+    const count = new Map<string, number>();
+    for (let i = 0; i < 4000; i++) for (const ch of newOrderId().slice(3)) count.set(ch, (count.get(ch) ?? 0) + 1);
+    expect(count.size).toBe(32);
+    const mean = (4000 * ORDER_ID_RANDOM_LENGTH) / 32;
+    for (const v of count.values()) expect(Math.abs(v - mean) / mean).toBeLessThan(0.15);
   });
 });

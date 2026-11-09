@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { X, Settings, User, Barcode, Map, LogIn, ChevronRight, Sparkles } from 'lucide-react';
 import { UserProfile } from '../types';
 
+import { useBackClose } from '../utils/backClose';
 interface MenuDrawerProps {
   isOpen: boolean;
   onClose: () => void;
@@ -36,6 +37,7 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
     return () => window.removeEventListener('keydown', onKey);
   }, [isOpen, onClose]);
 
+  useBackClose(isOpen, onClose);
   if (!isOpen) return null;
 
   // 項目を押したら、メニューを閉じてから開く

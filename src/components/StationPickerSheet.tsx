@@ -7,6 +7,7 @@ import { buildPickerData, filterPickerStations, loadRecentStations } from '../ut
 import type { PickerStation } from '../utils/stationPicker';
 import { useDragToDismiss } from '../utils/useDragToDismiss';
 
+import { useBackClose } from '../utils/backClose';
 interface StationPickerSheetProps {
   isOpen: boolean;
   title: string; // 例: 出発駅
@@ -78,6 +79,7 @@ export const StationPickerSheet: React.FC<StationPickerSheetProps> = ({ isOpen, 
   const byName = useMemo(() => new Map(data.all.map((s) => [s.name, s])), [data]);
   const pick = (name: string) => onSelect(name);
 
+  useBackClose(isOpen, onClose);
   if (!isOpen) return null;
 
   const Row: React.FC<{ s: PickerStation; showCode: boolean }> = ({ s, showCode }) => {

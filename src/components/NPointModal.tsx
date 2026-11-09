@@ -8,6 +8,7 @@ import { renderMemberCardPng } from '../utils/memberCard';
 import { saveImage } from '../utils/imageSave';
 import { ImagePreview } from './ImagePreview';
 
+import { useBackClose } from '../utils/backClose';
 interface NPointModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -40,6 +41,7 @@ export const NPointModal: React.FC<NPointModalProps> = ({
   const [saving, setSaving] = useState(false);
   const [preview, setPreview] = useState<string | null>(null); // ダウンロードできない場所(LINE 内など)で、画像を表示する
 
+  useBackClose(isOpen, onClose);
   if (!isOpen) return null;
 
   // 公開後は、会員証のバーコードが本物(置ける幅は、カードの内側から余白を引いた分)
