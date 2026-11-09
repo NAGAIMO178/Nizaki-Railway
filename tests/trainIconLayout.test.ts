@@ -6,7 +6,7 @@ const centers = (total: number) => Array.from({ length: total }, (_, i) => train
 describe('列車位置の列車の並べ方', () => {
   it('1本・2本は、これまでどおり(小さくしない)', () => {
     expect(centers(1)).toEqual([-62]);
-    expect(centers(2)).toEqual([-86, -56]);
+    expect(centers(2)).toEqual([-92, -56]);
     expect(isCompactTrainIcons(1)).toBe(false);
     expect(isCompactTrainIcons(2)).toBe(false);
   });

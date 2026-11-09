@@ -368,6 +368,7 @@ export interface DiaLiveTrain {
   stationName: string;
   isBetween: boolean;
   isStopStation: boolean;
+  endStationName: string; // この路線の中での、最後の停車駅(行先がこれと違えば、ほかの路線へ直通)
   delayMinutes: number;
   // 混雑レベル(1〜6。公開後で、データを読み込み済みのときだけ)。crowd は、その駅を出たあとの区間。遅れて(3分以上)いれば、1つ上げてある
   crowdNow?: number;
@@ -574,6 +575,7 @@ export const computeLiveTrains = (data: LineData, lineId: string, direction: 1 |
       stationName,
       isBetween,
       isStopStation,
+      endStationName: master.stations[idxOfPos(stops[stops.length - 1].pos)]?.[0] ?? '',
       delayMinutes: delay,
       crowdNow: crowdAt(atStop >= 0 ? atStop : segment),
       timetable,
