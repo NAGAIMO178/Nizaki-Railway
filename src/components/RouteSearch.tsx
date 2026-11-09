@@ -6,7 +6,7 @@ import { RouteDetail } from './RouteDetail';
 import { ArrivalTimeSheet } from './ArrivalTimeSheet';
 import { ArrivalResults } from './ArrivalResults';
 import { RouteCard } from './RouteCard';
-import { loadRouteStations, searchRoutes, RouteResult } from '../utils/routeSearch';
+import { getCachedQuietWindow, loadRouteStations, searchRoutes, RouteResult } from '../utils/routeSearch';
 import { planArrival, ArrivalPlan, ArrivalOption } from '../utils/arrivalPlan';
 import { isLaunched } from '../utils/launch';
 import { emptyResultText } from '../utils/routeEmptyMessage';
@@ -471,7 +471,7 @@ export const RouteSearch: React.FC<{ onReserve?: (preset: Omit<ReservationPreset
           {results.length === 0 && (
             <div className="bg-white border border-[#E6E2EE] rounded-2xl p-5 text-center text-xs text-[#6B6380]">
               {(() => {
-                const t = emptyResultText(lastSession?.timeText, !!lastSession && lastSession.vias.length > 0);
+                const t = emptyResultText(lastSession?.timeText, !!lastSession && lastSession.vias.length > 0, getCachedQuietWindow());
                 return (
                   <>
                     {t.head}
