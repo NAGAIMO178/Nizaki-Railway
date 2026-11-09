@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { computeLiveTrains, type LineData } from '../src/utils/diaTimetable';
 import { THROUGH_LINKS, throughLineAt, trainThrough } from '../src/utils/throughLine';
-import { bandFontSize, pinHeight } from '../src/components/TrainPin';
+import { bandFontSize, PIN_WIDTH, pinHeight } from '../src/components/TrainPin';
 
 const readJson = (file: string) => JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'public', 'data', 'dia-2', file), 'utf-8'));
 const master = readJson('master.json');
@@ -56,10 +56,12 @@ describe('実際のダイヤでの直通の列車', () => {
 });
 
 describe('列車の札', () => {
-  it('帯の字は、4文字まで7px。長い種別は、幅(32px)に収まるまで小さくする', () => {
-    expect(bandFontSize('急行')).toBe(7);
-    expect(bandFontSize('特別快速')).toBe(7);
-    expect(bandFontSize('特急(Nライナー)') * '特急(Nライナー)'.length).toBeLessThanOrEqual(28);
+  it('札の幅は38px。帯の字は、4文字まで9px。長い種別は、幅に収まるまで小さくする', () => {
+    expect(PIN_WIDTH).toBe(38);
+    expect(bandFontSize('急行')).toBe(9);
+    expect(bandFontSize('特別快速')).toBe(9);
+    expect(bandFontSize('特別快速') * 4).toBeLessThanOrEqual(PIN_WIDTH);
+    expect(bandFontSize('特急(Nライナー)') * '特急(Nライナー)'.length).toBeLessThanOrEqual(PIN_WIDTH);
   });
 
   it('札の高さ: 遅れ・通過の札や混雑があるぶん、高くなる(重ならない高さを取るため)', () => {
