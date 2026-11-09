@@ -1,10 +1,12 @@
 // 直通(列車位置の、乗換駅の「神埼線 ›」の札)の決まり
 import fs from 'node:fs';
 import path from 'node:path';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { computeLiveTrains, type LineData } from '../src/utils/diaTimetable';
 import { THROUGH_LINKS, throughLineAt, trainThrough } from '../src/utils/throughLine';
-import { bandFontSize, PIN_WIDTH, pinHeight } from '../src/components/TrainPin';
+import { bandFontSize, DELAY_BADGE_H, PASSING_BADGE_H, PIN_BODY_H, pinFloatHeight, PIN_WIDTH, pinHeight, TrainPin } from '../src/components/TrainPin';
 
 const readJson = (file: string) => JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'public', 'data', 'dia-2', file), 'utf-8'));
 const master = readJson('master.json');
@@ -64,10 +66,44 @@ describe('列車の札', () => {
     expect(bandFontSize('特急(Nライナー)') * '特急(Nライナー)'.length).toBeLessThanOrEqual(PIN_WIDTH);
   });
 
-  it('札の高さ: 遅れ・通過の札や混雑があるぶん、高くなる(重ならない高さを取るため)', () => {
-    const plain = pinHeight({ delayed: false, passing: false, hasCrowd: false });
-    expect(pinHeight({ delayed: true, passing: false, hasCrowd: false })).toBeGreaterThan(plain);
-    expect(pinHeight({ delayed: false, passing: true, hasCrowd: false })).toBeGreaterThan(plain);
-    expect(pinHeight({ delayed: false, passing: false, hasCrowd: true })).toBeGreaterThan(plain);
+  it('札の本体の高さは、遅れ・通過の札の有無で変わらない(並んだ列車の上端がそろう)。浮かせる札のぶんは、重ならない高さに含める', () => {
+    const plain = pinHeight({ delayed: false, passing: false });
+    expect(plain).toBe(PIN_BODY_H);
+    expect(pinFloatHeight({ delayed: false, passing: false })).toBe(0);
+    // 浮かせる札は、本体の両側に余白を取る(本体を、列の中心に置くため)
+    expect(pinHeight({ delayed: true, passing: false })).toBe(PIN_BODY_H + 2 * DELAY_BADGE_H);
+    expect(pinHeight({ delayed: false, passing: true })).toBe(PIN_BODY_H + 2 * PASSING_BADGE_H);
+    expect(pinHeight({ delayed: true, passing: true })).toBe(PIN_BODY_H + 2 * (DELAY_BADGE_H + PASSING_BADGE_H));
+  });
+});
+
+describe('列車の札: 遅れ・通過の札は浮かせて、本体の位置を動かさない', () => {
+  const render = (o: { direction?: 1 | 2; delay?: number; passing?: boolean; crowd?: number }) =>
+    renderToStaticMarkup(React.createElement(TrainPin, { label: '急行', color: '#E11D48', direction: o.direction ?? 1, delayMinutes: o.delay ?? 0, passing: o.passing ?? false, crowd: o.crowd }));
+  // 本体(白い箱)の外側の枠(幅・高さ)と、本体の大きさの指定
+  const frame = (h: string) => /^<div class="relative[^"]*" style="([^"]*)"/.exec(h)![1];
+  const bodyBox = (h: string) => /class="flex flex-col items-center overflow-hidden bg-white" style="([^"]*)"/.exec(h)![1];
+
+  it('枠・本体の大きさは、遅れ・通過・混雑データの有無で、同じ', () => {
+    const base = render({ crowd: 2 });
+    for (const o of [{ delay: 2 }, { passing: true }, { delay: 2, passing: true }, { crowd: undefined }]) {
+      const h = render({ crowd: 2, ...o });
+      expect(frame(h)).toBe(frame(base));
+      expect(bodyBox(h).split(';').filter((x) => x.startsWith('height') || x.startsWith('width'))).toEqual(bodyBox(base).split(';').filter((x) => x.startsWith('height') || x.startsWith('width')));
+    }
+    expect(frame(base)).toContain(`height:${PIN_BODY_H}px`);
+  });
+
+  it('下り(先端が下)は、遅れ・通過の札を本体の上に、上り(先端が上)は本体の下に、絶対位置で浮かせる', () => {
+    const down = render({ delay: 3, passing: true, direction: 1 });
+    expect(down).toContain('bottom:100%');
+    expect(down).not.toContain('top:100%');
+    expect(down).toContain('+3分');
+    expect(down).toContain('通過');
+    const up = render({ delay: 3, passing: true, direction: 2 });
+    expect(up).toContain('top:100%');
+    expect(up).not.toContain('bottom:100%');
+    // 札が無いときは、浮かせる枠も出さない
+    expect(render({})).not.toContain('100%;');
   });
 });

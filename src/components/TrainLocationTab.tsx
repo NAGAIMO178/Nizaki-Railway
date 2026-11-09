@@ -513,7 +513,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
   // 札が重ならないための、列(駅の行・駅間)の最低の高さ。札の高さ(遅れ・通過の札を含む)+余白
   const slotHeight = (trains: LiveTrainPos[], base: number): number =>
     trains.reduce(
-      (h, t) => Math.max(h, pinHeight({ delayed: t.delayMinutes > 0, passing: t.isStopStation === false, hasCrowd: !!t.crowdNow }) + 10),
+      (h, t) => Math.max(h, pinHeight({ delayed: t.delayMinutes > 0, passing: t.isStopStation === false }) + 10),
       base
     );
 
