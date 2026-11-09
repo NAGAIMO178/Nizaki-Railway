@@ -40,9 +40,11 @@
         background-color: #5324AA; /* 白画面を一瞬も出さず神埼パープルで即時表示 */
       }
       /* PC(マウス)では、アプリが表示されたあと、スクロールバーの場所(scrollbar-gutter)に出る html の背景を、アプリの背景色にする。
-         起動の画面(#initial-splash)があるあいだと、スマホ(タッチ)は、これまでどおり紫のまま */
+         起動の画面(#initial-splash)があるあいだと、スマホ(タッチ)は、これまでどおり紫のまま。
+         再読み込みで開いたときは、起動の画面を取り除く(下のスクリプト)ので、アプリが描かれるまでの背景も、PCはアプリの背景色になる */
       @media (hover: hover) and (pointer: fine) {
-        html:not(:has(#initial-splash)) {
+        html:not(:has(#initial-splash)),
+        html:not(:has(#initial-splash)) body {
           background-color: #F4F3F8;
         }
       }
@@ -88,6 +90,20 @@
           <img src="./splash-pc.png" alt="神埼鉄道" style="width: 100%; height: 100%; object-fit: cover;" fetchpriority="high" />
         </div>
       </div>
+      <!-- 再読み込み(下に引っ張る・「今すぐ更新」・ブラウザの再読み込み)で開いたときは、起動の画面を出さない(一瞬映って消えるのが、ちらつきに見えるため)。
+           最初に開くとき(新規の読み込み・ホーム画面・ブックマーク)は、これまでどおり出す。判定が取れない環境も、これまでどおり。
+           要素ごと取り除く(CSS の html:not(:has(#initial-splash)) の規則が、そのまま合う)。tests/skipSplashOnReload.test.ts が、この中身をそのまま動かして調べる -->
+      <script id="skip-splash-on-reload">
+        (function () {
+          try {
+            var nav = performance.getEntriesByType('navigation')[0];
+            if (nav && nav.type === 'reload') {
+              var splash = document.getElementById('initial-splash');
+              if (splash && splash.parentNode) splash.parentNode.removeChild(splash);
+            }
+          } catch (e) {}
+        })();
+      </script>
     </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
