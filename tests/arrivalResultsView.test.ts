@@ -42,11 +42,12 @@ const emptyHtml = (deadlineText: string): string =>
   );
 
 describe('到着検索の結果が0件のとき', () => {
-  it('0:00〜3:59 の到着は、「この時間は、列車がありません」(出発側と同じ言葉)', () => {
-    for (const t of ['00:00', '01:00', '03:59']) expect(emptyHtml(t)).toContain('この時間は、列車がありません');
+  it('列車がない時間(ダイヤを調べる前の安全策では 0:30〜3:59)の到着は、「この時間は、列車がありません」(出発側と同じ言葉)', () => {
+    for (const t of ['00:30', '01:00', '03:59']) expect(emptyHtml(t)).toContain('この時間は、列車がありません');
   });
 
-  it('4:00 以降は、これまでの文', () => {
+  it('終電ぎわ(0:00〜0:29)と、4:00 以降は、これまでの文', () => {
+    expect(emptyHtml('00:20')).toContain('00:20 までに着く列車がありません');
     expect(emptyHtml('09:00')).toContain('09:00 までに着く列車がありません');
     expect(emptyHtml('09:00')).not.toContain('この時間は、列車がありません');
   });

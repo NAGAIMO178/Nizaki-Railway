@@ -6,6 +6,7 @@ import { RouteOptions, DEFAULT_ROUTE_OPTIONS } from './routeOptions';
 import { bumpForDelay, crowdDelayRate, dayTypeOf, loadAllCrowdTrains, trainMaxLevel, trainSegmentLevel } from './crowd';
 import { isLaunched } from './launch';
 import { platformAtStop } from './platform';
+import { quietWindowFromBounds, serviceBoundsOf, type QuietWindow } from './quietTime';
 
 const LINE_CODES = ['Y', 'NI', 'SC', 'TC'];
 // 乗換に必要な最短の時間(秒)。模擬の値で、駅による違いは付けていない
@@ -56,6 +57,8 @@ interface Net {
 }
 
 let netPromise: Promise<Net> | null = null;
+// 列車がない時間(終電のあと〜始発の前)。ダイヤを読み込んだときに、1回だけ調べて覚える(検索のたびには、計算しない)
+let quietWindowCache: QuietWindow | null | undefined;
 
 const buildNet = async (): Promise<Net> => {
   const loaded = await Promise.all(LINE_CODES.map((code) => loadLineData(code)));
@@ -86,6 +89,7 @@ const buildNet = async (): Promise<Net> => {
     });
   });
   deps.forEach((list) => list.sort((a, b) => a.dep - b.dep));
+  quietWindowCache = quietWindowFromBounds(serviceBoundsOf(loaded.map((d) => d.trains)));
 
   // 直通: 同じ列車番号が、2つの路線にある列車。前の部分の終着と、次の部分の始発が、同じ駅でつながるものだけ
   const byCode = new Map<string, { line: string; trainIdx: number; start: number }[]>();
@@ -117,6 +121,18 @@ const getNet = (): Promise<Net> => {
   }
   return netPromise;
 };
+
+// 列車がない時間(ダイヤから決める)。ダイヤが読めないときは null(呼ぶ側は、安全策の目安を使う)
+export const getQuietWindow = async (): Promise<QuietWindow | null> => {
+  try {
+    await getNet();
+    return quietWindowCache ?? null;
+  } catch {
+    return null;
+  }
+};
+// 調べ終わっていれば、その値(まだ・調べられなかったときは undefined)。画面の文の出し分け用
+export const getCachedQuietWindow = (): QuietWindow | null | undefined => quietWindowCache;
 
 // 駅の選択肢(路線の並び順で、はじめに出てきた順。重複なし)
 export const loadRouteStations = async (): Promise<string[]> => (await getNet()).stationNames;

@@ -3,7 +3,9 @@ import { ChevronRight } from 'lucide-react';
 import { ArrivalOption, ArrivalPlan } from '../utils/arrivalPlan';
 import { formatDiaTime } from '../utils/diaTimetable';
 import { isLaunched } from '../utils/launch';
-import { isDeepNight, NO_TRAIN_AT_NIGHT } from '../utils/routeEmptyMessage';
+import { NO_TRAIN_AT_NIGHT } from '../utils/routeEmptyMessage';
+import { isQuietTime } from '../utils/quietTime';
+import { getCachedQuietWindow } from '../utils/routeSearch';
 
 const DAY = 86400;
 // 余裕が、この分数より少ないときは、黄色の札にする
@@ -63,7 +65,7 @@ export const ArrivalResults: React.FC<ArrivalResultsProps> = ({ plan, deadlineTe
   if (plan.options.length === 0) {
     return (
       <div className="bg-white border border-[#E6E2EE] rounded-2xl p-5 text-center text-sm font-bold text-[#6B6380]">
-        {isDeepNight(deadlineText) ? NO_TRAIN_AT_NIGHT : `${deadlineText} までに着く列車がありません`}
+        {isQuietTime(deadlineText, getCachedQuietWindow()) ? NO_TRAIN_AT_NIGHT : `${deadlineText} までに着く列車がありません`}
       </div>
     );
   }
