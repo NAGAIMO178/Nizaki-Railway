@@ -3,6 +3,8 @@ import { ChevronRight, Clock, User, Users } from 'lucide-react';
 import type { LiveTrainPos } from './TrainLocationTab';
 import { CROWD_LEVELS, CROWD_MAX_LEVEL, crowdInfo } from '../utils/crowd';
 import { isLaunched } from '../utils/launch';
+import { THROUGH_STYLE } from '../utils/throughLine';
+import { normalizeStationName } from '../utils/diaTimetable';
 
 // 列車の詳細(公開後の新しい画面。列車位置で列車を押すと出るシートの中身)。
 // 上に答え(遅れ・混雑)、下に詳細(これから通る駅)の順。見出しの色は神埼の紫に統一し、路線は小さな丸で見分ける。
@@ -40,13 +42,15 @@ const PeopleMeter: React.FC<{ level: number }> = ({ level }) => {
 interface TrainDetailV2Props {
   train: LiveTrainPos;
   lineName: string;
+  onOpenLine?: (lineId: string) => void; // 直通先の札を押したとき、その路線の列車位置へ
   onOpenReservation?: () => void;
   contentRef?: React.Ref<HTMLDivElement>;
 }
 
-export const TrainDetailV2: React.FC<TrainDetailV2Props> = ({ train, lineName, onOpenReservation, contentRef }) => {
+export const TrainDetailV2: React.FC<TrainDetailV2Props> = ({ train, lineName, onOpenLine, onOpenReservation, contentRef }) => {
   const delayed = train.delayMinutes > 0;
   const rows = train.rows ?? [];
+  const through = train.through;
   const info = train.crowdNow ? crowdInfo(train.crowdNow) : undefined;
   const typeText = train.paid ? '特急' : train.trainType;
   // 番線の列(公開後のダイヤだけ。どの駅にも番線が無いときは、列ごと出さない)
@@ -162,7 +166,22 @@ export const TrainDetailV2: React.FC<TrainDetailV2Props> = ({ train, lineName, o
                 <span className="absolute left-[9px] top-0 bottom-0 w-1 bg-[#5B21B6]" />
                 {!row.pass && <span className="absolute left-[5px] top-1/2 -mt-1.5 w-3 h-3 rounded-full bg-white border-[3px] border-[#5B21B6]" />}
               </div>
-              <div className={row.pass ? '' : 'text-[#221C35]'}>{row.stationName}</div>
+              <div className={row.pass ? '' : 'text-[#221C35]'}>
+                {row.stationName}
+                {/* 直通の列車: つなぎ目の駅の行に、直通先の路線の札(押すと、その路線の列車位置へ) */}
+                {through && !row.pass && normalizeStationName(row.stationName) === through.stationName && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenLine?.(through.lineId)}
+                    className="ml-2 inline-flex items-center gap-0.5 rounded-full border-[1.5px] bg-white pl-2 pr-1 py-px text-[10px] font-extrabold leading-tight whitespace-nowrap align-middle cursor-pointer active:scale-95"
+                    style={{ borderColor: THROUGH_STYLE[through.lineId]?.color ?? '#8B5CF6', color: THROUGH_STYLE[through.lineId]?.text ?? '#6D28D9' }}
+                    title={`${through.lineName}の列車位置を見る`}
+                  >
+                    {through.lineName}
+                    <ChevronRight className="w-3 h-3" strokeWidth={3} />
+                  </button>
+                )}
+              </div>
               {showPlatform && (
                 <div className="text-center">
                   {!row.pass && row.platform && (
