@@ -279,6 +279,19 @@ export const computeBoard = (data: BoardData, platform: 1 | 2, nowMs: number, li
     }, train[4]);
     const hh = String(Math.floor(c.eff / 3600) % 24).padStart(2, '0');
     const mm = String(Math.floor((c.eff % 3600) / 60)).padStart(2, '0');
+    // 今の混雑の目安(公開後だけ): この駅を出た直後の区間。遅れて3分以上なら1つ上げる。データが無いときは、なし
+    let crowd: number | undefined;
+    if (isLaunched()) {
+      let k = -1;
+      for (let i = 0; i * 3 < stops.length; i++) {
+        if (stops[i * 3] === c.line.stationIdx && stops[i * 3 + 2] !== -1) {
+          k = i;
+          break;
+        }
+      }
+      const lv = k >= 0 ? trainSegmentLevel(dayTypeOf(c.dayMs), c.line.code, train[0], k) : undefined;
+      crowd = lv === undefined ? undefined : bumpForDelay(lv, eff.delayMinutes);
+    }
     return {
       id: `dia-${c.line.code}-${train[0]}-${depTs}`,
       lineName: c.line.master.name,
@@ -292,6 +305,7 @@ export const computeBoard = (data: BoardData, platform: 1 | 2, nowMs: number, li
       delayMinutes: eff.delayMinutes,
       isSuspended: eff.isSuspended,
       platform: departurePlatformOfRow(train, c.line.stationIdx),
+      crowd,
     };
   });
 

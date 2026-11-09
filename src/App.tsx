@@ -17,6 +17,7 @@ import { POINT_CODES, normalizePointCode } from './data/pointCodes';
 import { getLocalDateString, isOrderExpired } from './utils/orderExpiry';
 import { callGas } from './utils/accountApi';
 import { isLaunched } from './utils/launch';
+import { PullRefresh } from './components/PullRefresh';
 import { effectiveAllocation, splitSeats } from './utils/seatUtils';
 import { fetchAndCacheTicket, summarizeTicket, TicketSummary } from './utils/ticketApi';
 import { calcDeliveryAddPoints, calcReservationPoints } from './utils/points';
@@ -825,6 +826,8 @@ export default function App() {
 
   return (
     <PhoneContainer>
+      {/* 下に引っ張って再読み込み(目印は、引いているあいだだけ) */}
+      <PullRefresh />
       {/* 1. Header */}
       <Header
         nPointBalance={shownBalance}

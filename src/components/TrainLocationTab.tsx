@@ -478,7 +478,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
   ) => {
     const style = getTrainTypeBadgeStyle(train.trainType);
     const isSelected = selectedTrain?.id === train.id;
-    // 線路のX座標: -24px / 駅ノード: -31px。札(幅32px)の右端が -36px より左にあれば、線路・ノードを跨がない。
+    // 線路のX座標: -24px / 駅ノード: -31px。札(幅38px)の右端が -36px より左にあれば、線路・ノードを跨がない。
     // 3編成以上は、札を小さくして、左端で切れずに収める
     const compact = isCompactTrainIcons(total);
     const centerPos = trainIconCenter(total, index);
