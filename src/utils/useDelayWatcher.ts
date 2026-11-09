@@ -11,6 +11,7 @@ import { computeLiveTrains, getCachedLineData, loadLineData } from './diaTimetab
 import { DelayNotifyMode } from './delayNotifySettings';
 import { getNotificationPermissionState, sendLocalPushNotification } from './pushNotification';
 import { isPushEnabled } from './notifySettings';
+import { serviceDayKey, serviceDayStartOf } from './serviceDay';
 import { filterByLines, markNotified, NotifiedState, NotifyCandidate, planNotification } from './delayNotifyPlan';
 
 const SCAN_INTERVAL_MS = 30 * 1000;
@@ -34,7 +35,8 @@ export interface DelayNotice {
 
 type DelayedTrain = NotifyCandidate;
 
-const todayKey = (now: Date): string => `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
+// 通知済みの記録の区切りは、ダイヤの日(0:00〜3:59 は前日の続き)。23:55 に知らせた遅れを、0:00 を過ぎて、また知らせない
+const todayKey = (now: Date): string => serviceDayKey(serviceDayStartOf(now.getTime()));
 
 const readNotified = (day: string): NotifiedState => {
   const state: NotifiedState = { keys: new Set<string>(), contents: new Map<string, number>() };

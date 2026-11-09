@@ -90,7 +90,7 @@ const delayAtStop = (data: LineData, trainNo: string, stationIdx: number, statio
   const row = line?.trains.find((t) => t[0] === trainNo);
   if (!line || !row) return 0;
   const dirIdx = (line.master.dirs.indexOf(row[2]) === 1 ? 1 : 0) as 0 | 1;
-  const r = resolveTrainDelay(lineCode, trainNo, dayStartMs, dirIdx, stationName, dayStartMs + row[4] * 1000, row[4]);
+  const r = resolveTrainDelay(lineCode, trainNo, dayStartMs, dirIdx, stationName, row[4]);
   return r.isSuspended ? 0 : r.delayMinutes;
 };
 

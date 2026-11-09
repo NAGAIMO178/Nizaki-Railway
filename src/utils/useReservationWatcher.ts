@@ -171,7 +171,7 @@ export function useReservationWatcher(opts: {
           const now = Date.now();
           const schedDepMs = r.dayStartMs + r.depSec * 1000;
           const arrMs = r.dayStartMs + r.arrSec * 1000;
-          const delay = resolveTrainDelay(r.lineCode, r.code, r.dayStartMs, r.dirIdx, r.boarding, schedDepMs, r.trainStartSec);
+          const delay = resolveTrainDelay(r.lineCode, r.code, r.dayStartMs, r.dirIdx, r.boarding, r.trainStartSec);
           const delayMin = delay.isSuspended ? 0 : delay.delayMinutes;
           const depMs = schedDepMs + delayMin * 60 * 1000;
           const minsToDep = (depMs - now) / 60000;

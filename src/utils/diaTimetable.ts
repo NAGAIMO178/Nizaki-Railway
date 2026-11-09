@@ -6,6 +6,7 @@ import { isLaunched } from './launch';
 import { bumpForDelay, crowdDelayRate, dayTypeOf, loadAllCrowdTrains, trainMaxLevelAnyLine, trainSegmentLevel } from './crowd';
 import type { DynamicDeparture } from '../components/MyStationCard';
 import { platformAtStop, departurePlatformOfRow } from './platform';
+import { adminDelaySeed } from './serviceDay';
 
 type MasterLine = {
   name: string;
@@ -100,12 +101,12 @@ const resolveDelay = (
   lineCode: string,
   trainNo: string,
   serviceDayStartMs: number,
-  seedTimestamp: number,
   direction: 1 | 2,
   position: { stationName: string; isBetween?: boolean },
   trainStartSec?: number // その列車が始発駅を出る時刻(0時からの秒)。ラッシュの判定に使う
 ): ResolvedDelay => {
-  const eff = disruptionManager.getEffectiveDelayForTrain(disruptionLineId, seedTimestamp, direction, position);
+  // 管理者設定の遅れ・運休の種は、ダイヤの日+列車番号(どの画面でも、同じ列車は同じ結果になる)
+  const eff = disruptionManager.getEffectiveDelayForTrain(disruptionLineId, adminDelaySeed(serviceDayStartMs, trainNo), direction, position);
   if (eff.isSuspended) return { delayMinutes: 0, isSuspended: true };
   if (eff.delayMinutes > 0) return { delayMinutes: eff.delayMinutes, isSuspended: false };
   return { delayMinutes: autoDelayMinutes(lineCode, trainNo, serviceDayStartMs, trainStartSec), isSuspended: false };
@@ -118,10 +119,9 @@ export const resolveTrainDelay = (
   serviceDayStartMs: number,
   dirIdx: 0 | 1,
   stationName: string,
-  seedTimestamp: number,
   trainStartSec?: number
 ): ResolvedDelay =>
-  resolveDelay(LINE_IDS[lineCode] || 'kanzaki', lineCode, trainNo, serviceDayStartMs, seedTimestamp, dirIdx === 0 ? 1 : 2, { stationName }, trainStartSec);
+  resolveDelay(LINE_IDS[lineCode] || 'kanzaki', lineCode, trainNo, serviceDayStartMs, dirIdx === 0 ? 1 : 2, { stationName }, trainStartSec);
 
 const normalizeName = (name: string): string => name.replace(/（.*?）/g, '').trim();
 
@@ -274,7 +274,7 @@ export const computeBoard = (data: BoardData, platform: 1 | 2, nowMs: number, li
     const train = c.line.trains[c.ti];
     const stops = train[5];
     const depTs = base + c.eff * 1000;
-    const eff = resolveDelay(LINE_IDS[c.line.code] || 'kanzaki', c.line.code, train[0], c.dayMs, depTs, platform, {
+    const eff = resolveDelay(LINE_IDS[c.line.code] || 'kanzaki', c.line.code, train[0], c.dayMs, platform, {
       stationName: data.stationName,
     }, train[4]);
     const hh = String(Math.floor(c.eff / 3600) % 24).padStart(2, '0');
@@ -537,7 +537,7 @@ export const computeLiveTrains = (data: LineData, lineId: string, direction: 1 |
     }
 
     const serviceDayMs = nowSec === s ? base : base - DAY * 1000;
-    const eff = resolveDelay(lineId, data.code, t[0], serviceDayMs, base + t0 * 1000, direction, {
+    const eff = resolveDelay(lineId, data.code, t[0], serviceDayMs, direction, {
       stationName,
       isBetween,
     }, t0);
