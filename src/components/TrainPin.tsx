@@ -1,7 +1,7 @@
 import React from 'react';
 import { CROWD_LEVELS, CROWD_MAX_LEVEL, crowdInfo } from '../utils/crowd';
 
-// 列車位置の列車の札(白いピン型)。上から: 遅れ(赤い札)・種別の色の帯(種別だけ)・列車の絵・混雑の人アイコン5つ。
+// 列車位置の列車の札(白いピン型)。本体は、種別の色の帯(種別だけ)・列車の絵・混雑の人アイコン5つ。遅れ・通過の札は、本体の外に浮かせる。
 // 先端が進む向き(下り=下、上り=上)。行先は、札に出さない(列車の詳細に出る)。
 export const PIN_WIDTH = 38;
 const TIP = 8; // 先端の高さ(px)
@@ -9,9 +9,17 @@ const BAND_H = 13; // 帯の高さ(px)
 const ICON_H = 13; // 列車の絵の高さ(px)
 const PERSON_H = 9.8; // 人アイコンの高さ(px)
 
-// 札の高さ(px。遅れ・通過の札も含む)。路線図で、札が重ならない高さを取るために使う
-export const pinHeight = (opts: { delayed: boolean; passing: boolean; hasCrowd: boolean }): number =>
-  TIP + 1 + BAND_H + 3 + ICON_H + (opts.hasCrowd ? 3 + PERSON_H : 0) + (opts.delayed ? 11 + 2 : 0) + (opts.passing ? 10 + 2 : 0);
+// 札の本体(帯・列車の絵・人アイコン)の高さ(px)。遅れ・通過の札の有無、混雑データの有無で変えない
+// (同じ場所に並ぶ列車で、本体の上端・下端がそろうように。混雑データが無いときは、人アイコンの場所を空けておく)
+export const PIN_BODY_H = TIP + 1 + BAND_H + 3 + ICON_H + 3 + PERSON_H;
+
+// 本体の外に浮かせる札(遅れ・通過)の高さ(px。間の余白を含む)
+export const DELAY_BADGE_H = 11 + 2;
+export const PASSING_BADGE_H = 10 + 2;
+export const pinFloatHeight = (opts: { delayed: boolean; passing: boolean }): number => (opts.delayed ? DELAY_BADGE_H : 0) + (opts.passing ? PASSING_BADGE_H : 0);
+
+// 路線図で、札が重ならないために取る高さ(px)。本体を、列の中心に置くので、浮かせる札のぶんを、本体の両側に取る
+export const pinHeight = (opts: { delayed: boolean; passing: boolean }): number => PIN_BODY_H + 2 * pinFloatHeight(opts);
 
 // 帯の字の大きさ(px)。4文字までは9px、それより長いときは、幅(38px)に収まるまで小さくする
 export const bandFontSize = (label: string): number => (label.length <= 4 ? 9 : Math.floor((34 / label.length) * 10) / 10);
@@ -74,19 +82,37 @@ export const TrainPin: React.FC<TrainPinProps> = ({ label, color, direction, del
         clipPath: `polygon(50% 0,100% ${TIP}px,100% 100%,0 100%,0 ${TIP}px)`,
       };
 
-  return (
-    <div className="flex flex-col items-center pointer-events-none">
-      {/* 遅れ(札の上) */}
-      {delayMinutes > 0 && (
-        <span
-          className="mb-0.5 rounded-full border border-white bg-[#E11D48] px-1.5 text-[8px] font-black leading-[11px] text-white whitespace-nowrap shadow-xs"
-        >
-          +{delayMinutes}分
-        </span>
+  // 遅れ・通過の札は、本体の外に浮かせる(本体の位置・高さは、札の有無で動かさない)。下り(先端が下)は本体の上、上り(先端が上)は本体の下
+  const delayBadge = delayMinutes > 0 && (
+    <span className="rounded-full border border-white bg-[#E11D48] px-1.5 text-[8px] font-black leading-[11px] text-white whitespace-nowrap shadow-xs">+{delayMinutes}分</span>
+  );
+  const passBadge = passing && (
+    <span className="rounded bg-purple-100 border border-purple-300 px-1 text-[8px] font-black leading-[10px] text-purple-700 whitespace-nowrap">通過</span>
+  );
+  const floats = delayBadge || passBadge ? (
+    <div
+      className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center gap-0.5 pointer-events-auto"
+      style={down ? { bottom: '100%', marginBottom: 2 } : { top: '100%', marginTop: 2 }}
+    >
+      {down ? (
+        <>
+          {delayBadge}
+          {passBadge}
+        </>
+      ) : (
+        <>
+          {passBadge}
+          {delayBadge}
+        </>
       )}
-      {passing && <span className="mb-0.5 rounded bg-purple-100 border border-purple-300 px-1 text-[8px] font-black leading-[10px] text-purple-700 whitespace-nowrap">通過</span>}
-      <div style={{ filter: 'drop-shadow(0 1px 2px rgba(40,30,70,.32))' }}>
-        <div className="flex flex-col items-center overflow-hidden bg-white" style={{ width: PIN_WIDTH, ...shape }}>
+    </div>
+  ) : null;
+
+  return (
+    <div className="relative flex flex-col items-center pointer-events-none" style={{ width: PIN_WIDTH, height: PIN_BODY_H }}>
+      {floats}
+      <div style={{ filter: 'drop-shadow(0 1px 2px rgba(40,30,70,.32))', height: PIN_BODY_H }}>
+        <div className="flex flex-col items-center overflow-hidden bg-white" style={{ width: PIN_WIDTH, height: PIN_BODY_H, ...shape }}>
           {down ? (
             <>
               {band}
@@ -97,7 +123,7 @@ export const TrainPin: React.FC<TrainPinProps> = ({ label, color, direction, del
             <>
               {icon}
               {people}
-              <div className="mt-[3px] w-full">{band}</div>
+              <div className="mt-auto w-full">{band}</div>
             </>
           )}
         </div>
