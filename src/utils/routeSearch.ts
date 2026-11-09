@@ -153,7 +153,7 @@ export interface RouteLeg {
   stops: RouteStop[];
   // この列車で通った、経由駅(停車したか、通過したか)
   passedVias: { name: string; stopped: boolean }[];
-  // 乗っている区間の混雑(1〜6。いちばん混む区間。遅れて3分以上なら1つ上げる)と、区間の平均。混雑予報のデータが無いときは、なし
+  // 混雑(1〜5): crowd は、その列車に乗る駅を出た直後の区間(遅れて3分以上なら1つ上げる)。crowdAvg は、乗っている区間の平均(並べ替え用)。混雑予報のデータが無いときは、なし
   crowd?: number;
   crowdAvg?: number;
 }
@@ -432,7 +432,8 @@ const searchOnce = (net: Net, ctx: Ctx, from: string, to: string, readySec: numb
     }
     const destName = normalizeStationName(trainDestName(master, train));
     const schedDep = train[4] + stops[p.boardPos + 2];
-    // 乗っている区間の混雑: 乗る駅から、降りる駅の1つ前の駅までの、駅を出たあとの区間
+    // 混雑: crowd は、その列車に乗る駅を出た直後の区間(画面に出す「今の混雑の目安」)。
+    // crowdAvg は、乗る駅から降りる駅の1つ前の駅までの、各区間の平均(並べ替えの点数に使う。画面には出さない)
     let crowd: number | undefined;
     let crowdAvg: number | undefined;
     if (ctx.crowd) {
@@ -444,7 +445,7 @@ const searchOnce = (net: Net, ctx: Ctx, from: string, to: string, readySec: numb
         if (lv !== undefined) levels.push(bumpForDelay(lv, delayMin));
       }
       if (levels.length > 0) {
-        crowd = Math.max(...levels);
+        crowd = levels[0];
         crowdAvg = levels.reduce((a, b) => a + b, 0) / levels.length;
       }
     }

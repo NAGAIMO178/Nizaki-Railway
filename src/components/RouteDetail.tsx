@@ -90,7 +90,6 @@ const LegBlock: React.FC<{ leg: RouteLeg }> = ({ leg }) => {
               >
                 {crowdInfo(leg.crowd)!.label}
               </span>
-              <span>(いちばん混む区間・乗車率 {crowdInfo(leg.crowd)!.range})</span>
             </div>
           )}
           {leg.paid && <div className="mt-1.5 text-[11px] font-bold text-amber-700">有料の列車です(特急券が別に必要)</div>}

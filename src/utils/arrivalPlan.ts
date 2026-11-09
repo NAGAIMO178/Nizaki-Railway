@@ -3,6 +3,7 @@
 // 混雑は、おすすめを決めるためだけに使い、結果には持たせない。
 import { DEFAULT_ROUTE_OPTIONS, RouteOptions } from './routeOptions';
 import { RouteLeg, RouteResult, searchRoutesInWindow } from './routeSearch';
+import { isDeepNight } from './routeEmptyMessage';
 
 const DAY = 86400;
 // 探しはじめる時刻: 締め切りの、この時間(秒)前。乗車時間の長い行き先でも見つかるよう、広めに取り、最初の1本の所要時間で狭める
@@ -22,7 +23,7 @@ export interface ArrivalQuery {
   from: string;
   to: string;
   day: 'today' | 'tomorrow'; // 到着したい日(暦の日)
-  arriveBy: string; // 到着の締め切り "HH:MM"。0:00〜3:59 は、その日の未明(前日のダイヤの続き)
+  arriveBy: string; // 到着の締め切り "HH:MM"。0:00〜3:59 は、列車が走っていない時間なので、探さずに空を返す
   vias?: string[];
   options?: RouteOptions; // sortBy は使わない
   now?: Date; // テスト用
@@ -102,6 +103,9 @@ export const planArrival = async (q: ArrivalQuery): Promise<ArrivalPlan> => {
   const sameDay = serviceStart.getTime() === nowServiceStart.getTime();
   const nowSec = Math.floor((now.getTime() - nowServiceStart.getTime()) / 1000);
   const usedDelays = sameDay && options.realtime;
+
+  // 0:00〜3:59 に着きたい検索は、列車が走っていない時間なので、探さない(前日の夜に着く列車を、「明日 01:00」の結果に出さない)
+  if (isDeepNight(q.arriveBy)) return EMPTY(deadlineSec, usedDelays);
 
   // 締め切りが、もう過ぎている(ダイヤの日が違っても、今日の未明を過ぎてから「今日 02:00」を選んだ場合などを含む)
   if (serviceStart.getTime() + deadlineSec * 1000 <= now.getTime()) return EMPTY(deadlineSec, usedDelays);

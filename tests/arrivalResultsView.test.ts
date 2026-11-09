@@ -36,6 +36,22 @@ const plan = (pickIndex: number): ArrivalPlan => ({
 const html = (p: ArrivalPlan): string =>
   renderToStaticMarkup(React.createElement(ArrivalResults, { plan: p, deadlineText: '09:00', lineColor: () => '#8B5CF6', onOpen: () => undefined }));
 
+const emptyHtml = (deadlineText: string): string =>
+  renderToStaticMarkup(
+    React.createElement(ArrivalResults, { plan: { options: [], pickIndex: -1, deadlineSec: 0, usedDelays: false, relaxed: 0 }, deadlineText, lineColor: () => '#8B5CF6', onOpen: () => undefined })
+  );
+
+describe('到着検索の結果が0件のとき', () => {
+  it('0:00〜3:59 の到着は、「この時間は、列車がありません」(出発側と同じ言葉)', () => {
+    for (const t of ['00:00', '01:00', '03:59']) expect(emptyHtml(t)).toContain('この時間は、列車がありません');
+  });
+
+  it('4:00 以降は、これまでの文', () => {
+    expect(emptyHtml('09:00')).toContain('09:00 までに着く列車がありません');
+    expect(emptyHtml('09:00')).not.toContain('この時間は、列車がありません');
+  });
+});
+
 describe('到着検索の結果', () => {
   it('「おすすめ」の印と、枠つきの特別なカードが無い', () => {
     for (const i of [0, 1, 2]) {

@@ -186,10 +186,15 @@ describe('到着時刻からの逆算: 日の扱い', () => {
     disruptionManager.clearAllDisruptions();
   });
 
-  it('0〜4時の締め切りは、前日のダイヤの続きで、24時以降として扱う', async () => {
-    const p = await plan({ now: new Date(2026, 10, 2, 22, 0), day: 'tomorrow', arriveBy: '01:00' });
-    expect(p.deadlineSec).toBe(hm(25));
-    p.options.forEach((o) => expect(o.arrSec).toBeLessThanOrEqual(hm(25)));
+  it('0:00〜3:59 に着きたい検索は、列車が走っていない時間なので、探さず、空を返す(前日の夜に着く列車を出さない)', async () => {
+    for (const arriveBy of ['00:00', '01:00', '03:59']) {
+      const p = await plan({ now: new Date(2026, 10, 2, 22, 0), day: 'tomorrow', arriveBy });
+      expect(p.options, arriveBy).toEqual([]);
+      expect(p.pickIndex).toBe(-1);
+    }
+    // 4:00 からは、これまでどおり探す(始発に近い時刻は、列車が無ければ空)
+    const ok = await plan({ now: new Date(2026, 10, 2, 22, 0), day: 'tomorrow', arriveBy: '09:00' });
+    expect(ok.options.length).toBeGreaterThan(0);
   });
 });
 

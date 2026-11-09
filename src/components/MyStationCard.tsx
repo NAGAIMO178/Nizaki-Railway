@@ -7,6 +7,7 @@ import { computeBoard, formatDiaTime, getCachedBoardData, loadBoardData } from '
 import type { BoardData, BoardResult } from '../utils/diaTimetable';
 import { isLaunched } from '../utils/launch';
 import { platformLabel } from '../utils/platform';
+import { crowdInfo } from '../utils/crowd';
 
 interface MyStationCardProps {
   registeredStations: RegisterableStation[];
@@ -28,6 +29,7 @@ export interface DynamicDeparture {
   isSuspended?: boolean;  // 運休・見合わせフラグ
   carCount?: number;      // 両数
   platform?: string;      // 発車の番線(公開後のダイヤだけ)
+  crowd?: number;         // 今の混雑の目安(1〜5。この駅を出た直後の区間。公開後で、データがあるときだけ)
 }
 
 // 種別ごとの指定カラーを取得する関数 (浮かない洗練されたトーン＆マナー)
@@ -605,7 +607,12 @@ export const MyStationCard: React.FC<MyStationCardProps> = ({
                       </div>
                     )}
                   </div>
-                  <Users className={`w-3.5 h-3.5 ${isImminent ? 'text-white/80' : 'text-[#857D99]'}`} />
+                  {/* 今の混雑の目安(この駅を出た直後の区間の色。データがない列車は、出さない) */}
+                  {dep.crowd && crowdInfo(dep.crowd) && (
+                    <span className={isImminent ? 'rounded-full bg-white p-0.5' : ''} title={`今の混雑: ${crowdInfo(dep.crowd)!.label}`}>
+                      <Users className="w-3.5 h-3.5" color={crowdInfo(dep.crowd)!.icon} strokeWidth={2.4} aria-label={`今の混雑: ${crowdInfo(dep.crowd)!.short}`} />
+                    </span>
+                  )}
                 </div>
               </div>
             );
