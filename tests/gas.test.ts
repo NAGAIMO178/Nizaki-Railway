@@ -1793,3 +1793,124 @@ describe('パスワードの保存方式(v2)', () => {
     expect(logs.join('\n')).not.toContain(PW);
   });
 });
+
+// ---- 予期しない例外: 内部の文字(関数名・例外の文・スタック)を、利用者に返さない。原因は、個人情報を除いて、ログに残す ----
+describe('予期しない例外の応答とログ', () => {
+  const FIXED = 'うまく処理できませんでした。しばらくしてからもう一度お試しください。';
+  const SECRET_PW = 'Sup3r-Secret!pw';
+  const SECRET_MAIL = 'alice@example.com';
+  const SECRET_TOKEN = 'NZ-1.99999999.abcdef';
+  let logs: string[];
+
+  beforeEach(() => {
+    logs = [];
+    gas.Logger = { log: (m: string) => void logs.push(String(m)) };
+    gas.console = { log: (m: string) => void logs.push(String(m)), error: (m: string) => void logs.push(String(m)) };
+    gas.ContentService = {};
+  });
+
+  const post = (body: unknown) => gas.doPost({ postData: { contents: typeof body === 'string' ? body : JSON.stringify(body) } });
+
+  // 例外の文に、送られた値が入っている想定(メール・パスワード・ログイン証・内部の名前)
+  const leaky = () => {
+    const e = new TypeError(`Cannot read properties of undefined (reading 'passwordHash') for ${SECRET_MAIL} pw=${SECRET_PW} token=${SECRET_TOKEN}`);
+    e.stack = `TypeError: Cannot read properties of undefined (reading 'passwordHash') for ${SECRET_MAIL}\n${SECRET_PW} second line of the message\n    at handleLogin (Code:1101:23)\n    at doPost (Code:100:14)`;
+    return e;
+  };
+
+  const expectNoLeak = (text: string) => {
+    ['TypeError', 'passwordHash', 'Cannot read', SECRET_MAIL, SECRET_PW, SECRET_TOKEN, 'handleLogin', 'Code:', 'undefined'].forEach((w) => expect(text, w).not.toContain(w));
+  };
+
+  it('各 action で例外が起きても、決まった短い文と code だけを返す(内部の文字を含めない)', () => {
+    gas.handleLogin = () => {
+      throw leaky();
+    };
+    const res = post({ action: 'login', email: SECRET_MAIL, password: SECRET_PW });
+    expect(res).toEqual({ status: 'error', code: 'server_error', message: FIXED });
+    expectNoLeak(JSON.stringify(res));
+  });
+
+  it('壊れた送信内容(JSON として読めない)でも、読めなかった文字を返さない', () => {
+    const res = post(`{"action":"login","password":"${SECRET_PW}"`);
+    expect(res).toEqual({ status: 'error', code: 'server_error', message: FIXED });
+    expectNoLeak(JSON.stringify(res));
+  });
+
+  it('ほかの action(予約・ポイント・管理者・LINE の events)の例外も、同じ決まった文', () => {
+    ['createReservation', 'cancelReservation', 'syncAccount', 'spendPoints', 'claimEventTare', 'joinEventTare', 'setDisruptions', 'verifyAdminToken'].forEach((a) => {
+      const fn: Record<string, string> = {
+        createReservation: 'handleCreateReservation', cancelReservation: 'handleCancelReservation', syncAccount: 'handleSyncAccount',
+        spendPoints: 'handleSpendPoints', claimEventTare: 'handleClaimEventTare', joinEventTare: 'handleJoinEventTare',
+        setDisruptions: 'handleSetDisruptions', verifyAdminToken: 'handleVerifyAdminToken',
+      };
+      gas[fn[a]] = () => {
+        throw leaky();
+      };
+      expect(post({ action: a }), a).toEqual({ status: 'error', code: 'server_error', message: FIXED });
+    });
+    gas.handleLineMessage = () => {
+      throw leaky();
+    };
+    expect(post({ events: [{ type: 'message', message: { type: 'text', text: 'x' }, source: { userId: 'U1' } }] })).toEqual({ status: 'error', code: 'server_error', message: FIXED });
+  });
+
+  it('決まった文は、アプリが「送り直す」と判断する文(混み合っています)を含まない', () => {
+    expect(FIXED).not.toContain('混み合っています');
+    gas.handleCreateReservation = () => {
+      throw leaky();
+    };
+    const res = post({ action: 'createReservation' });
+    expect(String(res.message)).not.toContain('混み合っています');
+  });
+
+  it('これまで利用者向けに返していた文は、変わらない(例外でないとき)', () => {
+    expect(post({ action: 'login', email: 'nobody@example.com', password: 'x'.repeat(200) })).toEqual({
+      status: 'error',
+      message: 'メールアドレスまたはパスワードが正しくありません。',
+    });
+    expect(post({ action: 'no-such-action' })).toEqual({ status: 'ignored' });
+    expect(post({ action: 'createReservation', sessionToken: 'bad', order: {} })).toMatchObject({ status: 'error', message: expect.stringContaining('ログインの有効期限') });
+  });
+
+  it('ログには、例外の種類と、コードの場所だけを残す(例外の文・送られた値・メール・パスワード・ログイン証は残さない)', () => {
+    gas.handleLogin = () => {
+      throw leaky();
+    };
+    post({ action: 'login', email: SECRET_MAIL, password: SECRET_PW });
+    const log = logs.join('\n');
+    expect(log).toContain('doPost: TypeError');
+    expect(log).toContain('at handleLogin (Code:1101:23)');
+    [SECRET_MAIL, SECRET_PW, SECRET_TOKEN, 'Cannot read', 'passwordHash', 'second line'].forEach((w) => expect(log, w).not.toContain(w));
+  });
+
+  it('壊れた送信内容のときも、ログに、送られた値を残さない', () => {
+    post(`{"action":"login","email":"${SECRET_MAIL}","password":"${SECRET_PW}"`);
+    const log = logs.join('\n');
+    expect(log).toContain('doPost: ');
+    [SECRET_MAIL, SECRET_PW].forEach((w) => expect(log, w).not.toContain(w));
+  });
+
+  it('例外でないものが投げられても(文字・null・変なもの)、決まった文で返し、ログのために失敗しない', () => {
+    [null, undefined, 'plain string ' + SECRET_PW, 42, { name: { toString: () => { throw new Error('x'); } } }].forEach((thrown, i) => {
+      gas.handleLogin = () => {
+        throw thrown;
+      };
+      expect(post({ action: 'login' }), String(i)).toEqual({ status: 'error', code: 'server_error', message: FIXED });
+    });
+    expect(logs.join('\n')).not.toContain(SECRET_PW);
+  });
+
+  it('LINE への返信が失敗したときも、例外の文を、ログに残さない', () => {
+    vm.runInContext("CONFIG.ACCESS_TOKEN = 'dummy-line-token-value'", gas);
+    gas.UrlFetchApp = {
+      fetch: () => {
+        throw new Error(`Request failed for https://api.line.me returned ${SECRET_MAIL} ${SECRET_TOKEN}`);
+      },
+    };
+    gas.replyToLine('reply-token', [{ type: 'text', text: 'x' }]);
+    const log = logs.join('\n');
+    expect(log).toContain('[LINE返信失敗]');
+    [SECRET_MAIL, SECRET_TOKEN, 'Request failed'].forEach((w) => expect(log, w).not.toContain(w));
+  });
+});
