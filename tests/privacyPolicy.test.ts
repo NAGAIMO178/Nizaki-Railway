@@ -1,4 +1,5 @@
 // プライバシーポリシー: 公開前は今の文のまま(画面は変えない)。公開後は、サーバーに残すデータに合わせた文
+// (2026-11-11: 公式LINEでの応答・ご請求の受付を、いまの動きに合わせて直した。公開前・公開後の両方の文に入っている)
 import { createHash } from 'node:crypto';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -22,12 +23,12 @@ const beforeLaunch = () => {
 };
 
 describe('公開前', () => {
-  it('今の文のまま(画面の中身が、1文字も変わらない)', () => {
+  it('今の文のまま(画面の中身が、意図しないかぎり、1文字も変わらない)', () => {
     beforeLaunch();
     win.location.search = '';
     localStorage.clear();
     const h = createHash('sha256').update(html()).digest('hex');
-    expect(h).toBe('86b73cc0ca61c25de668190912d4d3cd23d15754e6bc208d9aa49c259589c4cd');
+    expect(h).toBe('96f77f70dd720223b7089fc6d4f9b760a3c0fe6a9751959b4a2d557816b18eb4');
   });
 });
 
@@ -64,7 +65,8 @@ describe('公開後', () => {
   it('LINE(予約は、そのLINEに紐づく分だけ・アンケート)と、ログイン証・失敗の回数', () => {
     win.location.search = '?preview=1';
     const t = text();
-    expect(t).toContain('そのLINEアカウントに紐づく予約だけをお返しします');
+    expect(t).toContain('現在、公式LINEでは、予約の照会などの応答を行っておりません');
+    expect(t).not.toContain('紐づく予約だけをお返しします');
     expect(t).toContain('LINEのアンケート（リサーチ）を行うことがあります');
     expect(t).toContain('個人が特定されない形で、結果だけを見ます');
     expect(t).toContain('署名つきのログイン証（有効30日）');
@@ -83,16 +85,75 @@ describe('公開後', () => {
     win.location.search = '?preview=1';
     const t = text();
     expect(t).not.toContain('N-POINTの残高・履歴、終了した予約の履歴、使用済みクーポン、マイ駅設定などは、お使いの端末');
-    expect(t).toContain('改定日：2026年11月1日');
-    expect(pre().replace(/<[^>]+>/g, '')).not.toContain('改定日');
+    expect(t).toContain('改定日：2026年11月1日（');
+    expect(pre().replace(/<[^>]+>/g, '')).not.toContain('改定日：2026年11月1日（'); // 公開前の文には、公開の日の改定は書かない
   });
 
   it('6(請求)・7(会員規約)・問い合わせ先は、公開前と同じ', () => {
     const a = part(pre(), '<section class="space-y-1.5"><h3 class="text-sm font-extrabold text-[#221C35]">6.');
     const b = part(post(), '<section class="space-y-1.5"><h3 class="text-sm font-extrabold text-[#221C35]">6.');
     // 制定日の下の「改定日」の行だけが違う
-    const cut = (h: string) => h.replace(/改定日：[^<]*<br\/>/, '');
+    const cut = (h: string) => h.replace(/改定日：2026年11月1日（[^<]*<br\/>/, '');
     expect(cut(b)).toBe(cut(a));
     expect(a.length).toBeGreaterThan(1000);
   });
 });
+
+describe('公式LINEでの応答・ご請求(2026-11-11 の改定)', () => {
+  const both = (): string[] => {
+    beforeLaunch();
+    win.location.search = '';
+    localStorage.clear();
+    const pre = text();
+    win.location.search = '?preview=1';
+    return [pre, text()];
+  };
+
+  it('公式LINEの応答(予約の照会・お問い合わせ)は、行っていないと書く。運行情報・お知らせの配信は、そのまま', () => {
+    both().forEach((t) => {
+      expect(t).not.toContain('お問い合わせへの対応');
+      expect(t).toContain('公式LINEでの運行情報・お知らせの配信');
+    });
+    expect(both()[1]).toContain('現在、公式LINEでは、予約の照会などの応答を行っておりません');
+  });
+
+  it('6: 請求は受け付けていない。神埼IDの削除は、マイページから自分でできる。公式LINEへのリンクは、ない', () => {
+    both().forEach((t) => {
+      expect(t).toContain('現在、開示・訂正・追加・削除・利用停止の請求は、受け付けておりません');
+      expect(t).toContain('神埼IDの削除は、マイページの「神埼IDを削除する」から、いつでも、ご自身で行えます');
+      expect(t).not.toContain('のトークで');
+      expect(t).not.toContain('個人情報の開示請求');
+    });
+    both().forEach((_, i) => {
+      const h = i === 0 ? (beforeLaunch(), (win.location.search = ''), localStorage.clear(), html()) : ((win.location.search = '?preview=1'), html());
+      expect(h).not.toContain('lin.ee');
+      expect(h).not.toContain('<a ');
+    });
+  });
+
+  it('5: 完全なデータ消去を「下記6でご請求」とは案内しない。受け付けていないと書く', () => {
+    both().forEach((t) => {
+      expect(t).not.toContain('完全なデータ消去を希望される場合');
+      expect(t).not.toContain('下記6の手続き');
+      expect(t).toContain('これらの記録を個別に消すご請求は、現在、受け付けておりません（下記6）');
+    });
+  });
+
+  it('見出しの番号は、1〜7が、順に並ぶ(下記6の参照が、ずれない)', () => {
+    both().forEach((t) => {
+      const heads = [...t.matchAll(/(?:^|[^\d])([1-7])\. (?=[^\s])/g)].map((m) => m[1]);
+      expect(heads.join('')).toContain('1234567');
+      expect(t).toContain('6. データの削除と、ご請求について');
+      expect(t).toContain('7. 会員規約');
+    });
+  });
+
+  it('改定日は、2026年11月11日(公開前・公開後の両方)', () => {
+    both().forEach((t) => expect(t).toContain('改定日：2026年11月11日'));
+  });
+
+  it('LINEユーザーIDの取得の説明(1)は、そのまま(連携が動いているか確認するまで、触らない)', () => {
+    both().forEach((t) => expect(t).toContain('LINEユーザーID（本人確認のため、当社公式LINEを友だち追加しメッセージを送信した際に取得します）'));
+  });
+});
+

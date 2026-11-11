@@ -1,6 +1,5 @@
 import React from 'react';
 import { X, ShieldCheck } from 'lucide-react';
-import { LINE_OA_ADD_FRIEND_URL } from '../utils/accountApi';
 import { isLaunched } from '../utils/launch';
 
 import { useBackClose } from '../utils/backClose';
@@ -117,7 +116,7 @@ export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, 
                   '神埼IDの本人確認およびログイン',
                   '特急券予約・車内デリバリー注文・クーポンの受付と照会',
                   'N-POINT・マイレージ・ミステリー・イベントの記録と、報酬を受け取れるかの確認（端末をかえても、続きから使えるようにするため）',
-                  '公式LINEでの運行情報・お知らせの配信、お問い合わせへの対応',
+                  '公式LINEでの運行情報・お知らせの配信',
                   '不正利用の防止',
                   'サービスの維持・改善',
                 ]}
@@ -130,7 +129,7 @@ export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, 
                 items={[
                   '神埼IDの本人確認およびログイン',
                   '特急券予約・車内デリバリー注文・クーポンの受付と照会',
-                  '公式LINEでの運行情報・お知らせの配信、お問い合わせへの対応',
+                  '公式LINEでの運行情報・お知らせの配信',
                   '不正利用の防止',
                   'サービスの維持・改善',
                 ]}
@@ -146,7 +145,7 @@ export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, 
                 情報の保管・送受信には外部事業者であるGoogle（Google Apps Script・スプレッドシート）およびLINE（公式アカウント・Messaging API）を利用しており、これらの事業者が運用する環境で情報が取り扱われます。
               </p>
               <p>
-                公式LINEに「予約」などと送ると、そのLINEアカウントに紐づく予約だけをお返しします（ほかの人の予約は見られません）。
+                現在、公式LINEでは、予約の照会などの応答を行っておりません。
                 友だち追加とメッセージの送受信は、LINEの仕組みで扱われます。
               </p>
               <p>今後、LINEのアンケート（リサーチ）を行うことがあります。個人が特定されない形で、結果だけを見ます。回答の扱いは、LINEの仕組みによります。</p>
@@ -183,7 +182,7 @@ export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, 
                 マイレージは、この記録から計算するため、削除したあとは計算されません。
               </p>
               <p>端末の中のデータは、ブラウザのデータを消去すると、なくなります。</p>
-              <p>完全なデータ消去を希望される場合は、下記6の手続きでご請求ください。</p>
+              <p>これらの記録を個別に消すご請求は、現在、受け付けておりません（下記6）。</p>
             </Section>
           ) : (
             <Section title="5. 保存期間とデータの消去">
@@ -191,35 +190,14 @@ export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, 
               <p>
                 マイページより「神埼IDを削除する」を実行された場合、登録されたメールアドレスおよびアカウント情報（会員台帳）は消去されます。
                 なお、予約台帳・クーポン発行の記録は、LINEユーザーIDを消去して個人と結びつかない形にしたうえで、運営上の記録として残ります。
-                完全なデータ消去を希望される場合は、下記6の手続きでご請求ください。
+                これらの記録を個別に消すご請求は、現在、受け付けておりません（下記6）。
               </p>
             </Section>
           )}
 
-          <Section title="6. 開示・訂正・利用停止・削除の請求">
-            <p>
-              ご本人は、当社が保有するご自身の個人データについて、開示・訂正・追加・削除・利用停止を請求できます。
-            </p>
-            <Bullets
-              items={[
-                '神埼IDの削除：マイページの「神埼IDを削除する」から、いつでもご自身で行えます。',
-                'その他の請求：',
-              ]}
-            />
-            <div className="ml-3 p-3 rounded-xl bg-[#F8F7FC] border border-[#EDE9FE] space-y-1">
-              <p>
-                <a
-                  href={LINE_OA_ADD_FRIEND_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-bold text-[#5B21B6] underline"
-                >
-                  神埼鉄道グループ公式LINE
-                </a>
-                のトークで、「個人情報の開示請求」「訂正請求」「利用停止請求」のいずれかと、請求内容、登録しているメールアドレス（または会員ID）を送信してください。
-              </p>
-              <p>ご本人確認のうえ、合理的な期間内に無料にて対応いたします。</p>
-            </div>
+          <Section title="6. データの削除と、ご請求について">
+            <p>現在、開示・訂正・追加・削除・利用停止の請求は、受け付けておりません。</p>
+            <p>神埼IDの削除は、マイページの「神埼IDを削除する」から、いつでも、ご自身で行えます。</p>
           </Section>
 
           <Section title="7. 会員規約">
@@ -245,6 +223,8 @@ export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, 
                 <br />
               </>
             )}
+            改定日：2026年11月11日（公式LINEでの応答と、ご請求の受付についての説明を更新しました）
+            <br />
             神埼鉄道グループ
           </p>
         </div>
