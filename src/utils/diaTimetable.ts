@@ -7,6 +7,7 @@ import { bumpForDelay, crowdDelayRate, dayTypeOf, loadAllCrowdTrains, trainMaxLe
 import type { DynamicDeparture } from '../components/MyStationCard';
 import { platformAtStop, departurePlatformOfRow } from './platform';
 import { adminDelaySeed } from './serviceDay';
+import { isUtLaunched, MASTER_FILE, MASTER_UT_FILE, UT_CODE } from './utLine';
 
 type MasterLine = {
   name: string;
@@ -34,6 +35,7 @@ const LINE_IDS: Record<string, string> = {
   NI: 'kanzaki_kosoku',
   SC: 'saichi',
   TC: 'tsuchiura',
+  UT: 'utsunomiya', // 宇都宮線(見せるのは、utLine.ts のスイッチが入ってから)
 };
 
 const DAY = 86400;
@@ -152,6 +154,13 @@ const loadOnce = <T>(file: string): Promise<T> => {
   return p;
 };
 
+// 路線の一覧(master.json)。宇都宮線は、見せないあいだは、一覧に入れない(読むのは、4路線の master.json のまま。念のため、UT を取り除く)
+const loadMaster = async (): Promise<Master> => {
+  const master = await loadOnce<Master>(isUtLaunched() ? MASTER_UT_FILE : MASTER_FILE);
+  if (isUtLaunched()) return master;
+  return Object.fromEntries(Object.entries(master).filter(([code]) => code !== UT_CODE));
+};
+
 export interface BoardLine {
   code: string;
   master: MasterLine;
@@ -176,7 +185,7 @@ export const loadBoardData = async (stationName: string): Promise<BoardData> => 
   const cached = boardCache.get(name);
   if (cached) return cached;
 
-  const master = await loadOnce<Master>('master.json');
+  const master = await loadMaster();
   await ensureCrowd();
   const lines: BoardLine[] = [];
   for (const [code, cfg] of Object.entries(master)) {
@@ -360,7 +369,7 @@ export const loadLineData = async (code: string): Promise<LineData> => {
 const loadOneLine = async (code: string): Promise<LineData> => {
   const cached = lineCache.get(code);
   if (cached) return cached;
-  const master = await loadOnce<Master>('master.json');
+  const master = await loadMaster();
   await ensureCrowd();
   const found = master[code];
   if (!found) throw new Error(`路線が見つかりません (${code})`);
@@ -878,7 +887,7 @@ export interface MasterSummary {
   stations: [string, number][];
 }
 export const loadMasterSummary = async (): Promise<Record<string, MasterSummary>> => {
-  const master = await loadOnce<Master>('master.json');
+  const master = await loadMaster();
   const out: Record<string, MasterSummary> = {};
   Object.entries(master).forEach(([code, cfg]) => {
     out[code] = { name: cfg.name, loop: cfg.loop, stations: cfg.stations.map(([n, km]) => [n, km] as [string, number]) };
@@ -887,7 +896,7 @@ export const loadMasterSummary = async (): Promise<Record<string, MasterSummary>
 };
 
 export const loadTimetableLines = async (): Promise<TimetableLine[]> => {
-  const master = await loadOnce<Master>('master.json');
+  const master = await loadMaster();
   // アプリ内の路線の並び(神埼線・神埼高速線・埼千環状線・土浦線)にそろえる
   const order = Object.keys(LINE_IDS);
   return Object.entries(master)
@@ -901,7 +910,7 @@ export const loadTimetableLines = async (): Promise<TimetableLine[]> => {
 };
 
 export const loadStationTimetable = async (lineCode: string, stationIdx: number): Promise<StationTimetable> => {
-  const master = await loadOnce<Master>('master.json');
+  const master = await loadMaster();
   const cfg = master[lineCode];
   if (!cfg || !cfg.stations[stationIdx]) throw new Error('駅が見つかりません');
   const [trains, file] = await Promise.all([

@@ -3,6 +3,7 @@
 import { EXPRESS_TYPES, ExpressKey, getTripDistanceKm, loadExpressData, loadLineData, LineData } from './diaTimetable';
 import { loadRouteStations } from './routeSearch';
 import { RideRecord } from './cloudAccount';
+import { visibleLineCodes } from './utLine';
 
 export const RANKS = [
   { name: 'レギュラー', km: 0 },
@@ -32,7 +33,8 @@ export interface Mileage {
   log: RideLog[]; // 新しい順
 }
 
-const LINE_CODES = ['Y', 'NI', 'SC', 'TC'];
+// 宇都宮線(UT)は、utLine.ts のスイッチが入るまで、入れない
+const ALL_LINE_CODES = ['Y', 'NI', 'SC', 'TC', 'UT'];
 
 const stripEki = (name: string) => name.replace(/駅$/, '').trim();
 
@@ -53,6 +55,7 @@ export const rankFor = (totalKm: number) => {
 
 export const computeMileage = async (rides: RideRecord[]): Promise<Mileage> => {
   const lines: Record<string, LineData> = {};
+  const LINE_CODES = visibleLineCodes(ALL_LINE_CODES);
   for (const code of LINE_CODES) lines[code] = await loadLineData(code);
   // 特急は、直通(めぐり: 東京〜日立)なら、2つの路線をつないだデータで、営業キロを通しで求める
   const expressKeys = Object.keys(EXPRESS_TYPES) as ExpressKey[];
