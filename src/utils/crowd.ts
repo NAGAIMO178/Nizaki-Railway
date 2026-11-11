@@ -1,5 +1,6 @@
 // 混雑予報(NIZAKI 2.0。公開後だけ)の、データの読み込みと、混雑レベルの決まり。
 // データは tools/crowd-sim/sim.py が作った public/data/crowd-2/(仮想の住民による、模擬の混雑)。
+import { isUtLaunched, UT_CODE } from './utLine';
 
 export type CrowdDay = 'wd' | 'we'; // 平日 / 土休日
 
@@ -56,7 +57,9 @@ const loadOnce = <T>(file: string): Promise<T> => {
 
 const trainCache = new Map<CrowdDay, CrowdTrains>();
 export const loadCrowdTrains = async (day: CrowdDay): Promise<CrowdTrains> => {
-  const data = await loadOnce<CrowdTrains>(`train_${day}.json`);
+  const raw = await loadOnce<CrowdTrains>(`train_${day}.json`);
+  // 宇都宮線(UT)の混雑は、見せないあいだは、使わない(utLine.ts のスイッチが入るまで)
+  const data: CrowdTrains = isUtLaunched() ? raw : Object.fromEntries(Object.entries(raw).filter(([code]) => code !== UT_CODE));
   trainCache.set(day, data);
   return data;
 };

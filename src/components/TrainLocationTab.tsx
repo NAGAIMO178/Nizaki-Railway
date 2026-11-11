@@ -11,6 +11,7 @@ import { useDragToDismiss } from '../utils/useDragToDismiss';
 import { isLaunched } from '../utils/launch';
 import { trainIconCenter, isCompactTrainIcons, COMPACT_SCALE } from '../utils/trainIconLayout';
 import { crowdInfo, loadAllCrowdTrains } from '../utils/crowd';
+import { isUtLaunched } from '../utils/utLine';
 import { THROUGH_STYLE, throughLineAt, trainThrough } from '../utils/throughLine';
 import { pinHeight, TrainPin } from './TrainPin';
 
@@ -123,7 +124,7 @@ export const getTrainTypeBadgeStyle = (trainType: string): { bg: string; text: s
 };
 
 // 4 Lines Data according to spec
-export const LINES_DATA: DisplayLine[] = [
+const BASE_LINES_DATA: DisplayLine[] = [
   {
     id: 'kanzaki',
     name: '神埼線',
@@ -240,12 +241,49 @@ export const LINES_DATA: DisplayLine[] = [
   },
 ];
 
+// 宇都宮線(UT。大宮〜高根沢)。見せるのは、utLine.ts のスイッチが入ってから(それまでは、タブにも、乗換駅の「UT」にも出ない)
+const UT_LINE: DisplayLine = {
+  id: 'utsunomiya',
+  name: '宇都宮線',
+  code: 'UT',
+  color: '#F97316',
+  direction1: '宇都宮・高根沢方面',
+  direction2: '大宮方面',
+  stations: [
+    { id: 'UT01', code: 'UT01', name: '大宮', transfers: ['Y', 'SC', 'JR', '新幹線', '東武', 'ニューシャトル'] },
+    { id: 'UT02', code: 'UT02', name: '羽貫' },
+    { id: 'UT03', code: 'UT03', name: '加須' },
+    { id: 'UT04', code: 'UT04', name: '古賀' },
+    { id: 'UT05', code: 'UT05', name: '八俣' },
+    { id: 'UT06', code: 'UT06', name: '下妻' },
+    { id: 'UT07', code: 'UT07', name: '騰波ノ江' },
+    { id: 'UT08', code: 'UT08', name: '新治' },
+    { id: 'UT09', code: 'UT09', name: '栃木県総合運動公園' },
+    { id: 'UT10', code: 'UT10', name: '群馬製作所' },
+    { id: 'UT11', code: 'UT11', name: '宇都宮' },
+    { id: 'UT12', code: 'UT12', name: '清原' },
+    { id: 'UT13', code: 'UT13', name: '高根沢' },
+  ],
+};
+
+export const LINES_DATA: DisplayLine[] = isUtLaunched()
+  ? [
+      // 大宮は、宇都宮線の乗換駅にもなる
+      ...BASE_LINES_DATA.map((l) => ({
+        ...l,
+        stations: l.stations.map((st) => (st.name === '大宮' ? { ...st, transfers: [...(st.transfers ?? []), 'UT'] } : st)),
+      })),
+      UT_LINE,
+    ]
+  : BASE_LINES_DATA;
+
 // 表示する路線と、ダイヤ(master.json)の路線コードの対応
 const DIA_LINE_CODES: Record<string, string> = {
   kanzaki: 'Y',
   kanzaki_kosoku: 'NI',
   saichi_loop: 'SC',
   tsuchiura: 'TC',
+  utsunomiya: 'UT',
 };
 
 export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReservation, reselectKey = 0 }) => {
