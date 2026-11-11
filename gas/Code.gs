@@ -139,9 +139,34 @@ function doPost(e) {
 
     return createJsonResponse({ status: 'ignored' });
   } catch (err) {
-    Logger.log('doPost Error: ' + err.toString());
-    return createJsonResponse({ status: 'error', message: err.toString() });
+    // 例外の中身(関数名・例外の文・スタック)は、利用者に返さない。決まった短い文だけ返し、原因は、ログに残す
+    return internalErrorResponse('doPost', err);
   }
+}
+
+// 予期しない例外のときに返す、決まった文。アプリは status と message を見る
+// (「混み合っています」を含めない: アプリは、その文のときだけ、送り直す。予期しない例外は、送り直しても直らない)
+const INTERNAL_ERROR_MESSAGE = 'うまく処理できませんでした。しばらくしてからもう一度お試しください。';
+
+// 例外の「種類」と、コードの場所(スタックの「at …」の行)だけをログに残す。
+// 例外の文には、送られた値(メール・パスワードなど)が入ることがあるので、残さない
+function logInternalError(where, err) {
+  let name = 'Error';
+  let frames = '';
+  try {
+    name = err && err.name ? String(err.name).slice(0, 40) : 'Error';
+    frames = err && err.stack
+      ? String(err.stack).split('\n').filter(function (l) { return /^\s*at /.test(l); }).slice(0, 3).map(function (l) { return l.trim(); }).join(' | ')
+      : '';
+  } catch (ignored) {
+    // ログのために、さらに失敗しない
+  }
+  Logger.log(where + ': ' + name + (frames ? ' @ ' + frames : ''));
+}
+
+function internalErrorResponse(where, err) {
+  logInternalError(where, err);
+  return createJsonResponse({ status: 'error', code: 'server_error', message: INTERNAL_ERROR_MESSAGE });
 }
 
 /**
@@ -166,7 +191,7 @@ function getDataSpreadsheet() {
     try {
       return SpreadsheetApp.openById(savedId);
     } catch (err) {
-      Logger.log('保存済みスプレッドシートIDが無効です。新規作成します: ' + err.toString());
+      logInternalError('保存済みスプレッドシートIDが無効です。新規作成します', err);
     }
   }
 
@@ -287,7 +312,7 @@ function handleReservationInquiry(replyToken, userId, text) {
     replyToLine(replyToken, [{ type: 'text', text: replyText }]);
 
   } catch (err) {
-    Logger.log('予約照会エラー: ' + err.toString());
+    logInternalError('予約照会エラー', err);
     replyToLine(replyToken, [{ type: 'text', text: '予約照会処理中にエラーが発生しました。' }]);
   }
 }
@@ -359,7 +384,7 @@ function getStoredDisruptionsData() {
       });
       return { disruptions: disruptions, forecasts: forecasts };
     } catch (err) {
-      Logger.log('運行支障データの解析に失敗: ' + err.toString());
+      logInternalError('運行支障データの解析に失敗', err);
     }
   }
   return { disruptions: {}, forecasts: [] };
@@ -462,7 +487,7 @@ function replyToLine(replyToken, messages) {
       console.error('[LINE返信失敗] status=' + code + ' ' + String(res.getContentText()).slice(0, 300));
     }
   } catch (err) {
-    console.error('[LINE返信失敗] ' + err);
+    logInternalError('[LINE返信失敗]', err);
   }
 }
 
@@ -498,7 +523,7 @@ function logCouponIssue(userId, course) {
       'キーワード受信'
     ]);
   } catch (err) {
-    Logger.log('クーポンログ記録エラー: ' + err.toString());
+    logInternalError('クーポンログ記録エラー', err);
   }
 }
 
