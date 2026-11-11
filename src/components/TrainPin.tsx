@@ -13,16 +13,28 @@ const PERSON_H = 9.8; // 人アイコンの高さ(px)
 // (同じ場所に並ぶ列車で、本体の上端・下端がそろうように。混雑データが無いときは、人アイコンの場所を空けておく)
 export const PIN_BODY_H = TIP + 1 + BAND_H + 3 + ICON_H + 3 + PERSON_H;
 
-// 本体の外に浮かせる札(遅れ・通過)の高さ(px。間の余白を含む)
-export const DELAY_BADGE_H = 11 + 2;
-export const PASSING_BADGE_H = 10 + 2;
-export const pinFloatHeight = (opts: { delayed: boolean; passing: boolean }): number => (opts.delayed ? DELAY_BADGE_H : 0) + (opts.passing ? PASSING_BADGE_H : 0);
+// 本体の外に浮かせる札(遅れ・通過)。札と本体のあいだのすき間は 5px、遅れと通過の札のあいだは 2px
+export const DELAY_BADGE_H = 11;
+export const PASSING_BADGE_H = 10;
+export const FLOAT_GAP = 5; // 浮かせる札と、本体のあいだ(px)
+export const FLOAT_STACK_GAP = 2; // 遅れの札と通過の札のあいだ(px)
+export const pinFloatHeight = (opts: { delayed: boolean; passing: boolean }): number =>
+  !opts.delayed && !opts.passing
+    ? 0
+    : (opts.delayed ? DELAY_BADGE_H : 0) + (opts.passing ? PASSING_BADGE_H : 0) + (opts.delayed && opts.passing ? FLOAT_STACK_GAP : 0) + FLOAT_GAP;
 
 // 路線図で、札が重ならないために取る高さ(px)。本体を、列の中心に置くので、浮かせる札のぶんを、本体の両側に取る
 export const pinHeight = (opts: { delayed: boolean; passing: boolean }): number => PIN_BODY_H + 2 * pinFloatHeight(opts);
 
-// 帯の字の大きさ(px)。4文字までは9px、それより長いときは、幅(38px)に収まるまで小さくする
-export const bandFontSize = (label: string): number => (label.length <= 4 ? 9 : Math.floor((34 / label.length) * 10) / 10);
+// 束ね札(同じ場所に3本以上)。後ろにずらして見せる札の枚数(本数−1。最大5枚)と、1枚ごとのずらし(左へ・下へ、px)
+export const BUNDLE_MAX_BACK = 5;
+export const BUNDLE_STEP = 4;
+export const bundleBackLayers = (total: number): number => Math.max(0, Math.min(total - 1, BUNDLE_MAX_BACK));
+// 束ね札の高さ(px。重ならない高さの計算用): 先頭の札の高さ + ずらした札が、本体の外へはみ出すぶん(両側)
+export const bundleHeight = (head: { delayed: boolean; passing: boolean }, total: number): number => pinHeight(head) + 2 * BUNDLE_STEP * bundleBackLayers(total);
+
+// 帯の字の大きさ(px)。帯の字は、3文字まで(あやみ・めぐり)で、9px で幅(38px)に収まる。それより長いときは、収まるまで小さくする(知らない種別のための備え)
+export const bandFontSize = (label: string): number => (label.length <= 3 ? 9 : Math.floor((34 / label.length) * 10) / 10);
 
 const Person: React.FC<{ color: string }> = ({ color }) => (
   <svg width="7" height="9.8" viewBox="0 0 10 14" aria-hidden="true">
@@ -38,9 +50,10 @@ interface TrainPinProps {
   delayMinutes: number;
   passing: boolean;
   crowd?: number; // いまの混雑(1〜5)。なければ、人アイコンは出さない
+  floatOffset?: number; // 浮かせる札を、本体からさらに離す距離(px)。束ね札で、後ろの札のはみ出しをよけるため
 }
 
-export const TrainPin: React.FC<TrainPinProps> = ({ label, color, direction, delayMinutes, passing, crowd }) => {
+export const TrainPin: React.FC<TrainPinProps> = ({ label, color, direction, delayMinutes, passing, crowd, floatOffset = 0 }) => {
   const down = direction === 1;
   const info = crowd ? crowdInfo(crowd) : undefined;
 
@@ -91,8 +104,8 @@ export const TrainPin: React.FC<TrainPinProps> = ({ label, color, direction, del
   );
   const floats = delayBadge || passBadge ? (
     <div
-      className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center gap-0.5 pointer-events-auto"
-      style={down ? { bottom: '100%', marginBottom: 2 } : { top: '100%', marginTop: 2 }}
+      className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-auto"
+      style={{ gap: FLOAT_STACK_GAP, ...(down ? { bottom: '100%', marginBottom: FLOAT_GAP + floatOffset } : { top: '100%', marginTop: FLOAT_GAP + floatOffset }) }}
     >
       {down ? (
         <>
@@ -127,6 +140,29 @@ export const TrainPin: React.FC<TrainPinProps> = ({ label, color, direction, del
             </>
           )}
         </div>
+      </div>
+    </div>
+  );
+};
+
+// 束ね札(同じ場所に3本以上): 先頭(いちばん優等)の札を前に、後ろに「本数−1」枚(最大5枚)の札を、左下へずらして重ねる。数字は出さない。
+// 大きさは、1本のときと同じ(幅38px・本体の高さ PIN_BODY_H)。後ろの札の遅れ・通過の札は出さない
+export const TrainPinBundle: React.FC<{ pins: TrainPinProps[] }> = ({ pins }) => {
+  const back = bundleBackLayers(pins.length);
+  const head = pins[0];
+  return (
+    <div className="relative pointer-events-none" style={{ width: PIN_WIDTH, height: PIN_BODY_H }}>
+      {Array.from({ length: back }, (_, k) => back - k).map((i) => {
+        const b = pins[Math.min(i, pins.length - 1)];
+        return (
+          <div key={i} className="absolute" style={{ left: -BUNDLE_STEP * i, top: BUNDLE_STEP * i, zIndex: 10 - i }}>
+            <TrainPin label={b.label} color={b.color} direction={b.direction} delayMinutes={0} passing={false} crowd={b.crowd} />
+          </div>
+        );
+      })}
+      <div className="absolute left-0 top-0" style={{ zIndex: 20 }}>
+        {/* 先端が上の札は、後ろの札が下へはみ出すので、浮かせる札(本体の下)を、そのぶん離す */}
+        <TrainPin {...head} floatOffset={head.direction === 2 ? BUNDLE_STEP * back : 0} />
       </div>
     </div>
   );

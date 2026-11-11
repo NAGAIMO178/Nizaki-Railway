@@ -1,9 +1,10 @@
-import React from 'react';
-import { ChevronRight, Clock, User, Users } from 'lucide-react';
+import React, { useState } from 'react';
+import { ChevronDown, ChevronRight, ChevronUp, Clock, User, Users } from 'lucide-react';
 import type { LiveTrainPos } from './TrainLocationTab';
 import { CROWD_LEVELS, CROWD_MAX_LEVEL, crowdInfo } from '../utils/crowd';
 import { isLaunched } from '../utils/launch';
 import { THROUGH_STYLE } from '../utils/throughLine';
+import { typeStyleOf } from '../utils/trainTypeStyle';
 import { normalizeStationName } from '../utils/diaTimetable';
 
 // 列車の詳細(公開後の新しい画面。列車位置で列車を押すと出るシートの中身)。
@@ -19,14 +20,6 @@ const TrainIcon: React.FC<{ className?: string }> = ({ className }) => (
     <rect x="16" y="24" width="3" height="3" rx="0.5" fill="#1E293B" />
   </svg>
 );
-
-const typeBadgeBg = (trainType: string): string => {
-  if (trainType === '快速' || trainType === '区間快速') return 'bg-sky-600';
-  if (trainType === '急行' || trainType === '通勤特快') return 'bg-rose-600';
-  if (trainType === '特別快速') return 'bg-amber-600';
-  if (trainType.includes('特急') || trainType.includes('めぐり') || trainType.includes('Nライナー') || trainType.includes('あやみ')) return 'bg-purple-700';
-  return 'bg-slate-600';
-};
 
 const PeopleMeter: React.FC<{ level: number }> = ({ level }) => {
   const info = crowdInfo(level);
@@ -45,9 +38,15 @@ interface TrainDetailV2Props {
   onOpenLine?: (lineId: string) => void; // 直通先の札を押したとき、その路線の列車位置へ
   onOpenReservation?: () => void;
   contentRef?: React.Ref<HTMLDivElement>;
+  // 束ねた札から、複数の列車のカードを縦に並べるとき(外側のシートがスクロールするので、このカードは、自分ではスクロールしない)
+  embedded?: boolean;
+  // 「停車駅情報」を、押して開け閉めできるようにする(束ねた札のカードで使う)と、はじめに開いているか
+  collapsibleStops?: boolean;
+  stopsDefaultOpen?: boolean;
 }
 
-export const TrainDetailV2: React.FC<TrainDetailV2Props> = ({ train, lineName, onOpenLine, onOpenReservation, contentRef }) => {
+export const TrainDetailV2: React.FC<TrainDetailV2Props> = ({ train, lineName, onOpenLine, onOpenReservation, contentRef, embedded, collapsibleStops, stopsDefaultOpen = true }) => {
+  const [stopsOpen, setStopsOpen] = useState(stopsDefaultOpen);
   const delayed = train.delayMinutes > 0;
   const rows = train.rows ?? [];
   const through = train.through;
@@ -61,7 +60,7 @@ export const TrainDetailV2: React.FC<TrainDetailV2Props> = ({ train, lineName, o
   const card = 'bg-[#F9F8FD] rounded-xl border border-[#E6E2EE] overflow-hidden';
 
   return (
-    <div ref={contentRef} className="max-h-[62vh] overflow-y-auto overscroll-contain -mx-1 px-1 space-y-3">
+    <div ref={contentRef} className={embedded ? 'space-y-3' : 'max-h-[62vh] overflow-y-auto overscroll-contain -mx-1 px-1 space-y-3'}>
       {/* 見出しの帯: 有料の特急は列車名、ほかは路線名(路線の色は、小さな丸) */}
       <div className="rounded-xl bg-[#5B21B6] text-white px-3.5 py-2 text-sm font-black flex items-center gap-2 shadow-xs">
         {train.paid && train.expressBand ? (
@@ -80,7 +79,7 @@ export const TrainDetailV2: React.FC<TrainDetailV2Props> = ({ train, lineName, o
           <TrainIcon className="w-7 h-8 shrink-0" />
           <div className="min-w-0 space-y-0.5">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span className={`text-xs font-bold px-2.5 py-0.5 rounded-md text-white ${typeBadgeBg(train.trainType)}`}>{typeText}</span>
+              <span className={`text-xs font-bold px-2.5 py-0.5 rounded-md text-white ${typeStyleOf(train.trainType).solid}`}>{typeText}</span>
               {delayed ? (
                 <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-amber-500 text-white border border-amber-600 whitespace-nowrap shadow-2xs">
                   [+{train.delayMinutes}分遅れ]
@@ -137,12 +136,23 @@ export const TrainDetailV2: React.FC<TrainDetailV2Props> = ({ train, lineName, o
 
       {/* これから通る駅 */}
       <div className={card}>
-        <div className={cardHead}>
-          <Clock className="w-4 h-4" />
-          <span>停車駅情報</span>
-          {showPlatform && <span className="ml-auto">番線</span>}
-        </div>
-        {rows.length === 0 ? (
+        {collapsibleStops ? (
+          <button type="button" onClick={() => setStopsOpen((v) => !v)} aria-expanded={stopsOpen} className={`${cardHead} w-full text-left cursor-pointer ${stopsOpen ? '' : 'border-b-0'}`}>
+            <Clock className="w-4 h-4" />
+            <span>停車駅情報</span>
+            <span className="ml-auto flex items-center gap-1">
+              {showPlatform && stopsOpen && <span>番線</span>}
+              {stopsOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </span>
+          </button>
+        ) : (
+          <div className={cardHead}>
+            <Clock className="w-4 h-4" />
+            <span>停車駅情報</span>
+            {showPlatform && <span className="ml-auto">番線</span>}
+          </div>
+        )}
+        {!collapsibleStops || stopsOpen ? (rows.length === 0 ? (
           <div className="p-3 text-center text-xs font-bold text-[#857D99]">まもなく終点に到着します</div>
         ) : (
           rows.map((row, i) => (
@@ -191,7 +201,7 @@ export const TrainDetailV2: React.FC<TrainDetailV2Props> = ({ train, lineName, o
               )}
             </div>
           ))
-        )}
+        )) : null}
       </div>
     </div>
   );

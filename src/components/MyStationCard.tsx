@@ -8,6 +8,7 @@ import type { BoardData, BoardResult } from '../utils/diaTimetable';
 import { isLaunched } from '../utils/launch';
 import { platformLabel } from '../utils/platform';
 import { crowdInfo } from '../utils/crowd';
+import { typeStyleOf } from '../utils/trainTypeStyle';
 
 interface MyStationCardProps {
   registeredStations: RegisterableStation[];
@@ -32,52 +33,8 @@ export interface DynamicDeparture {
   crowd?: number;         // 今の混雑の目安(1〜5。この駅を出た直後の区間。公開後で、データがあるときだけ)
 }
 
-// 種別ごとの指定カラーを取得する関数 (浮かない洗練されたトーン＆マナー)
-const getTrainTypeBadgeStyle = (trainType: string): { bg: string } => {
-  if (trainType === '各停(遠距離)') {
-    return {
-      bg: 'bg-teal-50 text-teal-900 border border-teal-300',
-    };
-  }
-  if (trainType === '各停' || trainType === '普通' || trainType === '各停(近距離)') {
-    return {
-      bg: 'bg-slate-100 text-slate-800 border border-slate-300',
-    };
-  }
-  if (trainType === '区間快速' || trainType === '区間急行' || trainType === '区快') {
-    return {
-      bg: 'bg-emerald-50 text-emerald-900 border border-emerald-300',
-    };
-  }
-  if (trainType === '快速') {
-    return {
-      bg: 'bg-sky-50 text-sky-900 border border-sky-300',
-    };
-  }
-  if (trainType === '急行') {
-    return {
-      bg: 'bg-orange-50 text-orange-900 border border-orange-300',
-    };
-  }
-  if (trainType === '特別快速' || trainType === '特快') {
-    return {
-      bg: 'bg-amber-50 text-amber-950 border border-amber-300',
-    };
-  }
-  if (trainType === '通勤特快' || trainType === '通特') {
-    return {
-      bg: 'bg-rose-100 text-rose-950 border border-rose-300',
-    };
-  }
-  if (trainType.includes('特急') || trainType.includes('めぐり') || trainType.includes('Nライナー') || trainType.includes('サークル')) {
-    return {
-      bg: 'bg-purple-100 text-purple-950 border border-purple-300 font-extrabold',
-    };
-  }
-  return {
-    bg: 'bg-slate-100 text-slate-800 border border-slate-300',
-  };
-};
+// 種別ごとの色は、1か所の表(trainTypeStyle.ts)から取る。列車位置・列車の詳細と、同じ色になる
+const getTrainTypeBadgeStyle = (trainType: string): { bg: string } => ({ bg: typeStyleOf(trainType).soft });
 
 // 路線識別バッジスタイル取得関数 (神埼線・神埼高速線・埼千環状線・土浦線)
 const getLineBadgeStyle = (lineName: string): { bg: string; text: string; border: string } => {

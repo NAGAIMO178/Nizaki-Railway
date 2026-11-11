@@ -1,18 +1,24 @@
-// 列車位置の路線図で、同じ駅・駅間にいる列車(左側の列車の絵と「通過」などの札)を、横に並べる位置。
-// 線路は X=-24px、駅の丸は -31px にあるので、列車は -36px より左に置く。画面の左端で札が切れないよう、左端は -112px を超えない。
-export const TRAIN_ICON_RIGHTMOST = -56;
-export const TRAIN_ICON_LEFT_LIMIT = -112;
-export const COMPACT_SCALE = 0.6; // 3編成以上のときの、札(幅38px)の大きさ
+// 列車位置の路線図で、同じ駅・駅間にいる列車(左側の札)の並べ方。
+//  - 1本・2本: 横に並べる(線路は X=-24px、駅の丸は -31px にあるので、札(幅38px)は、右端が -36px より左になるように置く)。
+//  - 3本以上: 札を1枚に束ねる(後ろにずらした札で、本数を表す。TrainPin.tsx の TrainPinBundle)。小さくして並べることは、しない。
+export const BUNDLE_MIN_TRAINS = 3;
 
-// 3編成以上のときの間隔(最大26px。本数が増えるほどせばめる)
-export const trainIconStep = (total: number): number => Math.min(26, Math.floor((TRAIN_ICON_RIGHTMOST - TRAIN_ICON_LEFT_LIMIT) / (total - 1)));
+// 3本以上なら、束ねる
+export const isBundle = (total: number): boolean => total >= BUNDLE_MIN_TRAINS;
 
-// total 本のうち index 番目(0が最優等)の、中心の X(px)。1本・2本は、これまでどおり
+// total 本のうち index 番目(0が最優等)の、中心の X(px)。1本・束ねた札は -62、2本は左右(最優等が左)
 export const trainIconCenter = (total: number, index: number): number => {
-  if (total <= 1) return -62;
   if (total === 2) return index === 0 ? -98 : -56;
-  return TRAIN_ICON_RIGHTMOST - (total - 1 - index) * trainIconStep(total);
+  return -62;
 };
 
-// 3編成以上のときは、札と列車の絵を小さくする
-export const isCompactTrainIcons = (total: number): boolean => total > 2;
+// 優等度(大きいほど優等): 特急・めぐり・スカイ > 通勤特快・特別快速 > 快速・急行 > 準急・区間快速 > 各停・普通。
+// 同じ場所の列車は、優等な順に並べる(2本は優等が左。束ねた札は、先頭が最も優等)
+export const trainRank = (trainType: string): number => {
+  if (trainType.includes('特急') || trainType.includes('めぐり') || trainType.includes('スカイ') || trainType.includes('ライナー')) return 10;
+  if (trainType.includes('通勤特快') || trainType.includes('特別快速') || trainType.includes('特快') || trainType.includes('快特')) return 8;
+  // 区間快速は、「快速」の字を含むので、先に調べる(快速より、劣る)
+  if (trainType.includes('準急') || trainType.includes('区間快速')) return 4;
+  if (trainType.includes('通勤快速') || trainType.includes('快速') || trainType.includes('急行')) return 5;
+  return 1; // 各駅停車・普通
+};
