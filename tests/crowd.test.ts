@@ -52,8 +52,8 @@ describe('混雑の段階の区切り', () => {
 
   it('混雑データ(平日・休日)の区間の数。段階は、1〜5(6は0件)。宇都宮線のキーも入っている', () => {
     const expected: Record<string, Record<string, number>> = {
-      'train_wd.json': { '1': 18285, '2': 366, '3': 18, '4': 8, '5': 4 },
-      'train_we.json': { '1': 18532, '2': 148, '3': 1 },
+      'train_wd.json': { '1': 17504, '2': 1091, '3': 55, '4': 28, '5': 3 },
+      'train_we.json': { '1': 18072, '2': 579, '3': 24, '4': 6 },
     };
     for (const [file, want] of Object.entries(expected)) {
       const d = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'public', 'data', 'crowd-2', file), 'utf-8')) as Record<string, Record<string, string>>;
@@ -62,5 +62,13 @@ describe('混雑の段階の区切り', () => {
       for (const line of Object.values(d)) for (const s of Object.values(line)) for (const ch of s) count[ch] = (count[ch] ?? 0) + 1;
       expect(count, file).toEqual(want);
     }
+  });
+
+  it('混雑を作る sim.py の既定の倍率が、いまの混雑データを作った値(何も指定しなくても、同じ結果になる)', () => {
+    const sim = fs.readFileSync(path.resolve(__dirname, '..', 'tools', 'crowd-sim', 'sim.py'), 'utf-8');
+    expect(/^DEMAND = float\(os\.environ\.get\("DEMAND", 0\.7\)\)/m.test(sim)).toBe(true);
+    const m = /^LINE_DEMAND = (\{[^}]*\})/m.exec(sim);
+    expect(m).not.toBeNull();
+    expect(JSON.parse(m![1])).toEqual({ NI: 2.1, Y: 1.75, SC: 0.65, TC: 1.8, UT: 2.86 });
   });
 });

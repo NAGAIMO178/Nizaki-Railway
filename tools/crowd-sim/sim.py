@@ -7,12 +7,17 @@ import bisect, csv, collections, json, math, os, random, sys, time
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 DIA = os.path.join(ROOT, "public", "data", "dia-2")
-OUT = os.path.join(ROOT, "public", "data", "crowd-2")
+OUT = os.environ.get("CROWD_OUT", os.path.join(ROOT, "public", "data", "crowd-2"))   # 書き出し先(確認用に、別の場所へ出せる)
 
 # ---------------- 設定(結果を見て調整する数字) ----------------
 N_AGENTS = int(os.environ.get("N_AGENTS", 60000))   # 仮想住民の数(1人が、何人分かは、乗降客数に合わせて自動で決める)
 SEED = 20261101
-DEMAND = float(os.environ.get("DEMAND", 2.0))   # 乗降客数の倍率(列車の数に対する、混み具合の調整)
+DEMAND = float(os.environ.get("DEMAND", 0.7))   # 乗降客数の倍率(列車の数に対する、混み具合の調整)
+LINE_NAME = {"神埼高速線": "NI", "神埼線": "Y", "埼千環状線": "SC", "土浦線": "TC", "宇都宮線": "UT"}
+# 路線ごとの倍率(DEMAND にかけ算)。何も指定しなくても、いまの混雑データ(public/data/crowd-2)と同じ結果になる値。
+# 環境変数 LINE_DEMAND='{"NI":1.2,...}' で変える。書かない路線は 1.0
+LINE_DEMAND = {"NI": 2.1, "Y": 1.75, "SC": 0.65, "TC": 1.8, "UT": 2.86}
+LINE_DEMAND.update(json.loads(os.environ.get("LINE_DEMAND", "{}")))
 STATIONS_FILE = os.environ.get("STATIONS", "stations.csv")   # 乗降客数の表(stations.csv=中堅級 / stations_large.csv=大手級)
 MIN_TRANSFER = 150          # 乗換に要する最小の秒数
 HORIZON = 3 * 3600 + 1800   # 1回の探索で、先を見る時間
@@ -38,11 +43,15 @@ TOURIST = {"茨城空港": 4, "大洗": 4, "ひたちなか海浜公園": 5, "�
 
 
 def load():
-    master = json.load(open(os.path.join(DIA, "master.json"), encoding="utf-8"))
+    # 宇都宮線(UT)つきの路線一覧(master-ut.json)。公開で master.json に移したあとは、MASTER=master.json でよい
+    master = json.load(open(os.path.join(DIA, os.environ.get("MASTER", "master-ut.json")), encoding="utf-8"))
     trains = {c: json.load(open(os.path.join(DIA, f"{c}_trains.json"), encoding="utf-8")) for c in master}
     rows = list(csv.DictReader(open(os.path.join(HERE, STATIONS_FILE), encoding="utf-8-sig")))
     man = "1日の乗降客数(万人・概算)"
-    st = {r["駅"]: dict(target=float(r[man]) * 10000 * DEMAND, tier=r["格"]) for r in rows}
+    def fac(r):   # 乗換駅は、通る路線の倍率の平均
+        fs = [LINE_DEMAND.get(LINE_NAME[x], 1.0) for x in r["路線"].split("・") if x in LINE_NAME]
+        return sum(fs) / len(fs) if fs else 1.0
+    st = {r["駅"]: dict(target=float(r[man]) * 10000 * DEMAND * fac(r), tier=r["格"]) for r in rows}
     return master, trains, st
 
 
@@ -366,6 +375,12 @@ def write_outputs(master, T, names, scale, res):
                 worst.append((r, t["seg_line"][k], t["no"], t["type"], names[t["stops"][k]], names[t["stops"][k + 1]], hhmm(t["dep"][k])))
         worst.sort(reverse=True)
         report.append(f"[{label}] 区間ごとのレベル分布: " + ", ".join(f"L{k}={cnt[k]}" for k in range(1, 7)))
+        mx = {}
+        for ti, t in enumerate(T):
+            for k, r in enumerate(ratios[ti]):
+                c = t["seg_line"][k]
+                mx[c] = max(mx.get(c, 0), r)
+        report.append(f"[{label}] 路線ごとの最大: " + ", ".join(f"{c} {v * 100:.0f}%" for c, v in sorted(mx.items())))
         for r, line, no, ty, a, b, h in worst[:8]:
             report.append(f"  最混雑 {r * 100:.0f}%  {line} {no} {ty}  {h} {a}→{b}")
     print("\n".join(report))
