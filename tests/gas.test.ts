@@ -1,5 +1,6 @@
 // サーバー(gas/Code.gs)のポイントの台帳を、スプレッドシートの代わりの表を使って動かして、調べる。
 // Code.gs を、そのまま読み込んで、Google のサービス(シート・ロック・応答)だけを、作りものに差し替える。
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
@@ -721,6 +722,8 @@ describe('ログインの回数制限と入力の検査', () => {
       }),
     };
     gas.loginFailureKey = (email: string) => 'fail:' + email;
+    gas.currentPasswordIterations = () => 1000; // テストでは、計算を軽くする
+    gas.Utilities = { ...gas.Utilities, getUuid: () => 'new-salt' };
     gas.hashPassword = (pw: string, salt: string) => 'h(' + pw + ',' + salt + ')';
     gas.createSessionToken = (id: string) => 'tok-' + id;
     gas.findMemberByEmail = (email: string) => {
@@ -1563,5 +1566,230 @@ describe('予約番号の重なりにくさ', () => {
     expect(count.size).toBe(32);
     const mean = (4000 * ORDER_ID_RANDOM_LENGTH) / 32;
     for (const v of count.values()) expect(Math.abs(v - mean) / mean).toBeLessThan(0.15);
+  });
+});
+
+// ---- パスワードの保存方式: PBKDF2-HMAC-SHA256(v2)。古い方式(SHA-256を1回)は、ログイン成功で保存し直す ----
+describe('パスワードの保存方式(v2)', () => {
+  const HEAD = ['登録日時', 'メールアドレス', '会員ID', '表示名', 'パスワードソルト', 'パスワードハッシュ', 'ランク', '入会日', 'LINE_USER_ID'];
+  const PW = 'Abcd1!ef';
+  const EMAIL = 'taro@example.com';
+  let grid: unknown[][];
+  let cache: Record<string, string>;
+  let props: Record<string, string>;
+  let lockHeld: boolean;
+  let lockFails: boolean;
+  let hashCalls: Array<{ held: boolean; iterations: number }>;
+
+  const legacyHash = (pw: string, salt: string) => crypto.createHash('sha256').update(pw + ':' + salt, 'utf8').digest('hex');
+  const pbkdf2 = (pw: string, salt: string, n: number) =>
+    crypto.pbkdf2Sync(Buffer.from(pw, 'utf8'), Buffer.from(salt, 'utf8'), n, 32, 'sha256').toString('hex');
+  const stored = () => ({ salt: String(grid[1][4]), hash: String(grid[1][5]) });
+  const login = (pw: unknown = PW) => gas.handleLogin(EMAIL, pw);
+  const addMember = (salt: string, hash: string) => grid.push(['t', EMAIL, 'NZ-1', '太郎', salt, hash, 'レギュラー', '2026-10-01', '']);
+
+  beforeEach(() => {
+    grid = [[...HEAD]];
+    cache = {};
+    props = {};
+    lockHeld = false;
+    lockFails = false;
+    hashCalls = [];
+    const sheet = {
+      getDataRange: () => ({ getValues: () => grid.map((r) => [...r]) }),
+      appendRow: (r: unknown[]) => void grid.push([...r]),
+      getRange: (row: number, col: number) => ({ setValue: (v: unknown) => void (grid[row - 1][col - 1] = v) }),
+    };
+    gas.getDataSpreadsheet = () => ({ getSheetByName: (n: string) => (n === '会員台帳' ? sheet : null) });
+    gas.getOrCreateMembersSheet = () => sheet;
+    gas.CacheService = {
+      getScriptCache: () => ({
+        get: (k: string) => cache[k] ?? null,
+        put: (k: string, v: string) => void (cache[k] = v),
+        remove: (k: string) => void Reflect.deleteProperty(cache, k),
+      }),
+    };
+    gas.LockService = {
+      getScriptLock: () => ({
+        waitLock: () => {
+          if (lockFails) throw new Error('busy');
+          lockHeld = true;
+        },
+        releaseLock: () => void (lockHeld = false),
+      }),
+    };
+    gas.PropertiesService = { getScriptProperties: () => ({ getProperty: (k: string) => props[k] ?? '' }) };
+    let uuid = 0;
+    gas.Utilities = {
+      ...gas.Utilities,
+      getUuid: () => 'salt-' + ++uuid,
+      DigestAlgorithm: { SHA_256: 'sha256' },
+      Charset: { UTF_8: 'utf8' },
+      computeDigest: (_a: string, input: string) =>
+        Array.from(crypto.createHash('sha256').update(input, 'utf8').digest()).map((b) => (b > 127 ? b - 256 : b)),
+    };
+    gas.loginFailureKey = (email: string) => 'fail:' + email;
+    gas.createSessionToken = (id: string) => 'tok-' + id;
+    // 回数は軽くして、計算が、ロックの外で行われることを見張る
+    props.PASSWORD_HASH_ITERATIONS = '10000';
+    const real = vm.runInContext('pbkdf2Sha256Hex', gas) as (p: string, s: string, n: number) => string;
+    gas.pbkdf2Sha256Hex = (pw: string, salt: string, n: number) => {
+      hashCalls.push({ held: lockHeld, iterations: n });
+      return real(pw, salt, n);
+    };
+  });
+
+  it('PBKDF2-HMAC-SHA256 の計算が、標準の実装と一致する(短い・長い鍵・日本語・空・回数1・2・多数)', () => {
+    const cases: Array<[string, string, number]> = [
+      ['Abcd1!ef', 'salt-1', 1],
+      ['Abcd1!ef', 'salt-1', 2],
+      ['p'.repeat(100) + 'Aa1!', 'salt', 1000],
+      ['日本語のパスワードAa1!', 'ソルト', 777],
+      ['', 'x', 3],
+      ['a'.repeat(64), 's', 5],
+      ['a'.repeat(65), 's', 5],
+      ['x'.repeat(128), 'long-salt-' + 'y'.repeat(100), 10],
+    ];
+    const real = vm.runInContext('pbkdf2Sha256Hex', gas) as (p: string, s: string, n: number) => string;
+    cases.forEach(([p, s, n]) => expect(real(p, s, n), `${p.length}/${s.length}/${n}`).toBe(pbkdf2(p, s, n)));
+  });
+
+  it('保存する文字は v2$回数$ハッシュ。印つきかを見分けられる', () => {
+    expect(gas.hashPasswordV2(PW, 'salt-x', 10000)).toBe('v2$10000$' + pbkdf2(PW, 'salt-x', 10000));
+    const hex = 'a'.repeat(64);
+    expect(gas.isPasswordHashV2(`v2$100000$${hex}`)).toBe(true);
+    ['', hex, 'v1$1000$' + hex, 'v2$$' + hex, 'v2$100000$' + 'a'.repeat(63), 'v2$100000$' + 'A'.repeat(64), 'v2$10x$' + hex, legacyHash(PW, 's')].forEach((v) =>
+      expect(gas.isPasswordHashV2(v), v).toBe(false)
+    );
+  });
+
+  it('回数: 既定は10万回。スクリプトプロパティで、1万〜100万回の整数だけ変えられる', () => {
+    props = {};
+    expect(gas.currentPasswordIterations()).toBe(100000);
+    props.PASSWORD_HASH_ITERATIONS = '300000';
+    expect(gas.currentPasswordIterations()).toBe(300000);
+    ['9999', '1000001', '1.5', 'abc', '-5', '0'].forEach((v) => {
+      props.PASSWORD_HASH_ITERATIONS = v;
+      expect(gas.currentPasswordIterations(), v).toBe(100000);
+    });
+  });
+
+  const register = () => {
+    cache['line_otp_ABC234'] = JSON.stringify({ code: '123456', lineUserId: 'U1' });
+    return gas.handleVerifyLineAndRegister(EMAIL, PW, 'ABC234', '123456', undefined);
+  };
+
+  it('新しい登録は、新しい方式で保存される(会員ごとのソルト)。そのままログインできて、違うパスワードは通らない', () => {
+    expect(register().status).toBe('success');
+    const { salt, hash } = stored();
+    expect(hash).toBe('v2$10000$' + pbkdf2(PW, salt, 10000));
+    expect(login().status).toBe('success');
+    expect(login('Wrong1!x')).toMatchObject({ status: 'error' });
+    expect(login(PW + 'x')).toMatchObject({ status: 'error' });
+  });
+
+  it('古い方式の会員は、そのままログインでき、成功したとき、新しい方式で保存し直される(次のログインも通る)', () => {
+    addMember('old-salt', legacyHash(PW, 'old-salt'));
+    expect(login().status).toBe('success');
+    const { salt, hash } = stored();
+    expect(salt).not.toBe('old-salt');
+    expect(hash).toBe('v2$10000$' + pbkdf2(PW, salt, 10000));
+    expect(login().status).toBe('success');
+    expect(login('Wrong1!x')).toMatchObject({ status: 'error' });
+  });
+
+  it('古い方式の会員が間違えたときは、保存し直さない', () => {
+    addMember('old-salt', legacyHash(PW, 'old-salt'));
+    expect(login('Wrong1!x')).toMatchObject({ status: 'error' });
+    expect(stored()).toEqual({ salt: 'old-salt', hash: legacyHash(PW, 'old-salt') });
+  });
+
+  it('保存し直しは、いまの保存が、確かめたときと同じときだけ書く(その間に変わっていたら、書かない)', () => {
+    addMember('old-salt', legacyHash(PW, 'old-salt'));
+    expect(gas.upgradeMemberPassword(EMAIL, 'ほかの保存', { salt: 's', hash: 'h' })).toBe(false);
+    expect(stored().salt).toBe('old-salt');
+    expect(gas.upgradeMemberPassword('nobody@example.com', legacyHash(PW, 'old-salt'), { salt: 's', hash: 'h' })).toBe(false);
+  });
+
+  it('保存し直しのロックを取れなくても、ログインは通る(次のログインで、やり直す)', () => {
+    addMember('old-salt', legacyHash(PW, 'old-salt'));
+    const origUpgrade = gas.upgradeMemberPassword;
+    gas.upgradeMemberPassword = (...a: unknown[]) => {
+      lockFails = true; // 保存し直しのときだけ、ロックを取れない
+      try {
+        return origUpgrade(...a);
+      } finally {
+        lockFails = false;
+      }
+    };
+    expect(login().status).toBe('success');
+    expect(stored().salt).toBe('old-salt');
+    gas.upgradeMemberPassword = origUpgrade;
+    expect(login().status).toBe('success');
+    expect(stored().hash).toMatch(/^v2\$/);
+  });
+
+  it('ハッシュの計算は、ロックの外で行う(ログイン・失敗・存在しないメール・古い方式・登録)', () => {
+    addMember('old-salt', legacyHash(PW, 'old-salt'));
+    login();
+    login('Wrong1!x');
+    gas.handleLogin('nobody@example.com', PW);
+    gas.handleDeleteAccount('nobody@example.com', PW);
+    grid.length = 1;
+    register();
+    expect(hashCalls.length).toBeGreaterThanOrEqual(5);
+    expect(hashCalls.every((c) => !c.held)).toBe(true);
+  });
+
+  it('存在しないメールでも、会員がいるときと同じ回数の計算をする(時間の差で、会員の有無が分からない)', () => {
+    addMember('old-salt', legacyHash(PW, 'old-salt'));
+    const count = (fn: () => unknown) => {
+      hashCalls.length = 0;
+      fn();
+      return hashCalls.map((c) => c.iterations);
+    };
+    const none = count(() => gas.handleLogin('nobody@example.com', PW));
+    const legacyBad = count(() => login('Wrong1!x'));
+    const legacyOk = count(() => login());
+    const v2Bad = count(() => login('Wrong1!x'));
+    const v2Ok = count(() => login());
+    expect(none).toEqual([10000]);
+    [legacyBad, legacyOk, v2Bad, v2Ok].forEach((c) => expect(c).toEqual(none));
+  });
+
+  it('保存した回数で確かめる(あとで、回数を変えても、古い会員は、そのままログインできる)', () => {
+    addMember('s1', 'v2$20000$' + pbkdf2(PW, 's1', 20000));
+    props.PASSWORD_HASH_ITERATIONS = '50000';
+    expect(login().status).toBe('success');
+    expect(hashCalls.map((c) => c.iterations)).toEqual([20000]);
+    expect(stored().hash).toBe('v2$20000$' + pbkdf2(PW, 's1', 20000));
+  });
+
+  it('保存した回数が範囲の外(書き換えられた・小さすぎる・大きすぎる)なら、長い計算をせずに断る', () => {
+    ['v2$1$', 'v2$9999$', 'v2$1000001$', 'v2$99999999999$'].forEach((p, i) => {
+      grid.length = 1;
+      cache = {};
+      addMember('s', p + 'a'.repeat(64));
+      hashCalls.length = 0;
+      expect(login(), String(i)).toMatchObject({ status: 'error' });
+      expect(hashCalls.every((c) => c.iterations <= 10000)).toBe(true);
+    });
+  });
+
+  it('アカウント削除の確認も、間違いは断る(会員の行は、そのまま)', () => {
+    addMember('old-salt', legacyHash(PW, 'old-salt'));
+    expect(gas.handleDeleteAccount(EMAIL, 'Wrong1!x')).toMatchObject({ status: 'error' });
+    expect(grid.length).toBe(2);
+  });
+
+  it('パスワードを、ログに書かない(保存し直しが失敗したときも)', () => {
+    const logs: string[] = [];
+    gas.Logger = { log: (m: string) => void logs.push(String(m)) };
+    addMember('old-salt', legacyHash(PW, 'old-salt'));
+    gas.getOrCreateMembersSheet = () => {
+      throw new Error('boom ' + PW);
+    };
+    expect(login().status).toBe('success');
+    expect(logs.join('\n')).not.toContain(PW);
   });
 });
