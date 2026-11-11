@@ -14,14 +14,14 @@ export interface CrowdLevelInfo {
   icon: string; // 人のアイコンの色
 }
 
-// 5段階。乗車率は、定員を100%とした目安(tools/crowd-sim/sim.py の LEVELS と合わせる。データは6段階で出るが、5と6は、同じ「かなり混み合っています」)
+// 5段階。乗車率は、定員を100%とした目安(〜50/〜100/〜120/〜150/150%超。tools/crowd-sim/sim.py の LEVELS と合わせる。データは6段階で出るが、5と6は、同じ「かなり混み合っています」)
 export const CROWD_MAX_LEVEL = 5;
 export const CROWD_LEVELS: CrowdLevelInfo[] = [
   { level: 1, label: '座席に座れる程度です', short: '座れる', range: '〜50%', color: '#E4F4EC', text: '#2C6B4F', icon: '#3FA37A' },
   { level: 2, label: 'ゆったり立てる程度です', short: 'ゆったり', range: '〜100%', color: '#C9E9BF', text: '#3B6B2E', icon: '#7BBF5E' },
-  { level: 3, label: '少し混み合っています', short: 'やや混', range: '〜150%', color: '#FBE7A1', text: '#7A5A00', icon: '#E5B320' },
-  { level: 4, label: '肩がふれあう程度です', short: '混雑', range: '〜180%', color: '#FBBE7D', text: '#7A3F00', icon: '#F08A2C' },
-  { level: 5, label: 'かなり混み合っています', short: '大混雑', range: '180%超', color: '#F28B82', text: '#7A1E17', icon: '#E0554B' },
+  { level: 3, label: '少し混み合っています', short: 'やや混', range: '〜120%', color: '#FBE7A1', text: '#7A5A00', icon: '#E5B320' },
+  { level: 4, label: '肩がふれあう程度です', short: '混雑', range: '〜150%', color: '#FBBE7D', text: '#7A3F00', icon: '#F08A2C' },
+  { level: 5, label: 'かなり混み合っています', short: '大混雑', range: '150%超', color: '#F28B82', text: '#7A1E17', icon: '#E0554B' },
 ];
 
 export const crowdInfo = (level: number): CrowdLevelInfo | undefined =>
