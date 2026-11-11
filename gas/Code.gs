@@ -1094,15 +1094,19 @@ function handleLogin(email, password) {
   if (gate === 'busy') return loginBusyResponse();
   const member = findMemberByEmail(email);
 
+  // パスワードの確認は、ロックの外で行う(計算が遅いので、ほかの処理を塞がない)。会員がいなくても、同じ程度の時間をかける
   if (!member) {
+    burnPasswordHash(password);
     return wrongCredentialsResponse();
   }
 
-  const inputHash = hashPassword(password, member.salt);
-  if (inputHash !== member.passwordHash) {
+  const check = verifyMemberPassword(password, member);
+  if (!check.ok) {
     return wrongCredentialsResponse();
   }
   clearLoginFailures(email);
+  // 古い方式で保存されていた会員は、ログインに成功したこのときに、新しい方式で保存し直す(失敗しても、ログインは通す)
+  if (check.upgrade) upgradeMemberPassword(email, member.passwordHash, check.upgrade);
 
   return createJsonResponse({
     status: 'success',
@@ -1123,11 +1127,11 @@ function handleDeleteAccount(email, password) {
   const member = findMemberByEmail(email);
 
   if (!member) {
+    burnPasswordHash(password);
     return wrongCredentialsResponse();
   }
 
-  const inputHash = hashPassword(password, member.salt);
-  if (inputHash !== member.passwordHash) {
+  if (!verifyMemberPassword(password, member).ok) {
     return wrongCredentialsResponse();
   }
   clearLoginFailures(email);
@@ -1335,6 +1339,10 @@ function handleVerifyLineAndRegister(email, password, token, code, name) {
     return createJsonResponse({ status: 'error', message: '認証コードが正しくありません。' });
   }
 
+  // パスワードの計算は遅いので、ロックを取る前に済ませる(ロックの中で、ほかの処理を待たせない)
+  const salt = Utilities.getUuid();
+  const passwordHash = hashPasswordV2(password, salt, currentPasswordIterations());
+
   // 同時登録による重複(同じメール・同じ会員ID)を防ぐため、台帳への書き込み中は排他する
   const lock = LockService.getScriptLock();
   try {
@@ -1359,8 +1367,6 @@ function handleVerifyLineAndRegister(email, password, token, code, name) {
       memberId = 'NZ-' + Math.floor(10000 + Math.random() * 90000);
     }
 
-    const salt = Utilities.getUuid();
-    const passwordHash = hashPassword(password, salt);
     const joinDate = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
     const timestamp = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm:ss');
     const userName = String(name || email.split('@')[0]).slice(0, MAX_NAME_LENGTH); // 名前を渡さないときは、メールの@の前(長ければ切る)
@@ -1445,6 +1451,194 @@ function hashPassword(password, salt) {
     const v = (byte < 0 ? byte + 256 : byte).toString(16);
     return v.length === 1 ? '0' + v : v;
   }).join('');
+}
+
+// ---- パスワードの保存方式 ----
+// 新しい方式(v2): PBKDF2-HMAC-SHA256(出力32バイト)。保存する文字は 'v2$回数$ハッシュ(16進)'。ソルトは、会員ごとの別の列。
+// 古い方式(印なし): ソルトつき SHA-256 を1回(hashPassword)。ログインに成功したとき、v2 に保存し直す。
+// GAS には、Argon2id・bcrypt・scrypt や Web Crypto が無いので、純 JS で書いた SHA-256 から組み立てる(外部のサービスは、呼ばない)。
+// 計算が遅いので、ロック(LockService)の中では呼ばない。
+const PASSWORD_HASH_VERSION = 'v2';
+const PASSWORD_HASH_ITERATIONS = 100000; // 既定の回数。スクリプトプロパティ PASSWORD_HASH_ITERATIONS(10000〜1000000)で変えられる。保存した文字に回数が入るので、あとで変えても、古い会員は、そのままログインできる
+const PASSWORD_HASH_MIN_ITERATIONS = 10000;
+const PASSWORD_HASH_MAX_ITERATIONS = 1000000;
+
+const SHA256_K = new Int32Array([
+  0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+  0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+  0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+  0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+  0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+  0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+  0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+  0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2]);
+const SHA256_INIT = [0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];
+
+function sha256Block(st, w) {
+  for (let i = 16; i < 64; i++) {
+    const a = w[i - 15], b = w[i - 2];
+    const s0 = ((a >>> 7) | (a << 25)) ^ ((a >>> 18) | (a << 14)) ^ (a >>> 3);
+    const s1 = ((b >>> 17) | (b << 15)) ^ ((b >>> 19) | (b << 13)) ^ (b >>> 10);
+    w[i] = (w[i - 16] + s0 + w[i - 7] + s1) | 0;
+  }
+  let a = st[0], b = st[1], c = st[2], d = st[3], e = st[4], f = st[5], g = st[6], h = st[7];
+  for (let i = 0; i < 64; i++) {
+    const S1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
+    const t1 = (h + S1 + ((e & f) ^ (~e & g)) + SHA256_K[i] + w[i]) | 0;
+    const S0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));
+    const t2 = (S0 + ((a & b) ^ (a & c) ^ (b & c))) | 0;
+    h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+  }
+  st[0] = (st[0] + a) | 0; st[1] = (st[1] + b) | 0; st[2] = (st[2] + c) | 0; st[3] = (st[3] + d) | 0;
+  st[4] = (st[4] + e) | 0; st[5] = (st[5] + f) | 0; st[6] = (st[6] + g) | 0; st[7] = (st[7] + h) | 0;
+}
+
+function utf8Bytes(str) {
+  const s = unescape(encodeURIComponent(String(str)));
+  const out = new Array(s.length);
+  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
+  return out;
+}
+
+// 先頭の prefixBytes バイト(64の倍数)をすでに処理した状態 st から、bytes を続けて処理して、最後のハッシュ(8語)を返す
+function sha256Finish(st, bytes, prefixBytes) {
+  const state = Int32Array.from(st);
+  const total = prefixBytes + bytes.length;
+  const padded = bytes.concat([0x80]);
+  while ((padded.length % 64) !== 56) padded.push(0);
+  const bits = total * 8;
+  for (let i = 7; i >= 0; i--) padded.push(i >= 4 ? 0 : (bits >>> (i * 8)) & 0xff);
+  const w = new Int32Array(64);
+  for (let off = 0; off < padded.length; off += 64) {
+    for (let i = 0; i < 16; i++) {
+      w[i] = (padded[off + i * 4] << 24) | (padded[off + i * 4 + 1] << 16) | (padded[off + i * 4 + 2] << 8) | padded[off + i * 4 + 3];
+    }
+    sha256Block(state, w);
+  }
+  return state;
+}
+
+function wordsToBytes(words) {
+  const out = [];
+  for (let i = 0; i < words.length; i++) out.push((words[i] >>> 24) & 0xff, (words[i] >>> 16) & 0xff, (words[i] >>> 8) & 0xff, words[i] & 0xff);
+  return out;
+}
+
+// PBKDF2-HMAC-SHA256(出力32バイト)。16進の文字列で返す
+function pbkdf2Sha256Hex(password, salt, iterations) {
+  let key = utf8Bytes(password);
+  if (key.length > 64) key = wordsToBytes(sha256Finish(SHA256_INIT, key, 0));
+  while (key.length < 64) key.push(0);
+  const ipad = new Int32Array(64), opad = new Int32Array(64);
+  for (let i = 0; i < 16; i++) {
+    const k = (key[i * 4] << 24) | (key[i * 4 + 1] << 16) | (key[i * 4 + 2] << 8) | key[i * 4 + 3];
+    ipad[i] = k ^ 0x36363636;
+    opad[i] = k ^ 0x5c5c5c5c;
+  }
+  const innerState = Int32Array.from(SHA256_INIT); sha256Block(innerState, ipad);
+  const outerState = Int32Array.from(SHA256_INIT); sha256Block(outerState, opad);
+  // U1 = HMAC(password, salt || 0x00000001)
+  const msg = utf8Bytes(salt).concat([0, 0, 0, 1]);
+  const u = Int32Array.from(sha256Finish(outerState, wordsToBytes(sha256Finish(innerState, msg, 64)), 64));
+  const t = Int32Array.from(u);
+  const w = new Int32Array(64);
+  const st = new Int32Array(8);
+  for (let n = 1; n < iterations; n++) {
+    // 内側: 64バイトの鍵ブロックのあとに、32バイトのU を続ける
+    st.set(innerState);
+    for (let i = 0; i < 8; i++) w[i] = u[i];
+    w[8] = 0x80000000; for (let i = 9; i < 15; i++) w[i] = 0; w[15] = (64 + 32) * 8;
+    sha256Block(st, w);
+    // 外側
+    for (let i = 0; i < 8; i++) w[i] = st[i];
+    w[8] = 0x80000000; for (let i = 9; i < 15; i++) w[i] = 0; w[15] = (64 + 32) * 8;
+    st.set(outerState);
+    sha256Block(st, w);
+    for (let i = 0; i < 8; i++) { u[i] = st[i]; t[i] ^= st[i]; }
+  }
+  let hex = '';
+  for (let i = 0; i < 8; i++) hex += ('00000000' + (t[i] >>> 0).toString(16)).slice(-8);
+  return hex;
+}
+
+function isPasswordHashV2(stored) {
+  return /^v2\$\d+\$[0-9a-f]{64}$/.test(String(stored));
+}
+
+// これから作るハッシュの回数
+function currentPasswordIterations() {
+  const v = Number(PropertiesService.getScriptProperties().getProperty('PASSWORD_HASH_ITERATIONS'));
+  return isFinite(v) && Math.floor(v) === v && v >= PASSWORD_HASH_MIN_ITERATIONS && v <= PASSWORD_HASH_MAX_ITERATIONS ? v : PASSWORD_HASH_ITERATIONS;
+}
+
+function hashPasswordV2(password, salt, iterations) {
+  return PASSWORD_HASH_VERSION + '$' + iterations + '$' + pbkdf2Sha256Hex(password, salt, iterations);
+}
+
+// 会員がいないメールでも、会員がいるときと同じ程度の時間をかける(時間の差で、会員の有無が分からないように)
+function burnPasswordHash(password) {
+  pbkdf2Sha256Hex(String(password), 'timing-equalizer-salt', currentPasswordIterations());
+}
+
+// 会員のパスワードを確かめる。{ ok, upgrade }。upgrade は、古い方式の会員が成功したときの、新しい方式の { salt, hash }
+function verifyMemberPassword(password, member) {
+  const stored = String(member.passwordHash === undefined || member.passwordHash === null ? '' : member.passwordHash);
+  if (isPasswordHashV2(stored)) {
+    const parts = stored.split('$');
+    const iterations = Number(parts[1]);
+    if (iterations < PASSWORD_HASH_MIN_ITERATIONS || iterations > PASSWORD_HASH_MAX_ITERATIONS) {
+      burnPasswordHash(password);
+      return { ok: false };
+    }
+    const expected = pbkdf2Sha256Hex(password, String(member.salt), iterations);
+    return { ok: safeEqual(expected, parts[2]) };
+  }
+  // 古い方式。新しい方式の計算も、毎回行う(成功したときの保存し直しに使う。失敗したときは、時間をそろえるだけ)
+  const legacyOk = safeEqual(hashPassword(password, member.salt), stored);
+  const newSalt = Utilities.getUuid();
+  const newHash = hashPasswordV2(password, newSalt, currentPasswordIterations());
+  return legacyOk ? { ok: true, upgrade: { salt: newSalt, hash: newHash } } : { ok: false };
+}
+
+// 古い方式の会員の、ソルトとハッシュを、新しい方式で書き換える。いまの保存が、確かめたときと同じときだけ書く(短いロックの中。書けなくても、次のログインでやり直す)
+function upgradeMemberPassword(email, oldStoredHash, upgrade) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(3000);
+  } catch (err) {
+    return false;
+  }
+  try {
+    const sheet = getOrCreateMembersSheet();
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const emailIdx = headers.indexOf('メールアドレス');
+    const saltIdx = headers.indexOf('パスワードソルト');
+    const hashIdx = headers.indexOf('パスワードハッシュ');
+    if (emailIdx === -1 || saltIdx === -1 || hashIdx === -1) return false;
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][emailIdx]).trim().toLowerCase() !== email) continue;
+      if (String(data[i][hashIdx]) !== String(oldStoredHash)) return false;
+      sheet.getRange(i + 1, saltIdx + 1).setValue(upgrade.salt);
+      sheet.getRange(i + 1, hashIdx + 1).setValue(upgrade.hash);
+      return true;
+    }
+    return false;
+  } catch (err) {
+    Logger.log('パスワードの保存し直しに失敗しました');
+    return false;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// 手で1回だけ実行する計測(GAS のエディタから)。回数ごとの1回あたりの時間を、実行ログに出す。ログインの目安は、1秒以内
+function benchmarkPasswordHash() {
+  [10000, 50000, 100000, 300000, 600000].forEach(function (n) {
+    const t0 = Date.now();
+    pbkdf2Sha256Hex('benchmark-password', 'benchmark-salt', n);
+    console.log('回数 ' + n + ': ' + (Date.now() - t0) + 'ms');
+  });
 }
 
 /**
