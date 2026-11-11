@@ -9,11 +9,12 @@ import { isPushEnabled } from '../utils/notifySettings';
 import { disruptionManager } from '../utils/disruptionManager';
 import { useDragToDismiss } from '../utils/useDragToDismiss';
 import { isLaunched } from '../utils/launch';
-import { trainIconCenter, isCompactTrainIcons, COMPACT_SCALE } from '../utils/trainIconLayout';
+import { trainIconCenter, isBundle, trainRank } from '../utils/trainIconLayout';
+import { bandLabelOf, typeStyleOf } from '../utils/trainTypeStyle';
 import { crowdInfo, loadAllCrowdTrains } from '../utils/crowd';
 import { isUtLaunched } from '../utils/utLine';
 import { THROUGH_STYLE, throughLineAt, trainThrough } from '../utils/throughLine';
-import { pinHeight, TrainPin } from './TrainPin';
+import { bundleHeight, pinHeight, TrainPin, TrainPinBundle } from './TrainPin';
 
 import { useBackClose } from '../utils/backClose';
 export interface StationNode {
@@ -64,64 +65,6 @@ export interface LiveTrainPos {
   expressName?: string;
   rows?: { stationName: string; pass: boolean; scheduledTime?: string; estimatedTime?: string; platform?: string }[];
 }
-
-// 統一された種別スタイル取得関数
-export const getTrainTypeBadgeStyle = (trainType: string): { bg: string; text: string; dot: string; arrowColor: string } => {
-  if (trainType === '各停' || trainType === '普通') {
-    return {
-      bg: 'bg-slate-100 text-slate-700 border border-slate-200',
-      text: 'text-slate-700',
-      dot: 'bg-slate-500',
-      arrowColor: '#64748B', // 各停の矢印を灰色に変更
-    };
-  }
-  if (trainType === '快速' || trainType === '区間快速') {
-    return {
-      bg: 'bg-sky-50 text-sky-800 border border-sky-200',
-      text: 'text-sky-800',
-      dot: 'bg-sky-500',
-      arrowColor: '#0284C7',
-    };
-  }
-  if (trainType === '急行' || trainType === '通勤特快') {
-    return {
-      bg: 'bg-rose-50 text-rose-800 border border-rose-200',
-      text: 'text-rose-800',
-      dot: 'bg-red-600',
-      arrowColor: '#E11D48',
-    };
-  }
-  if (trainType === '特別快速') {
-    return {
-      bg: 'bg-amber-50 text-amber-900 border border-amber-300',
-      text: 'text-amber-900',
-      dot: 'bg-amber-500',
-      arrowColor: '#F59E0B',
-    };
-  }
-  if (trainType.includes('特急') || trainType.includes('めぐり') || trainType.includes('Nライナー') || trainType.includes('あやみ')) {
-    if (trainType.includes('めぐり')) {
-      return {
-        bg: 'bg-purple-50 text-purple-900 border border-purple-300',
-        text: 'text-purple-900',
-        dot: 'bg-purple-600',
-        arrowColor: '#7C3AED',
-      };
-    }
-    return {
-      bg: 'bg-purple-100 text-purple-950 border border-purple-300',
-      text: 'text-purple-950',
-      dot: 'bg-purple-700',
-      arrowColor: '#6D28D9',
-    };
-  }
-  return {
-    bg: 'bg-slate-100 text-slate-700 border border-slate-200',
-    text: 'text-slate-700',
-    dot: 'bg-slate-500',
-    arrowColor: '#64748B',
-  };
-};
 
 // 4 Lines Data according to spec
 const BASE_LINES_DATA: DisplayLine[] = [
@@ -290,15 +233,21 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
   const [activeLineId, setActiveLineId] = useState<string>('kanzaki');
   const [direction, setDirection] = useState<1 | 2>(1); // 1=下り/方向1, 2=上り/方向2
   const [selectedTrain, setSelectedTrain] = useState<LiveTrainPos | null>(null);
+  // 束ねた札(同じ場所に3本以上)を押したとき、重なっている列車すべて(優等な順)。シートに、列車ごとのカードで並べる
+  const [selectedGroup, setSelectedGroup] = useState<LiveTrainPos[] | null>(null);
   const [selectedStation, setSelectedStation] = useState<LocationStationInfo | null>(null);
   const [now, setNow] = useState<number>(Date.now());
 
   const detailCardRef = useRef<HTMLDivElement>(null);
   // 駅・列車のシートは、つまみを下に引いて(ちょんと押しても)閉じられる
   const stationSheetDrag = useDragToDismiss(() => setSelectedStation(null));
-  const trainSheetDrag = useDragToDismiss(() => setSelectedTrain(null));
-  // 駅・列車のシートが開いているあいだ、「戻る」で閉じる
-  useBackClose(selectedTrain !== null, () => setSelectedTrain(null));
+  const clearTrainSelection = () => {
+    setSelectedTrain(null);
+    setSelectedGroup(null);
+  };
+  const trainSheetDrag = useDragToDismiss(clearTrainSelection);
+  // 駅・列車のシートが開いているあいだ、「戻る」で閉じる(束ねた札のシートも)
+  useBackClose(selectedTrain !== null || selectedGroup !== null, clearTrainSelection);
   useBackClose(selectedStation !== null, () => setSelectedStation(null));
 
   // 列車詳細プルダウン（アコーディオン）状態
@@ -457,7 +406,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
   // 走行位置を完全リセット → 再設置する工程
   const performResetAndSet = (manual = false) => {
     setIsResetting(true);
-    setSelectedTrain(null);
+    clearTrainSelection();
     setLiveTrains([]); // 1. 走行位置をリセット (クリア)
 
     if (manual) {
@@ -499,26 +448,24 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
     }
   }, [now]);
 
-  // 優等度ランク計算（特急/めぐり/スカイ > 通勤特快/特別快速 > 快速/急行 > 準急/区間快速 > 各停/普通）
-  const getTrainRank = (trainType: string): number => {
-    if (trainType.includes('特急') || trainType.includes('めぐり') || trainType.includes('スカイ') || trainType.includes('ライナー')) return 10;
-    if (trainType.includes('通勤特快') || trainType.includes('特別快速') || trainType.includes('特快') || trainType.includes('快特')) return 8;
-    if (trainType.includes('通勤快速') || trainType.includes('快速') || trainType.includes('急行')) return 5;
-    if (trainType.includes('準急') || trainType.includes('区間快速')) return 4;
-    return 1; // 各駅停車・普通
-  };
+  // 札に出す内容(帯の字は、種別の略称。色は、種別の色の表から)
+  const pinProps = (train: LiveTrainPos) => ({
+    label: bandLabelOf(train.trainType),
+    color: typeStyleOf(train.trainType).hex,
+    direction: train.direction,
+    delayMinutes: train.delayMinutes,
+    passing: train.isStopStation === false,
+    crowd: train.crowdNow,
+  });
 
-  // 列車の札(線の左側)。同じ駅・駅間に複数いるときは、優等種別が左、下等種別が右に並ぶ(画面外にはみ出さない)
+  // 1本・2本の札(線の左側)。同じ駅・駅間に2本いるときは、優等種別が左、下等種別が右に並ぶ(画面外にはみ出さない)
   const renderLeftTrainIcon = (
     train: LiveTrainPos,
     index: number = 0,
     total: number = 1
   ) => {
-    const style = getTrainTypeBadgeStyle(train.trainType);
     const isSelected = selectedTrain?.id === train.id;
-    // 線路のX座標: -24px / 駅ノード: -31px。札(幅38px)の右端が -36px より左にあれば、線路・ノードを跨がない。
-    // 3編成以上は、札を小さくして、左端で切れずに収める
-    const compact = isCompactTrainIcons(total);
+    // 線路のX座標: -24px / 駅ノード: -31px。札(幅38px)の右端が -36px より左にあれば、線路・ノードを跨がない
     const centerPos = trainIconCenter(total, index);
 
     return (
@@ -526,39 +473,85 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
         key={train.id}
         onClick={(e) => {
           e.stopPropagation();
+          setSelectedGroup(null);
           setSelectedTrain(isSelected ? null : train);
           setSelectedStation(null); // 駅のシートが開いていたら閉じる(2枚が重ならないように)
         }}
-        style={{ left: `${centerPos}px`, ...(compact ? { scale: isSelected ? 0.95 : COMPACT_SCALE } : {}) }}
+        style={{ left: `${centerPos}px` }}
         className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-20 flex flex-col items-center cursor-pointer transition-all ${
           isSelected ? 'scale-115 ring-2 ring-[#5B21B6] rounded-xl p-0.5 bg-purple-50/80 shadow-md z-30' : 'hover:scale-105'
         }`}
         title={`${train.trainType} ${train.destination}行 (${train.delayMinutes > 0 ? `+${train.delayMinutes}分遅れ` : '定時'})`}
         aria-label={`${train.trainType} ${train.destination}行き`}
       >
-        <TrainPin
-          label={train.paid ? '特急' : train.trainType}
-          color={style.arrowColor}
-          direction={train.direction}
-          delayMinutes={train.delayMinutes}
-          passing={train.isStopStation === false}
-          crowd={train.crowdNow}
-        />
+        <TrainPin {...pinProps(train)} />
       </button>
     );
   };
 
-  // 札が重ならないための、列(駅の行・駅間)の最低の高さ。札の高さ(遅れ・通過の札を含む)+余白
-  const slotHeight = (trains: LiveTrainPos[], base: number): number =>
-    trains.reduce(
-      (h, t) => Math.max(h, pinHeight({ delayed: t.delayMinutes > 0, passing: t.isStopStation === false }) + 10),
-      base
+  // 3本以上の札は、1枚に束ねる(後ろにずらした札の枚数で、本数を表す)。押すと、重なっている列車すべてのカードが、1つのシートに出る
+  const renderBundle = (trains: LiveTrainPos[], key: string) => {
+    const isSelected = !!selectedGroup && selectedGroup.length === trains.length && selectedGroup.every((t, i) => t.id === trains[i].id);
+    return (
+      <button
+        key={key}
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setSelectedStation(null);
+          if (isSelected) return clearTrainSelection();
+          if (!isLaunched()) {
+            // 公開前の古い詳細は、1本ずつ。先頭(いちばん優等)の列車を開く
+            setSelectedGroup(null);
+            setSelectedTrain(trains[0]);
+            return;
+          }
+          setSelectedTrain(null);
+          setSelectedGroup(trains);
+        }}
+        style={{ left: `${trainIconCenter(trains.length, 0)}px` }}
+        className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-20 flex flex-col items-center cursor-pointer transition-all ${
+          isSelected ? 'ring-2 ring-[#5B21B6] rounded-xl p-0.5 bg-purple-50/80 shadow-md z-30' : 'hover:scale-105'
+        }`}
+        title={`この場所に ${trains.length} 本の列車`}
+        aria-label={`${trains.length}本の列車が重なっています。先頭は ${trains[0].trainType} ${trains[0].destination}行き`}
+      >
+        <TrainPinBundle pins={trains.map(pinProps)} />
+      </button>
     );
+  };
+
+  // 同じ駅・駅間の札を並べる: 3本以上は束ねる。1本・2本は、横に並べる
+  const renderTrainsSlot = (trains: LiveTrainPos[], key: string) =>
+    isBundle(trains.length) ? renderBundle(trains, `${key}-bundle`) : trains.map((train, tIdx) => renderLeftTrainIcon(train, tIdx, trains.length));
+
+  // 札が重ならないための、列(駅の行・駅間)の最低の高さ。札の高さ(遅れ・通過の札を含む)+余白。束ねた札は、先頭の札と、ずらしではみ出すぶん
+  const slotHeight = (trains: LiveTrainPos[], base: number): number => {
+    const opts = (t: LiveTrainPos) => ({ delayed: t.delayMinutes > 0, passing: t.isStopStation === false });
+    if (isBundle(trains.length)) return Math.max(base, bundleHeight(opts(trains[0]), trains.length) + 10);
+    return trains.reduce((h, t) => Math.max(h, pinHeight(opts(t)) + 10), base);
+  };
+
+  // 有料の特急の詳細の「空席を予約画面で見る」(1本のシートも、束ねたシートのカードも、同じ)
+  const reservationOf = (train: LiveTrainPos) =>
+    onOpenReservation && train.paid
+      ? () => {
+          const key = (Object.keys(EXPRESS_TYPES) as (keyof typeof EXPRESS_TYPES)[]).find((k) => EXPRESS_TYPES[k].typeName === train.typeName);
+          if (!key || !train.trainNo) return;
+          const stops = (train.rows ?? []).filter((r) => !r.pass);
+          // 直通の特急(めぐり)は、2つの路線にまたがる全体の始発と終着(東京〜日立)で、予約を開く
+          const ends = getExpressTrainEnds(key, train.trainNo);
+          const boarding = ends?.from ?? stops[0]?.stationName;
+          const destination = ends?.to ?? stops[stops.length - 1]?.stationName;
+          const ok = !!boarding && !!destination && boarding !== destination;
+          onOpenReservation({ key: Date.now(), expressType: key, boarding: ok ? boarding : undefined, destination: ok ? destination : undefined, trainCode: train.trainNo });
+        }
+      : undefined;
 
   // 路線を切り替える(直通先の札から)
   const switchLine = (lineId: string) => {
     setActiveLineId(lineId);
-    setSelectedTrain(null);
+    clearTrainSelection();
     setSelectedStation(null);
   };
 
@@ -570,7 +563,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
         const t = e.target as HTMLElement;
         if (t.closest('button, a, input, select, textarea, [role="button"]')) return;
         if (detailCardRef.current?.contains(t)) return;
-        setSelectedTrain(null);
+        clearTrainSelection();
       }}
     >
       {/* Top Header Bar */}
@@ -624,7 +617,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
                 key={line.id}
                 onClick={() => {
                   setActiveLineId(line.id);
-                  setSelectedTrain(null);
+                  clearTrainSelection();
                 }}
                 className={`px-3 py-2 text-xs font-bold transition-all relative whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
                   isActive ? 'text-[#5B21B6]' : 'text-[#6B6380] hover:text-[#221C35]'
@@ -649,7 +642,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
             <button
               onClick={() => {
                 setDirection(1);
-                setSelectedTrain(null);
+                clearTrainSelection();
               }}
               className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer text-center ${
                 direction === 1
@@ -662,7 +655,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
             <button
               onClick={() => {
                 setDirection(2);
-                setSelectedTrain(null);
+                clearTrainSelection();
               }}
               className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer text-center ${
                 direction === 2
@@ -724,7 +717,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
               (t) => t.stationId === st.id && !t.isBetween
             );
             const trainsAtStation = [...rawTrainsAtStation].sort(
-              (a, b) => getTrainRank(b.trainType) - getTrainRank(a.trainType)
+              (a, b) => trainRank(b.trainType) - trainRank(a.trainType)
             );
 
             // Find all trains between this station and next (sorted by express rank)
@@ -732,7 +725,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
               (t) => t.stationId === st.id && t.isBetween
             );
             const trainsBetween = [...rawTrainsBetween].sort(
-              (a, b) => getTrainRank(b.trainType) - getTrainRank(a.trainType)
+              (a, b) => trainRank(b.trainType) - trainRank(a.trainType)
             );
 
             // 直通のある乗換駅: 直通先の路線の札(駅の下に、線から分かれて出す)
@@ -751,9 +744,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
                   <div className="absolute -left-[31px] w-3.5 h-3.5 rounded-full bg-white border-2 border-[#857D99] shadow-2xs z-10" />
 
                   {/* LEFT SIDE: Train Icons with directional triangle & delay indicator */}
-                  {trainsAtStation.map((train, tIdx) =>
-                    renderLeftTrainIcon(train, tIdx, trainsAtStation.length)
-                  )}
+                  {renderTrainsSlot(trainsAtStation, `${st.id}-at`)}
 
                   {/* Left Station Info (Station Name + Sub-row for Transfers) */}
                   <div className="flex flex-col justify-center min-w-0 py-0.5">
@@ -761,7 +752,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
                       type="button"
                       onClick={() => {
                         setSelectedStation({ name: st.name, code: st.code, transfers: st.transfers });
-                        setSelectedTrain(null);
+                        clearTrainSelection();
                       }}
                       className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 hover:opacity-80 transition-opacity cursor-pointer group text-left"
                       title={`${st.name}の乗り換え・駅情報を見る`}
@@ -819,9 +810,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
                       <span className="text-[10px] font-bold text-[#857D99]">↩ 東京へ（環状線）</span>
                     )}
                     {/* LEFT SIDE: Train Icons between stations */}
-                    {trainsBetween.map((train, tIdx) =>
-                      renderLeftTrainIcon(train, tIdx, trainsBetween.length)
-                    )}
+                    {renderTrainsSlot(trainsBetween, `${st.id}-between`)}
                   </div>
                 )}
               </React.Fragment>
@@ -856,6 +845,39 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
         </div>
       )}
 
+      {/* 束ねた札を押したとき: 重なっている列車すべての詳細を、列車ごとのカードで縦に並べる(長いときは、シートの中だけスクロール) */}
+      {selectedGroup && isLaunched() && (
+        <div
+          ref={detailCardRef}
+          style={trainSheetDrag.style}
+          className="fixed bottom-14 left-0 right-0 max-w-md mx-auto z-40 bg-white border-t border-[#E6E2EE] rounded-t-2xl shadow-lg p-4 space-y-3 animate-slideUp"
+        >
+          {/* つまみ: 下に引く(または押す)と閉じる */}
+          <div
+            {...trainSheetDrag.handleProps}
+            className="w-full py-3 -mt-3 flex items-center justify-center cursor-grab active:cursor-grabbing group rounded-t-xl select-none"
+            role="button"
+            aria-label="閉じる"
+          >
+            <div className="w-12 h-1.5 bg-[#D1C9E3] group-hover:bg-[#5B21B6] rounded-full transition-colors" />
+          </div>
+          <div ref={trainSheetDrag.contentRef} className="max-h-[62vh] overflow-y-auto overscroll-contain -mx-1 px-1 space-y-5">
+            {selectedGroup.map((t, i) => (
+              <TrainDetailV2
+                key={t.id}
+                train={t}
+                lineName={activeLine.name}
+                onOpenLine={switchLine}
+                onOpenReservation={reservationOf(t)}
+                embedded
+                collapsibleStops
+                stopsDefaultOpen={i === 0}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Bottom Sheet / Active Selected Train Details Panel */}
       {selectedTrain && (
         <div
@@ -879,21 +901,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
               lineName={activeLine.name}
               onOpenLine={switchLine}
               contentRef={trainSheetDrag.contentRef}
-              onOpenReservation={
-                onOpenReservation && selectedTrain.paid
-                  ? () => {
-                      const key = (Object.keys(EXPRESS_TYPES) as (keyof typeof EXPRESS_TYPES)[]).find((k) => EXPRESS_TYPES[k].typeName === selectedTrain.typeName);
-                      if (!key || !selectedTrain.trainNo) return;
-                      const stops = (selectedTrain.rows ?? []).filter((r) => !r.pass);
-                      // 直通の特急(めぐり)は、2つの路線にまたがる全体の始発と終着(東京〜日立)で、予約を開く
-                      const ends = getExpressTrainEnds(key, selectedTrain.trainNo);
-                      const boarding = ends?.from ?? stops[0]?.stationName;
-                      const destination = ends?.to ?? stops[stops.length - 1]?.stationName;
-                      const ok = !!boarding && !!destination && boarding !== destination;
-                      onOpenReservation({ key: Date.now(), expressType: key, boarding: ok ? boarding : undefined, destination: ok ? destination : undefined, trainCode: selectedTrain.trainNo });
-                    }
-                  : undefined
-              }
+              onOpenReservation={reservationOf(selectedTrain)}
             />
           ) : (
           <>
@@ -901,21 +909,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
           <div className="flex items-center justify-between pt-0.5">
             <div className="flex items-center gap-2">
               {(() => {
-                let badgeBg = 'bg-slate-600 text-white'; // 各停・普通は灰色
-                if (selectedTrain.trainType === '快速' || selectedTrain.trainType === '区間快速') {
-                  badgeBg = 'bg-sky-600 text-white';
-                } else if (selectedTrain.trainType === '急行' || selectedTrain.trainType === '通勤特快') {
-                  badgeBg = 'bg-rose-600 text-white';
-                } else if (selectedTrain.trainType === '特別快速') {
-                  badgeBg = 'bg-amber-600 text-white';
-                } else if (
-                  selectedTrain.trainType.includes('特急') ||
-                  selectedTrain.trainType.includes('めぐり') ||
-                  selectedTrain.trainType.includes('Nライナー') ||
-                  selectedTrain.trainType.includes('あやみ')
-                ) {
-                  badgeBg = 'bg-purple-700 text-white';
-                }
+                const badgeBg = `${typeStyleOf(selectedTrain.trainType).solid} text-white`;
                 return (
                   <span className={`text-xs font-bold px-2.5 py-0.5 rounded-md ${badgeBg}`}>
                     {selectedTrain.trainType}

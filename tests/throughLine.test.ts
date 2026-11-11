@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { computeLiveTrains, type LineData } from '../src/utils/diaTimetable';
 import { THROUGH_LINKS, throughLineAt, trainThrough } from '../src/utils/throughLine';
-import { bandFontSize, DELAY_BADGE_H, PASSING_BADGE_H, PIN_BODY_H, pinFloatHeight, PIN_WIDTH, pinHeight, TrainPin } from '../src/components/TrainPin';
+import { bandFontSize, DELAY_BADGE_H, FLOAT_GAP, FLOAT_STACK_GAP, PASSING_BADGE_H, PIN_BODY_H, pinFloatHeight, PIN_WIDTH, pinHeight, TrainPin } from '../src/components/TrainPin';
 
 const readJson = (file: string) => JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'public', 'data', 'dia-2', file), 'utf-8'));
 const master = readJson('master.json');
@@ -58,22 +58,24 @@ describe('実際のダイヤでの直通の列車', () => {
 });
 
 describe('列車の札', () => {
-  it('札の幅は38px。帯の字は、4文字まで9px。長い種別は、幅に収まるまで小さくする', () => {
+  it('札の幅は38px。帯の字は9px(3文字まで。あやみ・めぐりも収まる)。それより長いときは、収まるまで小さくする', () => {
     expect(PIN_WIDTH).toBe(38);
-    expect(bandFontSize('急行')).toBe(9);
-    expect(bandFontSize('特別快速')).toBe(9);
-    expect(bandFontSize('特別快速') * 4).toBeLessThanOrEqual(PIN_WIDTH);
-    expect(bandFontSize('特急(Nライナー)') * '特急(Nライナー)'.length).toBeLessThanOrEqual(PIN_WIDTH);
+    for (const l of ['各', '急', '快', '区快', '特快', '通快', 'N', 'あやみ', 'めぐり']) {
+      expect(bandFontSize(l), l).toBe(9);
+      expect(bandFontSize(l) * l.length, l).toBeLessThanOrEqual(PIN_WIDTH - 4);
+    }
+    expect(bandFontSize('ABCDEFGH') * 8).toBeLessThanOrEqual(PIN_WIDTH);
   });
 
-  it('札の本体の高さは、遅れ・通過の札の有無で変わらない(並んだ列車の上端がそろう)。浮かせる札のぶんは、重ならない高さに含める', () => {
-    const plain = pinHeight({ delayed: false, passing: false });
-    expect(plain).toBe(PIN_BODY_H);
+  it('札の本体の高さは、遅れ・通過の札の有無で変わらない(並んだ列車の上端がそろう)。浮かせる札のぶん(すき間 5px を含む)は、重ならない高さに含める', () => {
+    expect(pinHeight({ delayed: false, passing: false })).toBe(PIN_BODY_H);
     expect(pinFloatHeight({ delayed: false, passing: false })).toBe(0);
+    expect(FLOAT_GAP).toBe(5);
     // 浮かせる札は、本体の両側に余白を取る(本体を、列の中心に置くため)
-    expect(pinHeight({ delayed: true, passing: false })).toBe(PIN_BODY_H + 2 * DELAY_BADGE_H);
-    expect(pinHeight({ delayed: false, passing: true })).toBe(PIN_BODY_H + 2 * PASSING_BADGE_H);
-    expect(pinHeight({ delayed: true, passing: true })).toBe(PIN_BODY_H + 2 * (DELAY_BADGE_H + PASSING_BADGE_H));
+    expect(pinFloatHeight({ delayed: true, passing: false })).toBe(DELAY_BADGE_H + FLOAT_GAP);
+    expect(pinFloatHeight({ delayed: false, passing: true })).toBe(PASSING_BADGE_H + FLOAT_GAP);
+    expect(pinFloatHeight({ delayed: true, passing: true })).toBe(DELAY_BADGE_H + PASSING_BADGE_H + FLOAT_STACK_GAP + FLOAT_GAP);
+    expect(pinHeight({ delayed: true, passing: true })).toBe(PIN_BODY_H + 2 * (DELAY_BADGE_H + PASSING_BADGE_H + FLOAT_STACK_GAP + FLOAT_GAP));
   });
 });
 
@@ -97,11 +99,13 @@ describe('列車の札: 遅れ・通過の札は浮かせて、本体の位置�
   it('下り(先端が下)は、遅れ・通過の札を本体の上に、上り(先端が上)は本体の下に、絶対位置で浮かせる', () => {
     const down = render({ delay: 3, passing: true, direction: 1 });
     expect(down).toContain('bottom:100%');
+    expect(down).toContain(`margin-bottom:${FLOAT_GAP}px`);
     expect(down).not.toContain('top:100%');
     expect(down).toContain('+3分');
     expect(down).toContain('通過');
     const up = render({ delay: 3, passing: true, direction: 2 });
     expect(up).toContain('top:100%');
+    expect(up).toContain(`margin-top:${FLOAT_GAP}px`);
     expect(up).not.toContain('bottom:100%');
     // 札が無いときは、浮かせる枠も出さない
     expect(render({})).not.toContain('100%;');
