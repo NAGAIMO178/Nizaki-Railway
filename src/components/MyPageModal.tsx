@@ -41,7 +41,7 @@ interface MyPageModalProps {
   pointHistory: PointHistoryItem[];
   activeOrder: ActiveOrder | null;
   orderHistory: OrderHistoryItem[];
-  onLogout: () => void;
+  onLogout: (opts?: { accountDeleted?: boolean }) => void;
   onOpenNPointModal: () => void;
   onOpenQRCodeModal: () => void;
   // 公開後のデモ会員は、アカウント削除を出さない
@@ -95,7 +95,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
     try {
       const result = await deleteAccount(currentUser.email, deletePassword);
       if (result.status === 'success') {
-        onLogout();
+        onLogout({ accountDeleted: true });
         setShowDeleteConfirm(false);
         setDeletePassword('');
         onClose();

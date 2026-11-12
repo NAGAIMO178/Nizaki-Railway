@@ -53,7 +53,7 @@ export const useTicket = (token: string, seat?: string) => call('useTicket', sea
 export const getTicket = (sessionToken: string, orderId: string) => call('getTicket', { sessionToken, orderId });
 
 // 受け取ったトークンは端末に残す(電波の届かない場所でも、QR を出せるように)。出すのは、いまの予約の分だけ
-const CACHE_KEY = 'nizaki_ticket';
+export const CACHE_KEY = 'nizaki_ticket';
 
 export const readCachedTicketToken = (orderId: string): string | null => {
   try {
