@@ -17,9 +17,9 @@ import {
   AlertCircle,
   Award,
   Trash2,
-  Lock,
 } from 'lucide-react';
 import { UserAvatar } from './UserAvatar';
+import { PasswordInput } from './PasswordInput';
 import { UserProfile, ActiveOrder, PointHistoryItem, AccountActivityItem, OrderHistoryItem } from '../types';
 import { logoutNoticeText } from '../utils/logoutNotice';
 import { deleteAccount } from '../utils/accountApi';
@@ -615,17 +615,13 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                   </div>
                 )}
 
-                <div className="relative">
-                  <Lock className="w-4 h-4 text-rose-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    type="password"
-                    autoComplete="current-password"
-                    value={deletePassword}
-                    onChange={(e) => setDeletePassword(e.target.value)}
-                    placeholder="パスワードを入力"
-                    className="w-full h-10 pl-9 pr-3 rounded-xl border border-rose-300 focus:border-rose-500 focus:ring-1 focus:ring-rose-500 text-xs text-[#221C35] outline-none bg-white"
-                  />
-                </div>
+                <PasswordInput
+                  tone="rose"
+                  autoComplete="current-password"
+                  value={deletePassword}
+                  onChange={(e) => setDeletePassword(e.target.value)}
+                  placeholder="パスワードを入力"
+                />
 
                 <div className="flex items-center gap-2 pt-1">
                   <button
