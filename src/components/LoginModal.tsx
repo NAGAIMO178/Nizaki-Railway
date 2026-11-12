@@ -707,9 +707,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                     className="w-full h-11 pl-9 pr-3 rounded-xl border border-[#E5E2EE] focus:border-[#5B21B6] focus:ring-1 focus:ring-[#5B21B6] text-sm tracking-[0.3em] font-bold text-[#221C35] outline-none"
                   />
                 </div>
-                <p className="text-[10px] text-[#857D99] pt-0.5">
-                  コードが届かないときは、登録のときに使ったLINEから送っているか、ご確認ください。LINEとつながっていない古い会員は、この方法では再設定できません。
-                </p>
               </div>
 
               <div className="space-y-1">
