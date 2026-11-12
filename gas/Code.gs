@@ -128,6 +128,8 @@ function doPost(e) {
 
     // ② LINE Messaging APIからのWebhookイベント
     if (json.events && Array.isArray(json.events)) {
+      // GAS は、リクエストの見出し(X-Line-Signature)を読めず、署名を検証できない。代わりに、Webhook の URL に付けた秘密の文字で確かめる
+      if (!isLineWebhookAllowed(e)) return createJsonResponse({ status: 'ignored' });
       for (let i = 0; i < json.events.length; i++) {
         const event = json.events[i];
         if (event.type === 'message' && event.message.type === 'text') {
@@ -142,6 +144,24 @@ function doPost(e) {
     // 例外の中身(関数名・例外の文・スタック)は、利用者に返さない。決まった短い文だけ返し、原因は、ログに残す
     return internalErrorResponse('doPost', err);
   }
+}
+
+// ---- LINE の Webhook の、秘密の文字による確認 ----
+// Webhook の URL の末尾に `?secret=<長いランダムな文字>` を付ける(LINE Developers で設定)。GAS は e.parameter.secret で受け取り、
+// スクリプトプロパティ LINE_WEBHOOK_SECRET と、定数時間(safeEqual)で比べる。段階的に入れる:
+//  - LINE_WEBHOOK_SECRET が未設定: 確かめない(これまでと同じ。通す)
+//  - 設定ずみ・LINE_WEBHOOK_ENFORCE が 'true' でない: 「確かめるだけ」。合わないイベントも、処理は通す。合わなかったことを、ログに残す
+//  - 設定ずみ・LINE_WEBHOOK_ENFORCE が 'true': 合わない・無いものは、処理せずに、無視する
+// 秘密そのもの(設定した文字・送られてきた文字)は、ログ・応答には、出さない。アプリからの操作(json.action)は、この確認の対象外
+function isLineWebhookAllowed(e) {
+  const props = PropertiesService.getScriptProperties();
+  const secret = props.getProperty('LINE_WEBHOOK_SECRET');
+  if (!secret) return true;
+  const given = e && e.parameter && typeof e.parameter.secret === 'string' ? e.parameter.secret : '';
+  if (safeEqual(String(secret), given)) return true;
+  const enforce = props.getProperty('LINE_WEBHOOK_ENFORCE') === 'true';
+  Logger.log('LINE Webhook: 秘密が合わないリクエスト(' + (enforce ? '無視しました' : '確かめるだけのモード: 処理は通しました') + ')');
+  return !enforce;
 }
 
 // 予期しない例外のときに返す、決まった文。アプリは status と message を見る
