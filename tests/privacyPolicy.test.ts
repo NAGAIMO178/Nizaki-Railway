@@ -68,7 +68,7 @@ describe('公開後', () => {
     expect(t).toContain('そのLINEアカウントに紐づく予約だけをお返しします');
     expect(t).toContain('LINEのアンケート（リサーチ）を行うことがあります');
     expect(t).toContain('個人が特定されない形で、結果だけを見ます');
-    expect(t).toContain('署名つきのログイン証（有効30日）');
+    expect(t).toContain('署名つきのログイン証（有効14日）');
     expect(t).toContain('約10分');
   });
 

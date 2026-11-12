@@ -658,7 +658,7 @@ function handleCreateReservation(sessionToken, order, awardPoints) {
     return createJsonResponse({ status: 'error', message: '予約内容が正しくありません。' });
   }
 
-  const orderLimitError = checkOrderLimits(order);
+  const orderLimitError = checkOrderLimits(order) || (awardPoints === true ? checkOrderPrice(order) : null);
   if (orderLimitError) {
     return createJsonResponse({ status: 'error', code: 'order_limit', message: orderLimitError });
   }
@@ -866,6 +866,53 @@ function checkOrderLimits(order) {
   if (quantitySum > MAX_ORDER_QUANTITY) return '1回の注文は、合わせて' + MAX_ORDER_QUANTITY + '個までです。';
   if (itemsTotal > MAX_ORDER_TOTAL + discount) return '1回の注文の合計は、' + MAX_ORDER_TOTAL.toLocaleString() + '円までです。';
   return null;
+}
+
+// ---- 予約の金額の「上限」の検査(ポイントが付く予約だけ) ----
+// アプリが送る合計金額は、そのままでは信じられない(安い席の予約で、大きな金額を送れば、ポイントを水増しできる)。
+// サーバーが、信頼できる形で持てる値(運賃表の最高の区分・特急料金・商品の価格)から、その予約の金額の上限を求め、超える申告は断る。
+// 正しい予約を、1件も断らないことを優先する: 運賃は、距離を見ず、最高の区分(上限)で見る。クーポンの割引は、下限を見ない(割引で下がるだけ)。
+// この表は、アプリの src/utils/fare.ts(運賃表)・ReservationTab.tsx(特急料金)・data/mockData.ts(商品)と同じ値にする
+// (tests/gas.test.ts が、アプリ側の値と、そろっているかを見張る)。
+const PRICE_FARE_MAX = 3300; // 運賃表の最高の区分(営業キロ200km超)。実際の路線は、最長でも約143km
+// 特急料金(1席)。[列車名の頭, { 席種: 料金 }, 席種が表にないときの料金]
+const EXPRESS_FEE_TABLE = [
+  { prefix: '特急あやみ', fees: { standard: 750, reserved: 1150, green: 2200 }, other: 1150 },
+  { prefix: '特急Nライナー', fees: {}, other: 1250 },
+  { prefix: '特急(Nライナー)', fees: {}, other: 1250 },
+  { prefix: '特急めぐり', fees: { megu: 2050 }, other: 1250 }
+];
+const EXPRESS_FEE_UNKNOWN_TRAIN = 2200; // 列車名が分からないときは、全種別の最高額
+// 車内デリバリーの商品の価格(商品の番号 → 円)。表にない番号は断る
+const EQUIP_ITEM_PRICES = { 'eq-01': 2850, 'eq-02': 2280, 'eq-03': 1250, 'eq-04': 780, 'eq-05': 2800, 'eq-06': 450 };
+
+function expressFeeMax(trainName, seatType) {
+  const name = String(trainName === undefined || trainName === null ? '' : trainName);
+  for (let i = 0; i < EXPRESS_FEE_TABLE.length; i++) {
+    const e = EXPRESS_FEE_TABLE[i];
+    if (name.indexOf(e.prefix) !== 0) continue;
+    const t = String(seatType === undefined || seatType === null ? '' : seatType);
+    return Object.prototype.hasOwnProperty.call(e.fees, t) ? e.fees[t] : e.other;
+  }
+  return EXPRESS_FEE_UNKNOWN_TRAIN;
+}
+
+// その予約の、合計金額(N-POINTで払った分を含む)の上限を求めて、超えていれば断りの文を返す(無ければ null)。
+// 上限 = (最高の運賃 + 特急料金) × 席の数 + 商品の合計(表の価格 × 個数)
+function checkOrderPrice(order) {
+  const seats = Math.min(Math.max(parseSeats(order.seatNo).length, 1), MAX_SEATS);
+  let itemsTotal = 0;
+  const items = Array.isArray(order.items) ? order.items : [];
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i] || {};
+    const id = String(it.id === undefined || it.id === null ? '' : it.id);
+    if (!Object.prototype.hasOwnProperty.call(EQUIP_ITEM_PRICES, id)) return '予約内容が正しくありません。';
+    if (Number(it.price) !== EQUIP_ITEM_PRICES[id]) return '予約内容が正しくありません。';
+    itemsTotal += EQUIP_ITEM_PRICES[id] * Math.floor(Number(it.quantity) || 0);
+  }
+  const gross = (Number(order.totalPrice) || 0) + (Number(order.pointsUsed) || 0);
+  const upper = (PRICE_FARE_MAX + expressFeeMax(order.trainName, order.seatType)) * seats + itemsTotal;
+  return gross > upper ? '予約内容が正しくありません。' : null;
 }
 
 /**
@@ -1421,8 +1468,9 @@ function generateToken(len) {
   return out;
 }
 
-// ログイン証(署名つき・有効30日)。保存はせず、署名で正しさを確かめる
-const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+// ログイン証(署名つき・有効14日)。保存はせず、署名で正しさを確かめる。
+// 期限は、ログイン証の中に入っているので、30日だった時代に発行したものは、その期限まで、そのまま有効(短くなるのは、これから発行するものから)
+const SESSION_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 
 function getSessionSecret() {
   const props = PropertiesService.getScriptProperties();
@@ -1735,7 +1783,7 @@ function handleVerifyAdminToken(adminToken) {
  */
 function validatePasswordServer(pw) {
   if (typeof pw !== 'string') return 'パスワードを入力してください。';
-  if (pw.length < 6) return 'パスワードは6文字以上で入力してください。';
+  if (pw.length < MIN_PASSWORD_LENGTH) return 'パスワードは' + MIN_PASSWORD_LENGTH + '文字以上で入力してください。';
   if (pw.length > MAX_PASSWORD_LENGTH) return 'パスワードは' + MAX_PASSWORD_LENGTH + '文字以内で入力してください。';
   if (!/[a-z]/.test(pw)) return 'パスワードには英字の小文字を1文字以上含めてください。';
   if (!/[A-Z]/.test(pw)) return 'パスワードには英字の大文字を1文字以上含めてください。';
@@ -1746,6 +1794,7 @@ function validatePasswordServer(pw) {
 
 // 入力の長さの上限(メールは RFC の最大。画面の入力欄の maxLength も、同じ数字)
 const MAX_EMAIL_LENGTH = 254;
+const MIN_PASSWORD_LENGTH = 8; // 新規登録のときだけ。すでにある会員のログインは、文字数では断らない
 const MAX_PASSWORD_LENGTH = 128;
 const MAX_NAME_LENGTH = 30;
 
