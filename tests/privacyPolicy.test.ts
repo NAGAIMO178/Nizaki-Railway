@@ -28,7 +28,7 @@ describe('公開前', () => {
     win.location.search = '';
     localStorage.clear();
     const h = createHash('sha256').update(html()).digest('hex');
-    expect(h).toBe('96f77f70dd720223b7089fc6d4f9b760a3c0fe6a9751959b4a2d557816b18eb4');
+    expect(h).toBe('abb4ab194f6d682c24300614b16497d29843660ba1b73a76a3281d0eff5e01ea');
   });
 });
 
@@ -65,8 +65,7 @@ describe('公開後', () => {
   it('LINE(予約は、そのLINEに紐づく分だけ・アンケート)と、ログイン証・失敗の回数', () => {
     win.location.search = '?preview=1';
     const t = text();
-    expect(t).toContain('現在、公式LINEでは、予約の照会などの応答を行っておりません');
-    expect(t).not.toContain('紐づく予約だけをお返しします');
+    expect(t).toContain('そのLINEアカウントに紐づく予約だけをお返しします');
     expect(t).toContain('LINEのアンケート（リサーチ）を行うことがあります');
     expect(t).toContain('個人が特定されない形で、結果だけを見ます');
     expect(t).toContain('署名つきのログイン証（有効30日）');
@@ -109,12 +108,14 @@ describe('公式LINEでの応答・ご請求(2026-11-11 の改定)', () => {
     return [pre, text()];
   };
 
-  it('公式LINEの応答(予約の照会・お問い合わせ)は、行っていないと書く。運行情報・お知らせの配信は、そのまま', () => {
+  it('公式LINEの自動の返事(予約の照会)は、書いたまま。人が個別に返すお問い合わせは、書かない。運行情報・お知らせの配信は、そのまま', () => {
     both().forEach((t) => {
       expect(t).not.toContain('お問い合わせへの対応');
       expect(t).toContain('公式LINEでの運行情報・お知らせの配信');
     });
-    expect(both()[1]).toContain('現在、公式LINEでは、予約の照会などの応答を行っておりません');
+    const post = both()[1];
+    expect(post).toContain('公式LINEに「予約」などと送ると、そのLINEアカウントに紐づく予約だけをお返しします（ほかの人の予約は見られません）。');
+    expect(post).not.toContain('予約の照会などの応答を行っておりません');
   });
 
   it('6: 請求は受け付けていない。神埼IDの削除は、マイページから自分でできる。公式LINEへのリンクは、ない', () => {
@@ -148,8 +149,8 @@ describe('公式LINEでの応答・ご請求(2026-11-11 の改定)', () => {
     });
   });
 
-  it('改定日は、2026年11月11日(公開前・公開後の両方)', () => {
-    both().forEach((t) => expect(t).toContain('改定日：2026年11月11日'));
+  it('改定日は、2026年11月11日(公開前・公開後の両方)。お問い合わせ対応と請求の受付の説明を更新した、と書く', () => {
+    both().forEach((t) => expect(t).toContain('改定日：2026年11月11日（公式LINEでのお問い合わせ対応と、ご請求の受付についての説明を更新しました）'));
   });
 
   it('LINEユーザーIDの取得の説明(1)は、そのまま(連携が動いているか確認するまで、触らない)', () => {

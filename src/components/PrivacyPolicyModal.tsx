@@ -145,7 +145,7 @@ export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, 
                 情報の保管・送受信には外部事業者であるGoogle（Google Apps Script・スプレッドシート）およびLINE（公式アカウント・Messaging API）を利用しており、これらの事業者が運用する環境で情報が取り扱われます。
               </p>
               <p>
-                現在、公式LINEでは、予約の照会などの応答を行っておりません。
+                公式LINEに「予約」などと送ると、そのLINEアカウントに紐づく予約だけをお返しします（ほかの人の予約は見られません）。
                 友だち追加とメッセージの送受信は、LINEの仕組みで扱われます。
               </p>
               <p>今後、LINEのアンケート（リサーチ）を行うことがあります。個人が特定されない形で、結果だけを見ます。回答の扱いは、LINEの仕組みによります。</p>
@@ -223,7 +223,7 @@ export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, 
                 <br />
               </>
             )}
-            改定日：2026年11月11日（公式LINEでの応答と、ご請求の受付についての説明を更新しました）
+            改定日：2026年11月11日（公式LINEでのお問い合わせ対応と、ご請求の受付についての説明を更新しました）
             <br />
             神埼鉄道グループ
           </p>
