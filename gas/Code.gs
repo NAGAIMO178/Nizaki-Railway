@@ -1468,8 +1468,9 @@ function generateToken(len) {
   return out;
 }
 
-// ログイン証(署名つき・有効30日)。保存はせず、署名で正しさを確かめる
-const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+// ログイン証(署名つき・有効14日)。保存はせず、署名で正しさを確かめる。
+// 期限は、ログイン証の中に入っているので、30日だった時代に発行したものは、その期限まで、そのまま有効(短くなるのは、これから発行するものから)
+const SESSION_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 
 function getSessionSecret() {
   const props = PropertiesService.getScriptProperties();

@@ -1935,3 +1935,75 @@ describe('予期しない例外の応答とログ', () => {
     [SECRET_MAIL, SECRET_TOKEN, 'Request failed'].forEach((w) => expect(log, w).not.toContain(w));
   });
 });
+
+// ---- ログイン証の有効期間(14日)。30日だった時代に発行したものは、その期限まで有効 ----
+describe('ログイン証の有効期間', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const T0 = Date.parse('2026-11-12T12:00:00+09:00');
+  let now: number;
+
+  beforeEach(() => {
+    now = T0;
+    const props: Record<string, string> = {};
+    gas.PropertiesService = { getScriptProperties: () => ({ getProperty: (k: string) => props[k] ?? '', setProperty: (k: string, v: string) => void (props[k] = v) }) };
+    gas.Utilities = {
+      ...gas.Utilities,
+      getUuid: () => 'uuid-fixed',
+      computeHmacSha256Signature: (payload: string, key: string) => Array.from(crypto.createHmac('sha256', key).update(payload).digest()).map((b) => (b > 127 ? b - 256 : b)),
+      base64EncodeWebSafe: (bytes: number[]) => Buffer.from(bytes.map((b) => (b < 0 ? b + 256 : b))).toString('base64url'),
+    };
+    vm.runInContext('Date.now = function () { return globalThis.__now; }', gas);
+    gas.__now = now;
+  });
+  const at = (ms: number) => void (gas.__now = ms);
+  // 30日の期限で発行された、以前のログイン証
+  const legacyToken = (memberId: string, issuedAt: number) => {
+    const payload = `${memberId}.${issuedAt + 30 * DAY}`;
+    return `${payload}.${gas.signSessionPayload(payload)}`;
+  };
+
+  it('これから発行するログイン証は、14日(ちょうどまで有効。1秒すぎたら無効)', () => {
+    expect(vm.runInContext('SESSION_TTL_MS', gas)).toBe(14 * DAY);
+    const token = gas.createSessionToken('NZ-1');
+    expect(Number(token.split('.')[1])).toBe(T0 + 14 * DAY);
+    at(T0 + 14 * DAY - 1000);
+    expect(gas.verifySessionToken(token)).toBe('NZ-1');
+    at(T0 + 14 * DAY);
+    expect(gas.verifySessionToken(token)).toBeNull();
+    at(T0 + 14 * DAY + 1000);
+    expect(gas.verifySessionToken(token)).toBeNull();
+  });
+
+  it('30日の期限で発行ずみのログイン証は、その期限まで、そのまま有効(14日で、切られない)', () => {
+    const old = legacyToken('NZ-2', T0);
+    at(T0 + 20 * DAY);
+    expect(gas.verifySessionToken(old)).toBe('NZ-2');
+    at(T0 + 30 * DAY - 1000);
+    expect(gas.verifySessionToken(old)).toBe('NZ-2');
+    at(T0 + 30 * DAY + 1000);
+    expect(gas.verifySessionToken(old)).toBeNull();
+  });
+
+  it('期限が切れたログイン証は、「ログインの有効期限が切れています」(code: session)で断る。ほかの会員のものとして通らない', () => {
+    const token = gas.createSessionToken('NZ-1');
+    at(T0 + 15 * DAY);
+    // 作りものに差し替えていない、本物の authMember を使う(新しく読み込んだ世界で)
+    const fresh: Gas = {
+      Logger: { log: () => undefined },
+      LockService: gas.LockService,
+      Utilities: gas.Utilities,
+      ContentService: {},
+      PropertiesService: gas.PropertiesService,
+    };
+    vm.createContext(fresh);
+    vm.runInContext(source, fresh);
+    vm.runInContext('Date.now = function () { return globalThis.__now; }', fresh);
+    fresh.__now = T0 + 15 * DAY;
+    fresh.createJsonResponse = (d: unknown) => d;
+    const res = fresh.authMember(token);
+    expect(res.error).toMatchObject({ status: 'error', code: 'session', message: 'ログインの有効期限が切れています。もう一度ログインしてください。' });
+    // 期限を書き換えると、署名が合わず、通らない
+    const [id, , sig] = token.split('.');
+    expect(gas.verifySessionToken(`${id}.${T0 + 100 * DAY}.${sig}`)).toBeNull();
+  });
+});
