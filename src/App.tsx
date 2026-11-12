@@ -1195,6 +1195,7 @@ export default function App() {
           orderHistory={shownOrderHistory}
           hideDeleteAccount={demoOn}
           cloudMode={cloudOn}
+          cloudSynced={cloudOn && !!cloud.account && !cloud.error}
           mileage={mileage}
           ticketSummary={ticketSummary}
           onLogout={handleLogout}
