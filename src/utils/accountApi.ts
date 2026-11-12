@@ -77,6 +77,12 @@ export const loginWithPassword = (email: string, password: string) =>
 export const startLineVerification = () =>
   callGas('startLineVerification', {});
 
+// パスワードを忘れたとき: LINE で本人確認して、再設定する(合言葉を LINE に送ると、登録のときに使った LINE アカウントにだけ、認証コードが届く)
+export const startPasswordReset = (email: string) => callGas('startPasswordReset', { email });
+
+export const resetPassword = (email: string, token: string, code: string, password: string) =>
+  callGas('resetPassword', { email, token, code, password });
+
 export const verifyLineAndRegister = (email: string, password: string, token: string, code: string, name?: string) =>
   callGas('verifyLineAndRegister', { email, password, token, code, name });
 

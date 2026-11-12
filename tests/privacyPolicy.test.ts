@@ -28,7 +28,7 @@ describe('公開前', () => {
     win.location.search = '';
     localStorage.clear();
     const h = createHash('sha256').update(html()).digest('hex');
-    expect(h).toBe('abb4ab194f6d682c24300614b16497d29843660ba1b73a76a3281d0eff5e01ea');
+    expect(h).toBe('b1fb4f39108bdfac750e72b363460a6809125cb9731acdae40d266d46c60a7e1');
   });
 });
 
@@ -156,5 +156,11 @@ describe('公式LINEでの応答・ご請求(2026-11-11 の改定)', () => {
   it('LINEユーザーIDの取得の説明(1)は、そのまま(連携が動いているか確認するまで、触らない)', () => {
     both().forEach((t) => expect(t).toContain('LINEユーザーID（本人確認のため、当社公式LINEを友だち追加しメッセージを送信した際に取得します）'));
   });
-});
 
+  it('利用目的に、パスワードの再設定(LINEでの本人確認)を書く。改定日は、2026年11月12日(公開前・公開後の両方)', () => {
+    both().forEach((t) => {
+      expect(t).toContain('神埼IDの本人確認およびログイン（パスワードの再設定を含む）');
+      expect(t).toContain('改定日：2026年11月12日（パスワードの再設定を、LINEでの本人確認で行えるようにしたため、利用目的を追記しました）');
+    });
+  });
+});

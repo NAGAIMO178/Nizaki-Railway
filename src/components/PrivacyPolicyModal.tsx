@@ -113,7 +113,7 @@ export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, 
             <Section title="2. 利用目的">
               <Bullets
                 items={[
-                  '神埼IDの本人確認およびログイン',
+                  '神埼IDの本人確認およびログイン（パスワードの再設定を含む）',
                   '特急券予約・車内デリバリー注文・クーポンの受付と照会',
                   'N-POINT・マイレージ・ミステリー・イベントの記録と、報酬を受け取れるかの確認（端末をかえても、続きから使えるようにするため）',
                   '公式LINEでの運行情報・お知らせの配信',
@@ -127,7 +127,7 @@ export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, 
             <Section title="2. 利用目的">
               <Bullets
                 items={[
-                  '神埼IDの本人確認およびログイン',
+                  '神埼IDの本人確認およびログイン（パスワードの再設定を含む）',
                   '特急券予約・車内デリバリー注文・クーポンの受付と照会',
                   '公式LINEでの運行情報・お知らせの配信',
                   '不正利用の防止',
@@ -224,6 +224,8 @@ export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, 
               </>
             )}
             改定日：2026年11月11日（公式LINEでのお問い合わせ対応と、ご請求の受付についての説明を更新しました）
+            <br />
+            改定日：2026年11月12日（パスワードの再設定を、LINEでの本人確認で行えるようにしたため、利用目的を追記しました）
             <br />
             神埼鉄道グループ
           </p>

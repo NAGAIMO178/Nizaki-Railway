@@ -105,6 +105,13 @@ function doPost(e) {
     if (json.action === 'startLineVerification') {
       return handleStartLineVerification();
     }
+    // パスワードを忘れたとき: LINE で本人確認して、再設定する(登録のときに使った LINE アカウントだけが、認証コードを受け取れる)
+    if (json.action === 'startPasswordReset') {
+      return handleStartPasswordReset(json.email);
+    }
+    if (json.action === 'resetPassword') {
+      return handleResetPassword(json.email, json.token, json.code, json.password);
+    }
     if (json.action === 'verifyLineAndRegister') {
       return handleVerifyLineAndRegister(json.email, json.password, json.token, json.code, json.name);
     }
@@ -232,6 +239,11 @@ function handleLineMessage(event) {
   const normalizedToken = text.toUpperCase().replace(/[^A-Z0-9]/g, '');
   if (normalizedToken.length === 6 && CacheService.getScriptCache().get('line_pending_' + normalizedToken)) {
     handleLineVerificationMessage(replyToken, userId, normalizedToken);
+    return;
+  }
+  // 0.5 パスワード再設定用の合言葉判定
+  if (normalizedToken.length === 6 && CacheService.getScriptCache().get('line_reset_pending_' + normalizedToken)) {
+    handleLineResetMessage(replyToken, userId, normalizedToken);
     return;
   }
 
@@ -1349,6 +1361,158 @@ function reserveOtpAttempt(failKey) {
   } finally {
     lock.releaseLock();
   }
+}
+
+// ---- パスワードを忘れたときの再設定(LINE で本人確認) ----
+// 流れ: ①アプリがメールアドレスを送る(startPasswordReset)→合言葉を返す。メールが登録されているかは、見ない・応答に出さない
+//   ②利用者が、公式LINEに合言葉を送る→送った LINE ユーザーIDが、そのメールの会員に紐づく LINE ユーザーIDと同じときだけ、認証コードを返信
+//   ③アプリが、メール・合言葉・認証コード・新しいパスワードを送る(resetPassword)→確かめて、パスワードを変える
+// 合言葉と認証コードは、予測しにくい乱数(Utilities.getUuid)で作る。LINE ユーザーID・メール・コード・パスワードは、ログ・応答に出さない。
+const RESET_TTL_SECONDS = 600;       // 合言葉・認証コードの有効期間(10分)
+const RESET_START_PER_EMAIL = 5;     // 合言葉の発行は、メールごとに、10分に5回まで
+const RESET_START_ALL = 200;         // 全体では、10分に200回まで(キャッシュを埋めさせない)
+const RESET_CODE_ATTEMPTS = 5;       // 認証コードは、5回まで
+const RESET_FAIL_REPLY = '確認できませんでした。登録のときに使ったLINEアカウントから、もう一度お試しください。';
+
+// 乱数のバイト列(Utilities.getUuid は、UUID v4 で、固定のビット(4 と 8〜b)を除いた30桁の16進が、乱数)
+function secureRandomBytes(n) {
+  const out = [];
+  while (out.length < n) {
+    const hex = Utilities.getUuid().replace(/-/g, '');
+    const free = hex.slice(0, 12) + hex.slice(13, 16) + hex.slice(17); // 固定の桁(12・16番目)を除く(30桁 = 15バイト)
+    for (let i = 0; i + 1 < free.length && out.length < n; i += 2) out.push(parseInt(free.slice(i, i + 2), 16));
+  }
+  return out;
+}
+
+// 紛らわしい0/O, 1/I を除いた32文字から、len 文字(32 で割り切れるので、偏りがない)
+function secureToken(len) {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const bytes = secureRandomBytes(len);
+  let out = '';
+  for (let i = 0; i < len; i++) out += chars.charAt(bytes[i] & 31);
+  return out;
+}
+
+// 6桁の数字(0〜999999 を、偏りなく。24ビットの値が 15,000,000 未満のものだけ使い、1,000,000 で割った余り)
+function secureCode6() {
+  for (;;) {
+    const b = secureRandomBytes(3);
+    const n = b[0] * 65536 + b[1] * 256 + b[2];
+    if (n < 15000000) return ('000000' + String(n % 1000000)).slice(-6);
+  }
+}
+
+function emailKey(prefix, email) {
+  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, prefix + ':' + email, Utilities.Charset.UTF_8);
+  return prefix + '_' + Utilities.base64EncodeWebSafe(digest);
+}
+
+/**
+ * ① 合言葉の発行。メールが登録されているかは、調べない(応答も、会員の有無で変えない)
+ */
+function handleStartPasswordReset(rawEmail) {
+  const email = normalizeLoginEmail(rawEmail);
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > MAX_EMAIL_LENGTH) {
+    return createJsonResponse({ status: 'error', message: '有効なメールアドレスを入力してください。' });
+  }
+  const gate = reserveCounter(emailKey('reset_start', email), RESET_START_PER_EMAIL, RESET_TTL_SECONDS);
+  const gateAll = gate === 'ok' ? reserveCounter('reset_start_all', RESET_START_ALL, RESET_TTL_SECONDS) : gate;
+  if (gateAll === 'locked') {
+    return createJsonResponse({ status: 'error', code: 'reset_locked', message: '合言葉の発行が続いたため、しばらくしてからお試しください(約10分)。' });
+  }
+  if (gateAll === 'busy') return loginBusyResponse();
+  const token = secureToken(6);
+  CacheService.getScriptCache().put('line_reset_pending_' + token, JSON.stringify({ email: email }), RESET_TTL_SECONDS);
+  return createJsonResponse({ status: 'success', token: token });
+}
+
+/**
+ * ② LINE にその合言葉が届いたとき(handleLineMessage から呼ばれる)。
+ * 送った LINE ユーザーIDが、そのメールの会員に紐づく LINE ユーザーIDと同じときだけ、認証コードを返信する。
+ * 一致しない・会員がいない・LINE の紐づけが無い、は、すべて同じ短い文を返す(会員の有無を、LINE から探れないように)
+ */
+function handleLineResetMessage(replyToken, userId, token) {
+  const cache = CacheService.getScriptCache();
+  const raw = cache.get('line_reset_pending_' + token);
+  cache.remove('line_reset_pending_' + token); // 1回だけ使える
+  let email = '';
+  try {
+    email = String(JSON.parse(raw).email || '');
+  } catch (err) {
+    email = '';
+  }
+  const member = email ? findMemberByEmail(email) : null;
+  const memberLine = member && member.lineUserId ? String(member.lineUserId) : '';
+  if (!memberLine || !userId || userId === 'unknown' || !safeEqual(memberLine, String(userId))) {
+    replyToLine(replyToken, [{ type: 'text', text: RESET_FAIL_REPLY }]);
+    return;
+  }
+  const code = secureCode6();
+  cache.put('line_reset_otp_' + token, JSON.stringify({ email: email, code: code, lineUserId: memberLine }), RESET_TTL_SECONDS);
+  replyToLine(replyToken, [{
+    type: 'text',
+    text:
+      '🚆神埼鉄道グループ NIZAKI\n\n' +
+      'パスワード再設定の認証コードです。\n\n' +
+      '認証コード: ' + code + '\n\n' +
+      'アプリの画面に入力してください。\n' +
+      '※このコードの有効期限は発行から10分間です。心当たりがないときは、無視してください。'
+  }]);
+}
+
+/**
+ * ③ 認証コードを確かめて、新しいパスワードに変える
+ */
+function handleResetPassword(rawEmail, token, code, password) {
+  const email = normalizeLoginEmail(rawEmail);
+  const genericError = createJsonResponse({ status: 'error', message: '認証コードが正しくないか、有効期限が切れています。' });
+  if (!email || email.length > MAX_EMAIL_LENGTH || typeof token !== 'string' || (code !== undefined && code !== null && typeof code !== 'string' && typeof code !== 'number')) {
+    return genericError;
+  }
+  const passwordError = validatePasswordServer(password);
+  if (passwordError) return createJsonResponse({ status: 'error', message: passwordError });
+
+  const normalizedToken = token.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const cache = CacheService.getScriptCache();
+  const raw = cache.get('line_reset_otp_' + normalizedToken);
+  if (!raw) return genericError;
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch (err) {
+    return genericError;
+  }
+  // 認証コードの当てずっぽうを防ぐ(5回まで。試す回数は、確かめる前に、ロックの中で確保する。メールが違う試しも数える)
+  const failKey = 'line_reset_fail_' + normalizedToken;
+  const attempt = reserveOtpAttempt(failKey);
+  if (attempt === 'busy') return loginBusyResponse();
+  const dead = function () {
+    cache.remove('line_reset_otp_' + normalizedToken);
+    cache.remove(failKey);
+    return createJsonResponse({ status: 'error', message: '認証コードの誤りが続いたため、無効にしました。最初からやり直してください。' });
+  };
+  if (attempt > RESET_CODE_ATTEMPTS) return dead();
+  const given = String(code === undefined || code === null ? '' : code).trim();
+  const codeOk = safeEqual(given, String(data.code || '')) && data.email === email;
+  if (!codeOk) {
+    if (attempt >= RESET_CODE_ATTEMPTS) return dead();
+    return createJsonResponse({ status: 'error', message: '認証コードが正しくありません。' });
+  }
+
+  // 会員を確かめる(いまも、同じ LINE ユーザーIDに紐づいていること)。パスワードの計算は、遅いので、ロックの外で
+  const member = findMemberByEmail(email);
+  if (!member || !member.lineUserId || !safeEqual(String(member.lineUserId), String(data.lineUserId || ''))) return genericError;
+  const newSalt = Utilities.getUuid();
+  const newHash = hashPasswordV2(password, newSalt, currentPasswordIterations());
+  // 台帳の書き換えは、短いロックの中。いまの保存が、確かめたときと同じときだけ書く
+  if (!upgradeMemberPassword(email, member.passwordHash, { salt: newSalt, hash: newHash })) {
+    return createJsonResponse({ status: 'error', message: '混み合っています。しばらくしてからもう一度お試しください。' });
+  }
+  cache.remove('line_reset_otp_' + normalizedToken);
+  cache.remove(failKey);
+  clearLoginFailures(email);
+  return createJsonResponse({ status: 'success' });
 }
 
 function handleStartLineVerification() {
