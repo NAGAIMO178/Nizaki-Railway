@@ -287,7 +287,7 @@ describe('シートに書く文字(式の注入を防ぐ)', () => {
     gas.hashPassword = () => 'hash';
     gas.createSessionToken = () => 'tok';
     const nameEvil = '=HYPERLINK("x")'; // 表示名は30文字まで
-    const r = gas.handleVerifyLineAndRegister(emailEvil, 'Abcd1!', 'ABC234', '123456', nameEvil);
+    const r = gas.handleVerifyLineAndRegister(emailEvil, 'Abcd1!ef', 'ABC234', '123456', nameEvil);
     expect(r.status).toBe('success');
     const row = written[0];
     expect(row[1]).toBe("'" + emailEvil);
@@ -352,6 +352,7 @@ describe('ポイントの水増しを防ぐ(予約の登録・取消)', () => {
     gas.findMemberById = () => ({ memberId: 'M1', lineUserId: '' });
     gas.getOrCreateReservationsSheet = () => sheet;
     gas.getDataSpreadsheet = () => ({ getSheetByName: () => sheet });
+    gas.checkOrderPrice = () => null; // この describe は、ポイントの仕組みだけを見る(金額の上限の検査は、別の describe)
   };
 
   const order = (orderId: string, totalPrice: number) => ({
@@ -563,6 +564,7 @@ describe('注文の上限(予約の登録・デリバリーの追加)', () => {
     gas.verifySessionToken = () => 'M1';
     gas.findMemberById = () => ({ memberId: 'M1', lineUserId: '' });
     gas.getOrCreateReservationsSheet = () => sheet;
+    gas.checkOrderPrice = () => null; // この describe は、上限の仕組みだけを見る(金額の上限の検査は、別の describe)
     put('welcome', 'welcome', 0);
   });
 
@@ -1698,6 +1700,25 @@ describe('パスワードの保存方式(v2)', () => {
     expect(login('Wrong1!x')).toMatchObject({ status: 'error' });
   });
 
+  it('すでにある会員は、8文字より短いパスワードでも、ログインできる(新規登録のときだけ、8文字以上)', () => {
+    addMember('old-salt', legacyHash('Ab1!ef', 'old-salt')); // 6文字(以前の決まりで作ったもの)
+    expect(login('Ab1!ef').status).toBe('success');
+    expect(stored().hash).toMatch(/^v2\$/);
+    expect(login('Ab1!ef').status).toBe('success');
+    grid.length = 1;
+    cache = {};
+    addMember('s2', 'v2$10000$' + pbkdf2('Ab1!efg', 's2', 10000)); // 7文字
+    expect(login('Ab1!efg').status).toBe('success');
+  });
+
+  it('新しい登録は、8文字以上(7文字は断り、台帳に書かない。8文字は通る)', () => {
+    cache['line_otp_ABC234'] = JSON.stringify({ code: '123456', lineUserId: 'U1' });
+    const short = gas.handleVerifyLineAndRegister(EMAIL, 'Abc1!ef', 'ABC234', '123456', undefined);
+    expect(short).toMatchObject({ status: 'error', message: 'パスワードは8文字以上で入力してください。' });
+    expect(grid.length).toBe(1);
+    expect(gas.handleVerifyLineAndRegister(EMAIL, 'Abc1!efg', 'ABC234', '123456', undefined).status).toBe('success');
+  });
+
   it('古い方式の会員が間違えたときは、保存し直さない', () => {
     addMember('old-salt', legacyHash(PW, 'old-salt'));
     expect(login('Wrong1!x')).toMatchObject({ status: 'error' });
@@ -1912,6 +1933,78 @@ describe('予期しない例外の応答とログ', () => {
     const log = logs.join('\n');
     expect(log).toContain('[LINE返信失敗]');
     [SECRET_MAIL, SECRET_TOKEN, 'Request failed'].forEach((w) => expect(log, w).not.toContain(w));
+  });
+});
+
+// ---- ログイン証の有効期間(14日)。30日だった時代に発行したものは、その期限まで有効 ----
+describe('ログイン証の有効期間', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const T0 = Date.parse('2026-11-12T12:00:00+09:00');
+  let now: number;
+
+  beforeEach(() => {
+    now = T0;
+    const props: Record<string, string> = {};
+    gas.PropertiesService = { getScriptProperties: () => ({ getProperty: (k: string) => props[k] ?? '', setProperty: (k: string, v: string) => void (props[k] = v) }) };
+    gas.Utilities = {
+      ...gas.Utilities,
+      getUuid: () => 'uuid-fixed',
+      computeHmacSha256Signature: (payload: string, key: string) => Array.from(crypto.createHmac('sha256', key).update(payload).digest()).map((b) => (b > 127 ? b - 256 : b)),
+      base64EncodeWebSafe: (bytes: number[]) => Buffer.from(bytes.map((b) => (b < 0 ? b + 256 : b))).toString('base64url'),
+    };
+    vm.runInContext('Date.now = function () { return globalThis.__now; }', gas);
+    gas.__now = now;
+  });
+  const at = (ms: number) => void (gas.__now = ms);
+  // 30日の期限で発行された、以前のログイン証
+  const legacyToken = (memberId: string, issuedAt: number) => {
+    const payload = `${memberId}.${issuedAt + 30 * DAY}`;
+    return `${payload}.${gas.signSessionPayload(payload)}`;
+  };
+
+  it('これから発行するログイン証は、14日(ちょうどまで有効。1秒すぎたら無効)', () => {
+    expect(vm.runInContext('SESSION_TTL_MS', gas)).toBe(14 * DAY);
+    const token = gas.createSessionToken('NZ-1');
+    expect(Number(token.split('.')[1])).toBe(T0 + 14 * DAY);
+    at(T0 + 14 * DAY - 1000);
+    expect(gas.verifySessionToken(token)).toBe('NZ-1');
+    at(T0 + 14 * DAY);
+    expect(gas.verifySessionToken(token)).toBeNull();
+    at(T0 + 14 * DAY + 1000);
+    expect(gas.verifySessionToken(token)).toBeNull();
+  });
+
+  it('30日の期限で発行ずみのログイン証は、その期限まで、そのまま有効(14日で、切られない)', () => {
+    const old = legacyToken('NZ-2', T0);
+    at(T0 + 20 * DAY);
+    expect(gas.verifySessionToken(old)).toBe('NZ-2');
+    at(T0 + 30 * DAY - 1000);
+    expect(gas.verifySessionToken(old)).toBe('NZ-2');
+    at(T0 + 30 * DAY + 1000);
+    expect(gas.verifySessionToken(old)).toBeNull();
+  });
+
+  it('期限が切れたログイン証は、「ログインの有効期限が切れています」(code: session)で断る。ほかの会員のものとして通らない', () => {
+    const token = gas.createSessionToken('NZ-1');
+    at(T0 + 15 * DAY);
+    // 作りものに差し替えていない、本物の authMember を使う(新しく読み込んだ世界で)
+    const fresh: Gas = {
+      Logger: { log: () => undefined },
+      LockService: gas.LockService,
+      Utilities: gas.Utilities,
+      ContentService: {},
+      PropertiesService: gas.PropertiesService,
+    };
+    vm.createContext(fresh);
+    vm.runInContext(source, fresh);
+    vm.runInContext('Date.now = function () { return globalThis.__now; }', fresh);
+    fresh.__now = T0 + 15 * DAY;
+    fresh.createJsonResponse = (d: unknown) => d;
+    const res = fresh.authMember(token);
+    expect(res.error).toMatchObject({ status: 'error', code: 'session', message: 'ログインの有効期限が切れています。もう一度ログインしてください。' });
+    // 期限を書き換えると、署名が合わず、通らない
+    const [id, , sig] = token.split('.');
+    expect(gas.verifySessionToken(`${id}.${T0 + 100 * DAY}.${sig}`)).toBeNull();
   });
 });
 
