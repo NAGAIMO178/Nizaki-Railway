@@ -1914,3 +1914,128 @@ describe('予期しない例外の応答とログ', () => {
     [SECRET_MAIL, SECRET_TOKEN, 'Request failed'].forEach((w) => expect(log, w).not.toContain(w));
   });
 });
+
+// ---- LINE の Webhook: 秘密の文字(URL の ?secret=)による確認。段階1=確かめるだけ / 段階2=合わないものを無視 ----
+describe('LINE の Webhook の秘密の確認', () => {
+  // 以下の値は、テスト用の架空の文字(実在の秘密ではない)
+  const SECRET = 'test-only-secret-0123456789-abcdefghijklmnop';
+  const WRONG = 'wrong-secret-value-for-test-xyz';
+  let props: Record<string, string>;
+  let cache: Record<string, string>;
+  let logs: string[];
+  let couponLogs: unknown[];
+  let compares: Array<[string, string]>;
+
+  beforeEach(() => {
+    props = {};
+    cache = { line_pending_ABC234: '1' };
+    logs = [];
+    couponLogs = [];
+    compares = [];
+    gas.PropertiesService = { getScriptProperties: () => ({ getProperty: (k: string) => props[k] ?? null }) };
+    gas.CacheService = {
+      getScriptCache: () => ({
+        get: (k: string) => cache[k] ?? null,
+        put: (k: string, v: string) => void (cache[k] = v),
+        remove: (k: string) => void Reflect.deleteProperty(cache, k),
+      }),
+    };
+    gas.Logger = { log: (m: string) => void logs.push(String(m)) };
+    gas.console = { log: (m: string) => void logs.push(String(m)), error: (m: string) => void logs.push(String(m)) };
+    gas.ContentService = {};
+    gas.logCouponIssue = (...a: unknown[]) => void couponLogs.push(a);
+    gas.handleReservationInquiry = () => undefined;
+    // 比較が、safeEqual(定数時間)を通ることを見張る
+    const real = vm.runInContext('safeEqual', gas) as (a: string, b: string) => boolean;
+    gas.safeEqual = (a: string, b: string) => {
+      compares.push([a, b]);
+      return real(a, b);
+    };
+  });
+
+  const event = (text: string) => ({ type: 'message', replyToken: 'r', source: { userId: 'U1' }, message: { type: 'text', text } });
+  const send = (events: unknown[], secret?: string | undefined, extra: Record<string, unknown> = {}) =>
+    gas.doPost({ postData: { contents: JSON.stringify({ events, ...extra }) }, parameter: secret === undefined ? {} : { secret } });
+  const consumedPending = () => cache['line_pending_ABC234'] === undefined;
+  const keyword = 'NIZAKI_MYSTERY_CLEAR_2026';
+
+  describe('段階1(確かめるだけ)', () => {
+    it('秘密が未設定: これまでと同じ(通す)。確認の比較もしない', () => {
+      expect(send([event('ABC234')])).toEqual({ status: 'success' });
+      expect(consumedPending()).toBe(true);
+      expect(compares).toEqual([]);
+    });
+
+    it('設定ずみ・秘密が合う: 通す。ログに、合わない記録は残らない', () => {
+      props.LINE_WEBHOOK_SECRET = SECRET;
+      expect(send([event('ABC234'), event(keyword)], SECRET)).toEqual({ status: 'success' });
+      expect(consumedPending()).toBe(true);
+      expect(couponLogs.length).toBe(1);
+      expect(logs.filter((l) => l.includes('秘密が合わない'))).toEqual([]);
+    });
+
+    it('設定ずみ・秘密が合わない・無い: 処理は通す。合わなかったことを、ログに残す', () => {
+      props.LINE_WEBHOOK_SECRET = SECRET;
+      expect(send([event(keyword)], WRONG)).toEqual({ status: 'success' });
+      expect(send([event(keyword)])).toEqual({ status: 'success' });
+      expect(couponLogs.length).toBe(2);
+      expect(logs.filter((l) => l.includes('秘密が合わないリクエスト') && l.includes('確かめるだけ')).length).toBe(2);
+    });
+  });
+
+  describe('段階2(LINE_WEBHOOK_ENFORCE = true)', () => {
+    beforeEach(() => {
+      props.LINE_WEBHOOK_SECRET = SECRET;
+      props.LINE_WEBHOOK_ENFORCE = 'true';
+    });
+
+    it('秘密が合う: 通る', () => {
+      expect(send([event('ABC234'), event(keyword)], SECRET)).toEqual({ status: 'success' });
+      expect(consumedPending()).toBe(true);
+      expect(couponLogs.length).toBe(1);
+    });
+
+    it('秘密が合わない・無い・文字でない: 処理しない(合言葉を消費しない・クーポンログに書かない)。返すのは、固定の短い文', () => {
+      [WRONG, undefined, '', SECRET + 'x', SECRET.slice(0, -1), SECRET.toUpperCase()].forEach((s) => {
+        expect(send([event('ABC234'), event(keyword)], s), String(s)).toEqual({ status: 'ignored' });
+      });
+      expect(gas.doPost({ postData: { contents: JSON.stringify({ events: [event(keyword)]}) }, parameter: { secret: 123 } })).toEqual({ status: 'ignored' });
+      expect(gas.doPost({ postData: { contents: JSON.stringify({ events: [event(keyword)]}) } })).toEqual({ status: 'ignored' });
+      expect(consumedPending()).toBe(false);
+      expect(couponLogs).toEqual([]);
+    });
+
+    it('LINE の「検証」(events が空の配列): 秘密が合えば通る', () => {
+      expect(send([], SECRET)).toEqual({ status: 'success' });
+    });
+
+    it('秘密が合わない events は、ignored(ログに、無視したと残す)', () => {
+      send([event(keyword)], WRONG);
+      expect(logs.some((l) => l.includes('秘密が合わないリクエスト') && l.includes('無視しました'))).toBe(true);
+    });
+  });
+
+  it('比較は、定数時間の safeEqual を通る(設定した秘密と、送られた文字を比べる)', () => {
+    props.LINE_WEBHOOK_SECRET = SECRET;
+    send([event(keyword)], WRONG);
+    expect(compares).toEqual([[SECRET, WRONG]]);
+  });
+
+  it('秘密(設定した文字・送られてきた文字)は、ログにも、応答にも、出ない', () => {
+    props.LINE_WEBHOOK_SECRET = SECRET;
+    props.LINE_WEBHOOK_ENFORCE = 'true';
+    const out = [send([event(keyword)], WRONG), send([event(keyword)], SECRET), send([], undefined)];
+    const text = logs.join('\n') + JSON.stringify(out);
+    [SECRET, WRONG].forEach((w) => expect(text, w).not.toContain(w));
+  });
+
+  it('アプリからの通常の操作(action)は、秘密の確認の対象外(秘密が無くても、これまでどおり)', () => {
+    props.LINE_WEBHOOK_SECRET = SECRET;
+    props.LINE_WEBHOOK_ENFORCE = 'true';
+    gas.handleGetDisruptions = () => ({ status: 'success', marker: 'ok' });
+    expect(gas.doPost({ postData: { contents: JSON.stringify({ action: 'getDisruptions' }) }, parameter: {} })).toEqual({ status: 'success', marker: 'ok' });
+    expect(gas.doPost({ postData: { contents: JSON.stringify({ action: 'getDisruptions' }) } })).toEqual({ status: 'success', marker: 'ok' });
+    // events のない送信(action も events も無い)は、これまでどおり ignored
+    expect(gas.doPost({ postData: { contents: JSON.stringify({ hello: 1 }) }, parameter: {} })).toEqual({ status: 'ignored' });
+  });
+});
