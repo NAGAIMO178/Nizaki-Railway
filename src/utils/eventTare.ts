@@ -258,7 +258,7 @@ export const localEventStore: EventStore = {
   },
 };
 
-const progressKey = (owner: string): string => `nizaki_event_${EVENT_TARE.id}:${(owner || '').trim().toLowerCase()}`;
+export const progressKey = (owner: string): string => `nizaki_event_${EVENT_TARE.id}:${(owner || '').trim().toLowerCase()}`;
 
 export interface EventProgress {
   joined: boolean;

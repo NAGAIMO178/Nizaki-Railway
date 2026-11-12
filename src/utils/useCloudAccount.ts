@@ -40,7 +40,8 @@ export interface CloudApi {
   pushMystery: () => void;
 }
 
-const cacheKey = (memberId: string) => `nizaki_cloud_cache_${memberId}`;
+export const CLOUD_CACHE_PREFIX = 'nizaki_cloud_cache_';
+const cacheKey = (memberId: string) => `${CLOUD_CACHE_PREFIX}${memberId}`;
 
 const readCache = (memberId: string): CloudAccount | null => {
   try {

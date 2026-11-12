@@ -24,6 +24,7 @@ import { calcDeliveryAddPoints, calcReservationPoints } from './utils/points';
 import LaunchCountdown from './components/LaunchCountdown';
 import { useCloudAccount } from './utils/useCloudAccount';
 import { joinEventTare, rewardIdFromTitle } from './utils/cloudAccount';
+import { clearMemberDataFromDevice } from './utils/memberData';
 import { sendReservationWithRetry } from './utils/reservationSync';
 import { useDelayNotifyLines, useDelayNotifyMode } from './utils/delayNotifySettings';
 import { useDelayWatcher } from './utils/useDelayWatcher';
@@ -428,16 +429,24 @@ export default function App() {
     }
   };
 
-  const handleLogout = () => {
+  // ログアウト・退会: 画面の状態を、ログイン前に戻し、会員のデータを、この端末から消す(サーバーのデータは、消さない)。
+  // 設定ボタンの onClick からも呼ばれる(イベントが渡る)ので、退会かどうかは、true だけを見る
+  const handleLogout = (opts?: { accountDeleted?: boolean }) => {
+    const accountDeleted = !!opts && (opts as { accountDeleted?: unknown }).accountDeleted === true;
+    const leaving = currentUserRef.current;
+    const synced = cloudOnRef.current && !!cloud.account && !cloud.error; // サーバーに同期ずみ(端末内のポイントなどを、消してよい)
     setCurrentUser(null);
     setNPointBalance(0);
     setPointHistory([]);
+    setOrderHistory([]);
     setSelectedCart({});
+    memStoreRef.current.clear(); // デモ会員の、画面を開いているあいだだけの記憶
     try {
       localStorage.removeItem('kanzaki_current_user');
     } catch (e) {
       console.warn('Failed to remove user from storage:', e);
     }
+    clearMemberDataFromDevice({ email: leaving?.email, memberId: leaving?.memberId, synced, accountDeleted });
   };
 
   const orderEmailRef = React.useRef<string | null>(currentUser?.email ?? null);
@@ -1186,6 +1195,7 @@ export default function App() {
           orderHistory={shownOrderHistory}
           hideDeleteAccount={demoOn}
           cloudMode={cloudOn}
+          cloudSynced={cloudOn && !!cloud.account && !cloud.error}
           mileage={mileage}
           ticketSummary={ticketSummary}
           onLogout={handleLogout}

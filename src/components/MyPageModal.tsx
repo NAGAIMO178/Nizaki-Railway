@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { UserAvatar } from './UserAvatar';
 import { UserProfile, ActiveOrder, PointHistoryItem, AccountActivityItem, OrderHistoryItem } from '../types';
+import { logoutNoticeText } from '../utils/logoutNotice';
 import { deleteAccount } from '../utils/accountApi';
 import { MileageCard } from './MileageCard';
 import type { Mileage } from '../utils/mileage';
@@ -41,13 +42,15 @@ interface MyPageModalProps {
   pointHistory: PointHistoryItem[];
   activeOrder: ActiveOrder | null;
   orderHistory: OrderHistoryItem[];
-  onLogout: () => void;
+  onLogout: (opts?: { accountDeleted?: boolean }) => void;
   onOpenNPointModal: () => void;
   onOpenQRCodeModal: () => void;
   // 公開後のデモ会員は、アカウント削除を出さない
   hideDeleteAccount?: boolean;
   // 公開後で、ログイン証のある会員(記録はサーバーが持つ)
   cloudMode?: boolean;
+  // 公開後で、サーバーとの同期が済んでいる(ログアウトで、端末の控えが消え、ログインし直すと、サーバーから戻る)
+  cloudSynced?: boolean;
   // マイレージと乗車記録(公開後のクラウドの会員だけ)
   mileage?: Mileage | null;
   // QR乗車券の状態(公開後。予約のバナーに、「利用済み」の札を出す)
@@ -67,6 +70,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
   onOpenQRCodeModal,
   hideDeleteAccount = false,
   cloudMode = false,
+  cloudSynced = false,
   mileage = null,
   ticketSummary = null,
 }) => {
@@ -95,7 +99,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
     try {
       const result = await deleteAccount(currentUser.email, deletePassword);
       if (result.status === 'success') {
-        onLogout();
+        onLogout({ accountDeleted: true });
         setShowDeleteConfirm(false);
         setDeletePassword('');
         onClose();
@@ -543,7 +547,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                       ログアウトの確認
                     </h4>
                     <p className="text-[11px] text-rose-800 mt-1 leading-relaxed">
-                      ログアウトしても、この端末に保存されているN-POINT（{balance.toLocaleString()}pt）や予約の記録は残ります。同じ端末で同じメールアドレス（{currentUser.email}）でログインすると続きから使えます。なお、これらの記録は端末ごとに保存されるため、別の端末には引き継がれません。
+                      {logoutNoticeText(cloudSynced, balance, currentUser.email)}
                     </p>
                   </div>
                 </div>
