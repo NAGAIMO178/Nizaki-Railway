@@ -7,6 +7,8 @@ import {
   loginWithPassword,
   startLineVerification,
   verifyLineAndRegister,
+  startPasswordReset,
+  resetPassword,
   LINE_OA_ADD_FRIEND_URL,
 } from '../utils/accountApi';
 
@@ -21,6 +23,8 @@ interface LoginModalProps {
 import { MAX_EMAIL_LENGTH, MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, validatePassword } from '../utils/passwordRules';
 
 type RegisterStep = 'form' | 'line-wait';
+// パスワードを忘れたとき(再設定): メールを入れる → 合言葉をLINEに送る → コードと新しいパスワードを入れる
+type ResetStep = 'form' | 'line-wait';
 
 export const LoginModal: React.FC<LoginModalProps> = ({
   isOpen,
@@ -31,6 +35,9 @@ export const LoginModal: React.FC<LoginModalProps> = ({
 }) => {
   const [isRegisterMode, setIsRegisterMode] = useState(false);
   const [registerStep, setRegisterStep] = useState<RegisterStep>('form');
+  const [isResetMode, setIsResetMode] = useState(false);
+  const [resetStep, setResetStep] = useState<ResetStep>('form');
+  const [notice, setNotice] = useState<string | null>(null);
 
   const [idOrEmail, setIdOrEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -52,6 +59,9 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   const resetAll = () => {
     setIsRegisterMode(false);
     setRegisterStep('form');
+    setIsResetMode(false);
+    setResetStep('form');
+    setNotice(null);
     setIdOrEmail('');
     setPassword('');
     setConfirmPassword('');
@@ -211,7 +221,83 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     }
   };
 
-  const showingLineStep = isRegisterMode && registerStep === 'line-wait';
+  // パスワードの再設定 ステップ1: メールアドレスを送って、合言葉を受け取る
+  const handleStartResetCore = async () => {
+    setError(null);
+    const email = idOrEmail.trim().toLowerCase();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setError('有効なメールアドレスを入力してください。');
+      return;
+    }
+    if (email.length > MAX_EMAIL_LENGTH) {
+      setError(`メールアドレスは${MAX_EMAIL_LENGTH}文字以内で入力してください。`);
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const result = await startPasswordReset(email);
+      if (result.status === 'success' && result.token) {
+        setLineToken(result.token);
+        setOtpCode('');
+        setResetStep('line-wait');
+        setResendCooldown(30);
+      } else {
+        setError(result.message || '合言葉の発行に失敗しました。');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'LINE認証の開始に失敗しました。');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleStartResetSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    handleStartResetCore();
+  };
+
+  // パスワードの再設定 ステップ2: LINEで届いた認証コードと、新しいパスワードを送る
+  const handleResetSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    const code = otpCode.trim();
+    if (!/^\d{6}$/.test(code)) {
+      setError('6桁の認証コードを入力してください。');
+      return;
+    }
+    const pwError = validatePassword(password);
+    if (pwError) {
+      setError(pwError);
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError('確認用パスワードが一致しません。');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const email = idOrEmail.trim().toLowerCase();
+      const result = await resetPassword(email, lineToken, code, password);
+      if (result.status === 'success') {
+        // ログイン画面に戻る(メールアドレスは、そのまま)
+        setIsResetMode(false);
+        setResetStep('form');
+        setPassword('');
+        setConfirmPassword('');
+        setOtpCode('');
+        setLineToken('');
+        setNotice('パスワードを再設定しました。新しいパスワードでログインしてください。');
+      } else {
+        setError(result.message || '認証コードが正しくありません。');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '再設定中にエラーが発生しました。');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const showingLineStep = (isRegisterMode && registerStep === 'line-wait') || (isResetMode && resetStep === 'line-wait');
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
@@ -244,6 +330,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({
             <span>
               {showingLineStep
                 ? 'LINE認証コードの入力'
+                : isResetMode
+                ? 'パスワードの再設定'
                 : isRegisterMode
                 ? '神埼ID 新規会員登録（無料）'
                 : '神埼ID ログイン'}
@@ -261,7 +349,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
 
         {/* ボディ */}
         <div className="p-5 space-y-4 overflow-y-auto">
-          {!isRegisterMode && (
+          {!isRegisterMode && !isResetMode && (
             <>
               {/* ワンタップ簡単ログイン（推奨・体験用） */}
               <div className="bg-[#F8F7FC] rounded-xl p-3.5 border border-[#EDE9FE] space-y-2">
@@ -300,9 +388,14 @@ export const LoginModal: React.FC<LoginModalProps> = ({
               {error}
             </div>
           )}
+          {notice && !error && (
+            <div className="p-2.5 rounded-lg bg-[#F0FDF4] border border-emerald-200 text-emerald-700 text-xs font-medium">
+              {notice}
+            </div>
+          )}
 
           {/* ログインフォーム */}
-          {!isRegisterMode && (
+          {!isRegisterMode && !isResetMode && (
             <form onSubmit={handleLoginSubmit} action="#" method="post" autoComplete="on" className="space-y-3" key="login-form">
               <div className="space-y-1">
                 <label htmlFor="login-username" className="text-xs font-bold text-[#221C35]">
@@ -353,6 +446,59 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                 className="w-full h-11 rounded-xl bg-[#221C35] hover:bg-[#3B1F68] text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer pt-1 disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <span>{isSubmitting ? 'ログイン中...' : 'ログインする'}</span>
+                {!isSubmitting && <ArrowRight className="w-4 h-4" />}
+              </button>
+
+              <div className="text-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsResetMode(true);
+                    setResetStep('form');
+                    setPassword('');
+                    setError(null);
+                    setNotice(null);
+                  }}
+                  className="text-[11px] text-[#857D99] hover:underline cursor-pointer"
+                >
+                  パスワードを忘れた方
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* パスワードの再設定 ステップ1: メールアドレス */}
+          {isResetMode && resetStep === 'form' && (
+            <form onSubmit={handleStartResetSubmit} className="space-y-3" key="reset-form">
+              <div className="space-y-1">
+                <label htmlFor="reset-email" className="text-xs font-bold text-[#221C35]">
+                  メールアドレス
+                </label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-[#857D99] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    id="reset-email"
+                    name="username"
+                    type="email"
+                    inputMode="email"
+                    maxLength={MAX_EMAIL_LENGTH}
+                    autoComplete="username"
+                    value={idOrEmail}
+                    onChange={(e) => setIdOrEmail(e.target.value)}
+                    placeholder="example@gmail.com"
+                    required
+                    className="w-full h-10 pl-9 pr-3 rounded-xl border border-[#E5E2EE] focus:border-[#5B21B6] focus:ring-1 focus:ring-[#5B21B6] text-xs text-[#221C35] outline-none"
+                  />
+                </div>
+                <p className="text-[10px] text-[#857D99] pt-0.5">認証コードは、登録のときに使ったLINEに届きます。</p>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full h-11 rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                <span>{isSubmitting ? '準備中...' : 'LINEで認証コードを受け取る'}</span>
                 {!isSubmitting && <ArrowRight className="w-4 h-4" />}
               </button>
             </form>
@@ -448,7 +594,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
           )}
 
           {/* 新規登録 ステップ2(LINE版): 合言葉送信案内と認証コード入力 */}
-          {showingLineStep && (
+          {isRegisterMode && registerStep === 'line-wait' && (
             <form onSubmit={handleLineVerifySubmit} className="space-y-3" key="line-form">
               <div className="p-3 rounded-xl bg-[#F0FDF4] border border-emerald-200 text-emerald-700 text-xs space-y-2 leading-relaxed">
                 <p className="font-bold">① 神埼鉄道グループ公式LINEを友だち追加</p>
@@ -522,19 +668,144 @@ export const LoginModal: React.FC<LoginModalProps> = ({
             </form>
           )}
 
+          {/* パスワードの再設定 ステップ2: 合言葉送信案内・認証コード・新しいパスワード */}
+          {isResetMode && resetStep === 'line-wait' && (
+            <form onSubmit={handleResetSubmit} className="space-y-3" key="reset-line-form">
+              <div className="p-3 rounded-xl bg-[#F0FDF4] border border-emerald-200 text-emerald-700 text-xs space-y-2 leading-relaxed">
+                <p className="font-bold">① 次の合言葉を、神埼鉄道グループ公式LINEにそのまま送信</p>
+                <a
+                  href={LINE_OA_ADD_FRIEND_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex h-8 items-center px-3 rounded-lg bg-[#06C755] text-white font-bold text-[11px] no-underline"
+                >
+                  公式LINEを開く
+                </a>
+                <div className="text-center py-2 bg-white rounded-lg border border-emerald-300 text-lg font-black tracking-[0.3em] text-[#221C35]">
+                  {lineToken}
+                </div>
+                <p className="font-bold pt-1">② LINEに返信で届く6桁コードと、新しいパスワードを下に入力</p>
+              </div>
+
+              <div className="space-y-1">
+                <label htmlFor="reset-otp" className="text-xs font-bold text-[#221C35]">
+                  認証コード（6桁）
+                </label>
+                <div className="relative">
+                  <KeyRound className="w-4 h-4 text-[#857D99] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    id="reset-otp"
+                    name="otp"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    value={otpCode}
+                    onChange={(e) => setOtpCode(e.target.value.replace(/[^0-9]/g, ''))}
+                    placeholder="123456"
+                    required
+                    className="w-full h-11 pl-9 pr-3 rounded-xl border border-[#E5E2EE] focus:border-[#5B21B6] focus:ring-1 focus:ring-[#5B21B6] text-sm tracking-[0.3em] font-bold text-[#221C35] outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label htmlFor="reset-password" className="text-xs font-bold text-[#221C35]">
+                  新しいパスワード
+                </label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-[#857D99] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    id="reset-password"
+                    name="new-password"
+                    type="password"
+                    autoComplete="new-password"
+                    maxLength={MAX_PASSWORD_LENGTH}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    required
+                    className="w-full h-10 pl-9 pr-3 rounded-xl border border-[#E5E2EE] focus:border-[#5B21B6] focus:ring-1 focus:ring-[#5B21B6] text-xs text-[#221C35] outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label htmlFor="reset-password-confirm" className="text-xs font-bold text-[#221C35]">
+                  新しいパスワード（確認用）
+                </label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-[#857D99] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    id="reset-password-confirm"
+                    name="new-password-confirm"
+                    type="password"
+                    autoComplete="new-password"
+                    maxLength={MAX_PASSWORD_LENGTH}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="••••••••"
+                    required
+                    className="w-full h-10 pl-9 pr-3 rounded-xl border border-[#E5E2EE] focus:border-[#5B21B6] focus:ring-1 focus:ring-[#5B21B6] text-xs text-[#221C35] outline-none"
+                  />
+                </div>
+                <p className="text-[10px] text-[#857D99] pt-0.5">
+                  {MIN_PASSWORD_LENGTH}文字以上、英大文字・小文字・数字・記号をすべて含めてください。
+                </p>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full h-11 rounded-xl bg-[#221C35] hover:bg-[#3B1F68] text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                <span>{isSubmitting ? '再設定中...' : 'パスワードを再設定する'}</span>
+                {!isSubmitting && <ArrowRight className="w-4 h-4" />}
+              </button>
+
+              <div className="flex items-center justify-between text-[11px] pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setResetStep('form');
+                    setOtpCode('');
+                    setError(null);
+                  }}
+                  className="text-[#857D99] hover:underline cursor-pointer"
+                >
+                  ← メールアドレスを直す
+                </button>
+                <button
+                  type="button"
+                  onClick={handleStartResetCore}
+                  disabled={resendCooldown > 0 || isSubmitting}
+                  className="text-[#5B21B6] hover:underline font-bold cursor-pointer disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
+                >
+                  {resendCooldown > 0 ? `合言葉を再発行 (${resendCooldown}秒後)` : '合言葉を再発行する'}
+                </button>
+              </div>
+            </form>
+          )}
+
           {/* モード切替 */}
           {!showingLineStep && (
             <div className="text-center pt-1">
               <button
                 type="button"
                 onClick={() => {
-                  setIsRegisterMode(!isRegisterMode);
-                  setRegisterStep('form');
+                  if (isResetMode) {
+                    setIsResetMode(false);
+                    setResetStep('form');
+                  } else {
+                    setIsRegisterMode(!isRegisterMode);
+                    setRegisterStep('form');
+                  }
                   setError(null);
+                  setNotice(null);
                 }}
                 className="text-xs text-[#5B21B6] hover:underline font-bold cursor-pointer"
               >
-                {isRegisterMode ? 'すでにアカウントをお持ちの方（ログイン）' : 'まだ神埼IDをお持ちでない方（新規無料登録）'}
+                {isResetMode || isRegisterMode ? 'すでにアカウントをお持ちの方（ログイン）' : 'まだ神埼IDをお持ちでない方（新規無料登録）'}
               </button>
             </div>
           )}
