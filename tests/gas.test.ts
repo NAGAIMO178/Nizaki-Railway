@@ -287,7 +287,7 @@ describe('シートに書く文字(式の注入を防ぐ)', () => {
     gas.hashPassword = () => 'hash';
     gas.createSessionToken = () => 'tok';
     const nameEvil = '=HYPERLINK("x")'; // 表示名は30文字まで
-    const r = gas.handleVerifyLineAndRegister(emailEvil, 'Abcd1!', 'ABC234', '123456', nameEvil);
+    const r = gas.handleVerifyLineAndRegister(emailEvil, 'Abcd1!ef', 'ABC234', '123456', nameEvil);
     expect(r.status).toBe('success');
     const row = written[0];
     expect(row[1]).toBe("'" + emailEvil);
@@ -352,6 +352,7 @@ describe('ポイントの水増しを防ぐ(予約の登録・取消)', () => {
     gas.findMemberById = () => ({ memberId: 'M1', lineUserId: '' });
     gas.getOrCreateReservationsSheet = () => sheet;
     gas.getDataSpreadsheet = () => ({ getSheetByName: () => sheet });
+    gas.checkOrderPrice = () => null; // この describe は、ポイントの仕組みだけを見る(金額の上限の検査は、別の describe)
   };
 
   const order = (orderId: string, totalPrice: number) => ({
@@ -563,6 +564,7 @@ describe('注文の上限(予約の登録・デリバリーの追加)', () => {
     gas.verifySessionToken = () => 'M1';
     gas.findMemberById = () => ({ memberId: 'M1', lineUserId: '' });
     gas.getOrCreateReservationsSheet = () => sheet;
+    gas.checkOrderPrice = () => null; // この describe は、上限の仕組みだけを見る(金額の上限の検査は、別の describe)
     put('welcome', 'welcome', 0);
   });
 
@@ -1696,6 +1698,25 @@ describe('パスワードの保存方式(v2)', () => {
     expect(hash).toBe('v2$10000$' + pbkdf2(PW, salt, 10000));
     expect(login().status).toBe('success');
     expect(login('Wrong1!x')).toMatchObject({ status: 'error' });
+  });
+
+  it('すでにある会員は、8文字より短いパスワードでも、ログインできる(新規登録のときだけ、8文字以上)', () => {
+    addMember('old-salt', legacyHash('Ab1!ef', 'old-salt')); // 6文字(以前の決まりで作ったもの)
+    expect(login('Ab1!ef').status).toBe('success');
+    expect(stored().hash).toMatch(/^v2\$/);
+    expect(login('Ab1!ef').status).toBe('success');
+    grid.length = 1;
+    cache = {};
+    addMember('s2', 'v2$10000$' + pbkdf2('Ab1!efg', 's2', 10000)); // 7文字
+    expect(login('Ab1!efg').status).toBe('success');
+  });
+
+  it('新しい登録は、8文字以上(7文字は断り、台帳に書かない。8文字は通る)', () => {
+    cache['line_otp_ABC234'] = JSON.stringify({ code: '123456', lineUserId: 'U1' });
+    const short = gas.handleVerifyLineAndRegister(EMAIL, 'Abc1!ef', 'ABC234', '123456', undefined);
+    expect(short).toMatchObject({ status: 'error', message: 'パスワードは8文字以上で入力してください。' });
+    expect(grid.length).toBe(1);
+    expect(gas.handleVerifyLineAndRegister(EMAIL, 'Abc1!efg', 'ABC234', '123456', undefined).status).toBe('success');
   });
 
   it('古い方式の会員が間違えたときは、保存し直さない', () => {
