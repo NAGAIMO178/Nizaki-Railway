@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { X, Lock, Mail, ShieldCheck, ArrowRight, Sparkles, Train, KeyRound } from 'lucide-react';
+import { X, Mail, ShieldCheck, ArrowRight, Sparkles, Train, KeyRound } from 'lucide-react';
 import { UserProfile } from '../types';
 import { PrivacyPolicyModal } from './PrivacyPolicyModal';
+import { PasswordInput } from './PasswordInput';
 import { useBackClose } from '../utils/backClose';
 import {
   loginWithPassword,
@@ -423,21 +424,16 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                 <label htmlFor="login-password" className="text-xs font-bold text-[#221C35]">
                   パスワード
                 </label>
-                <div className="relative">
-                  <Lock className="w-4 h-4 text-[#857D99] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    id="login-password"
-                    name="password"
-                    type="password"
-                    autoComplete="current-password webauthn"
-                    maxLength={MAX_PASSWORD_LENGTH}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
-                    required
-                    className="w-full h-10 pl-9 pr-3 rounded-xl border border-[#E5E2EE] focus:border-[#5B21B6] focus:ring-1 focus:ring-[#5B21B6] text-xs text-[#221C35] outline-none"
-                  />
-                </div>
+                <PasswordInput
+                  id="login-password"
+                  name="password"
+                  autoComplete="current-password webauthn"
+                  maxLength={MAX_PASSWORD_LENGTH}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                />
               </div>
 
               <button
@@ -541,42 +537,32 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                 <label htmlFor="register-password" className="text-xs font-bold text-[#221C35]">
                   パスワード
                 </label>
-                <div className="relative">
-                  <Lock className="w-4 h-4 text-[#857D99] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    id="register-password"
-                    name="new-password"
-                    type="password"
-                    autoComplete="new-password"
-                    maxLength={MAX_PASSWORD_LENGTH}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
-                    required
-                    className="w-full h-10 pl-9 pr-3 rounded-xl border border-[#E5E2EE] focus:border-[#5B21B6] focus:ring-1 focus:ring-[#5B21B6] text-xs text-[#221C35] outline-none"
-                  />
-                </div>
+                <PasswordInput
+                  id="register-password"
+                  name="new-password"
+                  autoComplete="new-password"
+                  maxLength={MAX_PASSWORD_LENGTH}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                />
               </div>
 
               <div className="space-y-1">
                 <label htmlFor="register-password-confirm" className="text-xs font-bold text-[#221C35]">
                   パスワード（確認用）
                 </label>
-                <div className="relative">
-                  <Lock className="w-4 h-4 text-[#857D99] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    id="register-password-confirm"
-                    name="new-password-confirm"
-                    type="password"
-                    autoComplete="new-password"
-                    maxLength={MAX_PASSWORD_LENGTH}
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="••••••••"
-                    required
-                    className="w-full h-10 pl-9 pr-3 rounded-xl border border-[#E5E2EE] focus:border-[#5B21B6] focus:ring-1 focus:ring-[#5B21B6] text-xs text-[#221C35] outline-none"
-                  />
-                </div>
+                <PasswordInput
+                  id="register-password-confirm"
+                  name="new-password-confirm"
+                  autoComplete="new-password"
+                  maxLength={MAX_PASSWORD_LENGTH}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                />
                 <p className="text-[10px] text-[#857D99] pt-0.5">
                   {MIN_PASSWORD_LENGTH}文字以上、英大文字・小文字・数字・記号をすべて含めてください。
                 </p>
@@ -713,42 +699,32 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                 <label htmlFor="reset-password" className="text-xs font-bold text-[#221C35]">
                   新しいパスワード
                 </label>
-                <div className="relative">
-                  <Lock className="w-4 h-4 text-[#857D99] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    id="reset-password"
-                    name="new-password"
-                    type="password"
-                    autoComplete="new-password"
-                    maxLength={MAX_PASSWORD_LENGTH}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
-                    required
-                    className="w-full h-10 pl-9 pr-3 rounded-xl border border-[#E5E2EE] focus:border-[#5B21B6] focus:ring-1 focus:ring-[#5B21B6] text-xs text-[#221C35] outline-none"
-                  />
-                </div>
+                <PasswordInput
+                  id="reset-password"
+                  name="new-password"
+                  autoComplete="new-password"
+                  maxLength={MAX_PASSWORD_LENGTH}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                />
               </div>
 
               <div className="space-y-1">
                 <label htmlFor="reset-password-confirm" className="text-xs font-bold text-[#221C35]">
                   新しいパスワード（確認用）
                 </label>
-                <div className="relative">
-                  <Lock className="w-4 h-4 text-[#857D99] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    id="reset-password-confirm"
-                    name="new-password-confirm"
-                    type="password"
-                    autoComplete="new-password"
-                    maxLength={MAX_PASSWORD_LENGTH}
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="••••••••"
-                    required
-                    className="w-full h-10 pl-9 pr-3 rounded-xl border border-[#E5E2EE] focus:border-[#5B21B6] focus:ring-1 focus:ring-[#5B21B6] text-xs text-[#221C35] outline-none"
-                  />
-                </div>
+                <PasswordInput
+                  id="reset-password-confirm"
+                  name="new-password-confirm"
+                  autoComplete="new-password"
+                  maxLength={MAX_PASSWORD_LENGTH}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                />
                 <p className="text-[10px] text-[#857D99] pt-0.5">
                   {MIN_PASSWORD_LENGTH}文字以上、英大文字・小文字・数字・記号をすべて含めてください。
                 </p>
