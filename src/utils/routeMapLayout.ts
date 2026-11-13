@@ -102,6 +102,15 @@ const LABEL_OVERRIDE: Record<string, LabelMode> = {
 
 const dist = (a: Pt, b: Pt) => Math.hypot(b.x - a.x, b.y - a.y);
 
+// 高宮線(見せるときだけ。master に TK があるとき)。既存の図を、下へ TK_SHIFT ずらして、上に場所を作る。
+// 大宮から真上へ線をのばし、上の端(TK_TOP)で、横へ曲げる。駅は、TK_STEP の間隔で並べる(図の他の線と同じ、等しい間隔)。
+// 縦の部分は、名前を左へ。横の部分は、名前を、交互に上・下へ。
+const TK_SHIFT = 300;
+const TK_TOP = 130;
+const TK_STEP = 90;
+// 線の曲がり角の丸み
+const CORNER_RADIUS = 22;
+
 // 線の通り道を、駅の並び(names。環状線は、最後に起点の駅名をもう一度入れる)の上に置いて、駅の位置を求める
 const placeAlong = (
   path: Step[],
@@ -168,6 +177,9 @@ export const buildNetworkMap = (master: Record<string, MapMaster>): NetworkMap =
   const y = master.Y.stations.map((s) => s[0]);
   const ni = master.NI.stations.map((s) => s[0]);
   const tc = master.TC ? master.TC.stations.map((s) => s[0]) : [];
+  const tkNames = master.TK ? master.TK.stations.map((s) => s[0]) : [];
+  // 高宮線を足すときだけ、既存の図を下へずらす(足さないときは 0 で、これまでと同じ)
+  const dy = tkNames.length >= 2 && PINS[tkNames[0]] ? TK_SHIFT : 0;
 
   const stations = new Map<string, MapStation>();
   const add = (names: string[], line: string, placed: Map<number, { pt: Pt; mode: LabelMode }>, count: number) => {
@@ -180,7 +192,7 @@ export const buildNetworkMap = (master: Record<string, MapMaster>): NetworkMap =
         if (!hit.codes.some((c) => c.line === line)) hit.codes.push({ line, code: codeOf(line, i) });
         continue;
       }
-      stations.set(name, { name, x: round(pl.pt.x), y: round(pl.pt.y), codes: [{ line, code: codeOf(line, i) }], isHub: false, label: LABELS[pl.mode], line });
+      stations.set(name, { name, x: round(pl.pt.x), y: round(pl.pt.y + dy), codes: [{ line, code: codeOf(line, i) }], isHub: false, label: LABELS[pl.mode], line });
     }
   };
 
@@ -213,14 +225,43 @@ export const buildNetworkMap = (master: Record<string, MapMaster>): NetworkMap =
     if (st.isHub && (mode === 'above' || mode === 'leftUp')) st.label = { ...st.label, dy: st.label.dy - 20 };
   });
 
+  // 高宮線(見せるときだけ)
+  const tkStations: MapStation[] = [];
+  let tkLine: MapLine | null = null;
+  const origin = dy > 0 ? stations.get(tkNames[0]) : undefined;
+  if (origin) {
+    // 大宮などの乗換駅は、番号に高宮線の番号が足される。名前は、番号が長くなるので、右下へ動かす
+    origin.codes.push({ line: 'TK', code: codeOf('TK', 0) });
+    origin.label = { ...LABELS.belowRight };
+    const lv = origin.y - TK_TOP; // 真上にのびる長さ
+    let lastX = origin.x;
+    let horizontalNo = 0;
+    tkNames.slice(1).forEach((name, i) => {
+      const k = i + 1;
+      const along = TK_STEP * k;
+      const vertical = along <= lv;
+      const x = vertical ? origin.x : round(origin.x + (along - lv));
+      const y = vertical ? round(origin.y - along) : TK_TOP;
+      const mode: LabelMode = vertical ? 'left' : horizontalNo++ % 2 === 0 ? 'above' : 'below';
+      lastX = x;
+      tkStations.push({ name, x, y, codes: [{ line: 'TK', code: codeOf('TK', k) }], isHub: false, label: LABELS[mode], line: 'TK' });
+    });
+    const last = tkStations[tkStations.length - 1];
+    const r = CORNER_RADIUS;
+    const d =
+      last.y === TK_TOP && lastX > origin.x
+        ? `M${origin.x} ${origin.y} L${origin.x} ${TK_TOP + r} Q${origin.x} ${TK_TOP} ${round(origin.x + r)} ${TK_TOP} L${lastX} ${TK_TOP}`
+        : `M${origin.x} ${origin.y} L${last.x} ${last.y}`;
+    tkLine = { code: 'TK', name: master.TK.name, color: LINE_COLORS.TK, d };
+  }
+
   // 線の曲がり角を丸くする(駅の位置が決まっている点は、そのまま通る)
-  const CORNER_RADIUS = 22;
   const toD = (pts: Pt[], fixed: boolean[]) => {
-    let d = `M${round(pts[0].x)} ${round(pts[0].y)}`;
+    let d = `M${round(pts[0].x)} ${round(pts[0].y + dy)}`;
     for (let i = 1; i < pts.length; i++) {
       const cur = pts[i];
       if (i === pts.length - 1 || fixed[i]) {
-        d += ` L${round(cur.x)} ${round(cur.y)}`;
+        d += ` L${round(cur.x)} ${round(cur.y + dy)}`;
         continue;
       }
       const prev = pts[i - 1];
@@ -230,20 +271,22 @@ export const buildNetworkMap = (master: Record<string, MapMaster>): NetworkMap =
       const r = Math.min(CORNER_RADIUS, lenA / 2, lenB / 2);
       const a = { x: cur.x + ((prev.x - cur.x) / lenA) * r, y: cur.y + ((prev.y - cur.y) / lenA) * r };
       const b = { x: cur.x + ((next.x - cur.x) / lenB) * r, y: cur.y + ((next.y - cur.y) / lenB) * r };
-      d += ` L${round(a.x)} ${round(a.y)} Q${round(cur.x)} ${round(cur.y)} ${round(b.x)} ${round(b.y)}`;
+      d += ` L${round(a.x)} ${round(a.y + dy)} Q${round(cur.x)} ${round(cur.y + dy)} ${round(b.x)} ${round(b.y + dy)}`;
     }
     return d;
   };
   return {
     width: W,
-    height: H,
-    legend: { x: 790, y: 1230 },
+    height: H + dy,
+    legend: { x: 790, y: 1230 + dy },
     lines: [
       { code: 'SC', name: master.SC.name, color: LINE_COLORS.SC, d: toD(scPlaced.points, scPlaced.fixed) },
       { code: 'Y', name: master.Y.name, color: LINE_COLORS.Y, d: toD(yPlaced.points, yPlaced.fixed) },
       { code: 'NI', name: master.NI.name, color: LINE_COLORS.NI, d: toD(niPlaced.points, niPlaced.fixed) },
+      ...(tkLine ? [tkLine] : []),
     ],
-    stations: Array.from(stations.values()),
+    // 高宮線の駅は、先に描く(既存の駅が、上に重なる)
+    stations: [...tkStations, ...Array.from(stations.values())],
   };
 };
 

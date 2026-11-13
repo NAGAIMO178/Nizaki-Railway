@@ -4,7 +4,7 @@ import { NetworkMap, MapStation, TcRow, LINE_COLORS } from '../utils/routeMapLay
 const INK = '#221C35';
 const SUB = '#6B6380';
 
-const LINE_ORDER = ['Y', 'NI', 'SC', 'TC'];
+const LINE_ORDER = ['Y', 'NI', 'SC', 'TC', 'TK'];
 
 const codeText = (st: MapStation): string => {
   const sorted = [...st.codes].sort((a, b) => LINE_ORDER.indexOf(a.line) - LINE_ORDER.indexOf(b.line));
@@ -12,12 +12,15 @@ const codeText = (st: MapStation): string => {
 };
 
 // 神埼線・神埼高速線・埼千環状線の路線図(ダイヤの駅の並びから描く)
-export const NetworkMapSvg: React.FC<{ map: NetworkMap; names: Record<string, string> }> = ({ map, names }) => (
+export const NetworkMapSvg: React.FC<{ map: NetworkMap; names: Record<string, string> }> = ({ map, names }) => {
+  // 凡例は、路線の数だけ、30ずつ下へのばす(高宮線を足すとき)
+  const extra = map.lines.length - 3;
+  return (
   <svg
     viewBox={`0 0 ${map.width} ${map.height}`}
     width="100%"
     role="img"
-    aria-label="神埼線・神埼高速線・埼千環状線の路線図"
+    aria-label={extra > 0 ? '神埼線・神埼高速線・埼千環状線・高宮線の路線図' : '神埼線・神埼高速線・埼千環状線の路線図'}
     style={{ display: 'block', background: '#FFFFFF', fontFamily: 'inherit', textRendering: 'optimizeLegibility' }}
   >
     {/* 路線 */}
@@ -61,7 +64,7 @@ export const NetworkMapSvg: React.FC<{ map: NetworkMap; names: Record<string, st
 
     {/* 凡例 */}
     <g transform={`translate(${map.legend.x}, ${map.legend.y})`}>
-      <rect x={-14} y={-26} width={300} height={176} rx={12} fill="#FFFFFF" stroke="#E6E2EE" strokeWidth={2} />
+      <rect x={-14} y={-26} width={300} height={176 + extra * 30} rx={12} fill="#FFFFFF" stroke="#E6E2EE" strokeWidth={2} />
       {map.lines.map((l, i) => (
         <g key={l.code} transform={`translate(0, ${i * 30})`}>
           <line x1={0} y1={0} x2={44} y2={0} stroke={l.color} strokeWidth={9} strokeLinecap="round" />
@@ -70,18 +73,19 @@ export const NetworkMapSvg: React.FC<{ map: NetworkMap; names: Record<string, st
           </text>
         </g>
       ))}
-      <g transform="translate(0, 96)">
+      <g transform={`translate(0, ${96 + extra * 30})`}>
         <circle cx={22} cy={0} r={11} fill="#FFFFFF" stroke={INK} strokeWidth={4} />
         <text x={58} y={6} fontSize={18} fontWeight={700} fill={INK}>
           乗換駅
         </text>
       </g>
-      <text x={0} y={128} fontSize={13} fill={SUB}>
+      <text x={0} y={128 + extra * 30} fontSize={13} fill={SUB}>
         全駅に、駅番号(Y01 など)があります
       </text>
     </g>
   </svg>
-);
+  );
+};
 
 // 土浦線(松戸〜日立)を、縦に並べた路線図
 export const TsuchiuraList: React.FC<{ rows: TcRow[]; lineName: string }> = ({ rows, lineName }) => (
