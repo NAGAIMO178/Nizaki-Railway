@@ -51,8 +51,10 @@ export const RouteMapModal: React.FC<RouteMapModalProps> = ({
   const handleZoomOut = () => setZoomLevel((prev) => Math.max(prev - 0.5, 1));
   const handleResetZoom = () => setZoomLevel(1);
 
+  // 高宮線を見せるとき(路線図に高宮線がつながるとき)だけ、名前に高宮を足す
+  const networkTitle = network?.lines.some((l) => l.code === 'TK') ? '神埼・高速・環状・高宮' : '神埼・神埼高速・埼千環状 路線図';
   const currentTitle = activeMap === 'kanzaki_network'
-    ? '神埼・神埼高速・埼千環状 路線図'
+    ? networkTitle
     : '土浦線 路線図 (松戸〜日立)';
 
   return (
@@ -126,7 +128,7 @@ export const RouteMapModal: React.FC<RouteMapModalProps> = ({
             }`}
           >
             <Layers className="w-4 h-4" />
-            <span>神埼・神埼高速・埼千環状 路線図</span>
+            <span>{networkTitle}</span>
           </button>
 
           <button
