@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Star, Check, X, Plus, Info, ChevronDown, ChevronUp } from 'lucide-react';
+import { TK_LINE_COLOR, TK_STATION_NAMES, withTk } from '../utils/tkLine';
 
 export interface RegisterableStation {
   id: string;
@@ -17,7 +18,7 @@ export interface LineStationsData {
   stations: { id: string; name: string; code?: string }[];
 }
 
-export const REGISTERABLE_LINES: LineStationsData[] = [
+const BASE_REGISTERABLE_LINES: LineStationsData[] = [
   {
     id: 'kanzaki',
     name: '1. 神埼線',
@@ -129,6 +130,21 @@ export const REGISTERABLE_LINES: LineStationsData[] = [
     ],
   },
 ];
+
+// 高宮線(見せるのは、tkLine.ts のスイッチが入ってから)
+const TK_REGISTERABLE: LineStationsData = {
+  id: 'takamiya',
+  name: '5. 高宮線',
+  code: 'TK',
+  color: TK_LINE_COLOR,
+  description: '大宮から北へ、高根沢までを結ぶ長距離の路線（全13駅）',
+  stations: TK_STATION_NAMES.map((name, i) => {
+    const code = `TK${String(i + 1).padStart(2, '0')}`;
+    return { id: code, name, code };
+  }),
+};
+
+export const REGISTERABLE_LINES: LineStationsData[] = withTk(BASE_REGISTERABLE_LINES, TK_REGISTERABLE);
 
 interface MyStationRegisterCardProps {
   registeredStations: RegisterableStation[];

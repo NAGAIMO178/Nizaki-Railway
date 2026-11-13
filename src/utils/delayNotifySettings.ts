@@ -5,16 +5,21 @@
 // 以前の「マイ駅だけ」('mystation')を保存していた端末は、「すべて」に読み替える。
 import { useEffect, useState } from 'react';
 import { safeStorage } from './safeStorage';
+import { TK_LINE_COLOR, withTk } from './tkLine';
 
 export type DelayNotifyMode = 'all' | 'lines' | 'off';
 
 // 選べる路線(画面の路線ID。useDelayWatcher の路線と同じ)
-export const DELAY_NOTIFY_LINES = [
-  { id: 'kanzaki', name: '神埼線', color: '#8B5CF6' },
-  { id: 'kanzaki_kosoku', name: '神埼高速線', color: '#3B82F6' },
-  { id: 'saichi_loop', name: '埼千環状線', color: '#EC4899' },
-  { id: 'tsuchiura', name: '土浦線', color: '#3CB371' },
-] as const;
+// 高宮線は、見せるのは、tkLine.ts のスイッチが入ってから
+export const DELAY_NOTIFY_LINES: { id: string; name: string; color: string }[] = withTk(
+  [
+    { id: 'kanzaki', name: '神埼線', color: '#8B5CF6' },
+    { id: 'kanzaki_kosoku', name: '神埼高速線', color: '#3B82F6' },
+    { id: 'saichi_loop', name: '埼千環状線', color: '#EC4899' },
+    { id: 'tsuchiura', name: '土浦線', color: '#3CB371' },
+  ],
+  { id: 'takamiya', name: '高宮線', color: TK_LINE_COLOR }
+);
 const LINE_IDS: string[] = DELAY_NOTIFY_LINES.map((l) => l.id);
 
 const KEY = 'nizaki_delay_notify_mode';

@@ -12,7 +12,7 @@ import { isLaunched } from '../utils/launch';
 import { trainIconCenter, isBundle, trainRank } from '../utils/trainIconLayout';
 import { bandLabelOf, typeStyleOf } from '../utils/trainTypeStyle';
 import { crowdInfo, loadAllCrowdTrains } from '../utils/crowd';
-import { isTkLaunched } from '../utils/tkLine';
+import { isTkLaunched, TK_LINE_COLOR } from '../utils/tkLine';
 import { THROUGH_STYLE, throughLineAt, trainThrough } from '../utils/throughLine';
 import { bundleHeight, pinHeight, TrainPin, TrainPinBundle } from './TrainPin';
 
@@ -189,7 +189,7 @@ const TK_LINE: DisplayLine = {
   id: 'takamiya',
   name: '高宮線',
   code: 'TK',
-  color: '#F97316',
+  color: TK_LINE_COLOR,
   direction1: '宇都宮・高根沢方面',
   direction2: '大宮方面',
   stations: [

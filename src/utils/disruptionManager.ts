@@ -2,13 +2,14 @@
 
 import { safeStorage } from './safeStorage';
 import { callGas } from './accountApi';
+import { TK_LINE_COLOR, withTk } from './tkLine';
 import { getAffectedStationRange, isTrainInAffectedRange } from './disruptionSections';
 
 export type DisruptionStatusType = 'normal' | 'delay' | 'suspended' | 'partially_suspended';
 export type DisruptionDirection = 'both' | 'up' | 'down';
 
 export interface LineDisruption {
-  lineId: string; // 'kanzaki' | 'kanzaki_kosoku' | 'saichi' | 'tsuchiura'
+  lineId: string; // 'kanzaki' | 'kanzaki_kosoku' | 'saichi' | 'tsuchiura' | 'takamiya'(高宮線。見せるのは tkLine.ts のスイッチ後)
   lineName: string; // '神埼線' | '神埼高速線' | '埼千環状線' | '土浦線'
   code: string; // 'Y' | 'NI' | 'SC' | 'TC'
   statusType: DisruptionStatusType;
@@ -80,12 +81,13 @@ export interface DisruptionSummaryResponse {
 const STORAGE_KEY = 'nizaki_admin_disruptions';
 const FORECAST_STORAGE_KEY = 'nizaki_admin_operation_forecasts';
 
-export const DEFAULT_LINE_INFOS: { id: string; name: string; code: string; color: string }[] = [
+// 高宮線は、見せるのは、tkLine.ts のスイッチが入ってから
+export const DEFAULT_LINE_INFOS: { id: string; name: string; code: string; color: string }[] = withTk([
   { id: 'kanzaki', name: '神埼線', code: 'Y', color: '#8B5CF6' },
   { id: 'kanzaki_kosoku', name: '神埼高速線', code: 'NI', color: '#3B82F6' },
   { id: 'saichi', name: '埼千環状線', code: 'SC', color: '#EC4899' },
   { id: 'tsuchiura', name: '土浦線', code: 'TC', color: '#10B981' },
-];
+], { id: 'takamiya', name: '高宮線', code: 'TK', color: TK_LINE_COLOR });
 
 // 駅の並びと影響区間の計算は disruptionSections.ts に置き、ここからも今までどおり取り出せるようにする
 export { LINE_STATIONS, getStationsForLine, getAffectedStationRange, isTrainInAffectedRange } from './disruptionSections';

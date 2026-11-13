@@ -59,6 +59,14 @@ const getLineBadgeStyle = (lineName: string): { bg: string; text: string; border
       border: 'border-emerald-700',
     };
   }
+  // 高宮線(見せるのは、tkLine.ts のスイッチが入ってから)。路線色のオレンジ(orange-600)
+  if (lineName.includes('高宮') || lineName.includes('TK')) {
+    return {
+      bg: 'bg-orange-600 text-white',
+      text: 'text-orange-600',
+      border: 'border-orange-700',
+    };
+  }
   return {
     bg: 'bg-purple-600 text-white',
     text: 'text-purple-600',
