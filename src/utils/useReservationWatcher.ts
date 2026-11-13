@@ -5,7 +5,7 @@
 //  - 同じ予約の同じ知らせは、1回だけ(再読み込みしても重ねない)。アプリを閉じているあいだは、知らせられない。
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ActiveOrder } from '../types';
-import { EXPRESS_TYPES, expressSourceLines, findExpressTrips, getCachedLineData, loadExpressData, resolveTrainDelay } from './diaTimetable';
+import { EXPRESS_TYPES, expressSourceLines, findExpressTrips, getCachedLineData, loadExpressData, resolveTrainDelay, visibleExpressKeys } from './diaTimetable';
 import { departurePlatform, platformLabel } from './platform';
 import { getNotificationPermissionState, sendLocalPushNotification } from './pushNotification';
 import { isPushEnabled } from './notifySettings';
@@ -69,7 +69,7 @@ export const remindText = (r: { trainName: string; boarding: string; carNo: numb
 
 // 予約から、ダイヤ上の列車を探す(特急の名前・乗る駅・降りる駅・日付から)
 export const resolveOrder = async (order: ActiveOrder): Promise<Resolved | null> => {
-  const key = (Object.keys(EXPRESS_TYPES) as (keyof typeof EXPRESS_TYPES)[]).find((k) => order.trainName.startsWith(EXPRESS_TYPES[k].label));
+  const key = visibleExpressKeys().find((k) => order.trainName.startsWith(EXPRESS_TYPES[k].label));
   if (!key || !order.boardingStation || !order.destinationStation) return null;
   const cfg = EXPRESS_TYPES[key];
   const data = await loadExpressData(key); // 直通の特急(めぐり)は、2つの路線をつないだデータ

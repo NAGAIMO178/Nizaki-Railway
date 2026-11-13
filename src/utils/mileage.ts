@@ -1,6 +1,6 @@
 // マイレージ(NIZAKI 2.0。公開後だけ使う): 乗車済みの予約から、累計の営業キロ・乗車回数・訪れた駅の数を求めて、ランクを決める。
 // 営業キロは、予約のときの運賃と同じ計算(ダイヤの駅間距離)。環状線は、短く着く向きの距離。
-import { EXPRESS_TYPES, ExpressKey, getTripDistanceKm, loadExpressData, loadLineData, LineData } from './diaTimetable';
+import { EXPRESS_TYPES, ExpressKey, getTripDistanceKm, loadExpressData, loadLineData, LineData, visibleExpressKeys } from './diaTimetable';
 import { loadRouteStations } from './routeSearch';
 import { RideRecord } from './cloudAccount';
 import { visibleLineCodes } from './tkLine';
@@ -58,7 +58,7 @@ export const computeMileage = async (rides: RideRecord[]): Promise<Mileage> => {
   const LINE_CODES = visibleLineCodes(ALL_LINE_CODES);
   for (const code of LINE_CODES) lines[code] = await loadLineData(code);
   // 特急は、直通(めぐり: 東京〜日立)なら、2つの路線をつないだデータで、営業キロを通しで求める
-  const expressKeys = Object.keys(EXPRESS_TYPES) as ExpressKey[];
+  const expressKeys = visibleExpressKeys();
   const expressData = {} as Record<ExpressKey, LineData>;
   for (const k of expressKeys) expressData[k] = await loadExpressData(k);
   const totalStations = (await loadRouteStations()).length;

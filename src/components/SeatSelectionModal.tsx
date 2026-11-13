@@ -2,17 +2,19 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { X, Armchair, Check } from 'lucide-react';
 import { getTodayDateString, generateOccupiedSeats, isTodayWeekend, MAX_SEATS } from '../utils/seatUtils';
 import { pickDefaultSeat, sortSeats, toggleSeat } from '../utils/seatPick';
+import { SUMIKAZE } from '../utils/sumikaze';
+import type { ExpressKey } from '../utils/diaTimetable';
 
 import { useBackClose } from '../utils/backClose';
 interface SeatSelectionModalProps {
   isOpen: boolean;
   onClose: () => void;
-  expressType?: 'ayami' | 'nliner' | 'meguri';
+  expressType?: ExpressKey;
   trainName: string;
   departureTime: string;
   boardingStation: string;
   destinationStation: string;
-  initialSeatType?: 'standard' | 'reserved' | 'green' | 'premium' | 'megu';
+  initialSeatType?: 'standard' | 'reserved' | 'green' | 'premium' | 'megu' | 'special';
   basePrice: number;
   pointsUsed?: number; // N-POINT で払う額(あれば、お支払い額から引いて見せる)
   maxSeats?: number; // 1つの予約で選べる席の数(既定は1席。公開後は複数席)。basePrice は、選んだ席の数ぶんの合計
@@ -42,6 +44,7 @@ export const SeatSelectionModal: React.FC<SeatSelectionModalProps> = ({
 }) => {
   const isSpecialSeatType =
     initialSeatType === 'green' ||
+    initialSeatType === 'special' ||
     initialSeatType === 'megu' ||
     initialSeatType === 'premium';
 
@@ -50,10 +53,12 @@ export const SeatSelectionModal: React.FC<SeatSelectionModalProps> = ({
   // あやみ普通指定席: 2, 3, 4, 5号車のみ (6号車は自由席)
   // Nライナー: 2〜10号車
   // めぐり: 2〜5号車
+  // すみかぜ: 特別車 1号車・普通車 2〜6号車(全席指定。列の数は、どちらも16列)
   const availableCars = useMemo(() => {
     if (isSpecialSeatType) {
       return [1];
     }
+    if (expressType === 'sumikaze') return [...SUMIKAZE.normalCars];
     if (expressType === 'nliner') {
       return [2, 3, 4, 5, 6, 7, 8, 9, 10];
     }
@@ -64,6 +69,11 @@ export const SeatSelectionModal: React.FC<SeatSelectionModalProps> = ({
   const [selectedSeats, setSelectedSeats] = useState<string[]>([]);
   const multi = maxSeats > 1;
 
+  // 列の数(既定は、特別車 8列・普通車 10列)。すみかぜは、どちらも 16列
+  const specialRows = expressType === 'sumikaze' ? SUMIKAZE.specialRows : 8;
+  const normalRows = expressType === 'sumikaze' ? SUMIKAZE.normalRows : 10;
+  const rowsOfCar = (carNo: number) => (carNo === 1 ? specialRows : normalRows);
+
   const todayStr = useMemo(() => getTodayDateString(), []);
   const isWeekend = useMemo(() => isTodayWeekend(), []);
 
@@ -73,13 +83,15 @@ export const SeatSelectionModal: React.FC<SeatSelectionModalProps> = ({
       todayStr,
       `${expressType}_${trainName}`,
       selectedCarNo,
-      selectedCarNo === 1
+      selectedCarNo === 1,
+      expressType === 'sumikaze' ? rowsOfCar(selectedCarNo) : undefined
     );
   }, [todayStr, expressType, trainName, selectedCarNo]);
 
   // 初期選択席: 既定席が埋まっていれば、その号車の最初の空席を選ぶ(満席なら選ばない)
   const defaultSeats = (carNo: number): string[] => {
-    const seat = pickDefaultSeat(generateOccupiedSeats(todayStr, `${expressType}_${trainName}`, carNo, carNo === 1), carNo === 1);
+    const rows = expressType === 'sumikaze' ? rowsOfCar(carNo) : undefined;
+    const seat = pickDefaultSeat(generateOccupiedSeats(todayStr, `${expressType}_${trainName}`, carNo, carNo === 1, rows), carNo === 1, rows);
     return seat ? [seat] : [];
   };
 
@@ -163,6 +175,8 @@ export const SeatSelectionModal: React.FC<SeatSelectionModalProps> = ({
               <span className="text-[10px] text-gray-600 font-semibold">
                 {isSpecialSeatType
                   ? '1号車 (特別車)'
+                  : expressType === 'sumikaze'
+                  ? '2〜6号車 (普通車)'
                   : expressType === 'nliner'
                   ? '2〜10号車 (普通車)'
                   : '2〜5号車 (普通車)'}
@@ -225,7 +239,7 @@ export const SeatSelectionModal: React.FC<SeatSelectionModalProps> = ({
                   </div>
                 </div>
 
-                {Array.from({ length: 8 }, (_, rIdx) => {
+                {Array.from({ length: specialRows }, (_, rIdx) => {
                   const row = rIdx + 1;
                   const seatA = `${row}A`;
                   const seatB = `${row}B`;
@@ -278,7 +292,7 @@ export const SeatSelectionModal: React.FC<SeatSelectionModalProps> = ({
                   </div>
                 </div>
 
-                {Array.from({ length: 10 }, (_, rIdx) => {
+                {Array.from({ length: normalRows }, (_, rIdx) => {
                   const row = rIdx + 1;
                   const seatA = `${row}A`;
                   const seatB = `${row}B`;
@@ -356,7 +370,7 @@ export const SeatSelectionModal: React.FC<SeatSelectionModalProps> = ({
                 ? `${selectedCarNo}号車 ${selectedSeats[0]} で座席確定`
                 : selectedSeats.length > 1
                 ? `${selectedCarNo}号車 ${selectedSeats.length}席で座席確定`
-                : multi && currentOccupied.length < (isSpecialCar ? 24 : 40)
+                : multi && currentOccupied.length < (isSpecialCar ? specialRows * 3 : normalRows * 4)
                 ? '席を選んでください'
                 : `${selectedCarNo}号車は満席です`}
             </span>

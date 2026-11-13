@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../src/utils/accountApi', () => ({ callGas: vi.fn(async () => ({ status: 'success' })) }));
 
-import { EXPRESS_TYPES, findExpressTrips, getCachedExpressData, getExpressStations, loadExpressData, loadLineData } from '../src/utils/diaTimetable';
+import { EXPRESS_TYPES, findExpressTrips, getCachedExpressData, getExpressStations, loadExpressData, loadLineData, visibleExpressKeys } from '../src/utils/diaTimetable';
 import { legGou, reserveTargets } from '../src/utils/routeReserve';
 import { searchRoutes } from '../src/utils/routeSearch';
 import type { RouteLeg } from '../src/utils/routeSearch';
@@ -15,13 +15,13 @@ beforeAll(async () => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date(2026, 10, 2, 12, 0, 0)); // 月曜
   await Promise.all(['Y', 'NI', 'SC', 'TC'].map((c) => loadLineData(c)));
-  await Promise.all((Object.keys(EXPRESS_TYPES) as (keyof typeof EXPRESS_TYPES)[]).map((k) => loadExpressData(k)));
+  await Promise.all(visibleExpressKeys().map((k) => loadExpressData(k)));
 });
 afterAll(() => vi.useRealTimers());
 
 describe('特急の号数(予約画面と同じ番号)', () => {
   it('どの特急の列車も、予約画面の列車名(findExpressTrips)の号数と一致する', () => {
-    for (const key of Object.keys(EXPRESS_TYPES) as (keyof typeof EXPRESS_TYPES)[]) {
+    for (const key of visibleExpressKeys()) {
       const e = EXPRESS_TYPES[key];
       const data = getCachedExpressData(key)!;
       const names = getExpressStations(data, e.typeName);

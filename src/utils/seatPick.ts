@@ -4,10 +4,10 @@ const rowsOf = (special: boolean) => (special ? 8 : 10);
 export const colsOf = (special: boolean) => (special ? ['A', 'B', 'C'] : ['A', 'B', 'C', 'D']);
 
 // 初期選択席: 既定席が埋まっていれば、その号車の最初の空席を選ぶ(満席なら空文字)
-export function pickDefaultSeat(occupied: string[], special: boolean): string {
+export function pickDefaultSeat(occupied: string[], special: boolean, rows?: number): string {
   const preferred = special ? '3A' : '4B';
   if (!occupied.includes(preferred)) return preferred;
-  for (let r = 1; r <= rowsOf(special); r++) {
+  for (let r = 1; r <= (rows ?? rowsOf(special)); r++) {
     for (const c of colsOf(special)) {
       if (!occupied.includes(`${r}${c}`)) return `${r}${c}`;
     }
