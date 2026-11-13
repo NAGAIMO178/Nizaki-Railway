@@ -11,6 +11,7 @@ import { computeLiveTrains, getCachedLineData, loadLineData } from './diaTimetab
 import { DelayNotifyMode } from './delayNotifySettings';
 import { getNotificationPermissionState, sendLocalPushNotification } from './pushNotification';
 import { isPushEnabled } from './notifySettings';
+import { withTk } from './tkLine';
 import { serviceDayKey, serviceDayStartOf } from './serviceDay';
 import { filterByLines, markNotified, NotifiedState, NotifyCandidate, planNotification } from './delayNotifyPlan';
 
@@ -21,12 +22,16 @@ const SUSPENDED_DELAY = 99; // 運転見合わせの印(列車位置と同じ)
 const STORAGE_KEY = 'nizaki_delay_notified';
 
 // 路線(画面の路線ID・ダイヤの路線コード・路線名)
-const LINES = [
-  { id: 'kanzaki', code: 'Y', name: '神埼線' },
-  { id: 'kanzaki_kosoku', code: 'NI', name: '神埼高速線' },
-  { id: 'saichi_loop', code: 'SC', name: '埼千環状線' },
-  { id: 'tsuchiura', code: 'TC', name: '土浦線' },
-];
+// 高宮線は、見せるのは、tkLine.ts のスイッチが入ってから
+const LINES = withTk(
+  [
+    { id: 'kanzaki', code: 'Y', name: '神埼線' },
+    { id: 'kanzaki_kosoku', code: 'NI', name: '神埼高速線' },
+    { id: 'saichi_loop', code: 'SC', name: '埼千環状線' },
+    { id: 'tsuchiura', code: 'TC', name: '土浦線' },
+  ],
+  { id: 'takamiya', code: 'TK', name: '高宮線' }
+);
 
 export interface DelayNotice {
   key: number;

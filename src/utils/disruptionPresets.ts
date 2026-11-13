@@ -76,6 +76,7 @@ export const COMMON_SECTIONS: Record<string, string[]> = {
   kanzaki_kosoku: ['全線', '東京 〜 品川 間', '品川 〜 横浜 間', '大井町 〜 川崎 間'],
   saichi: ['全線', '大宮 〜 池袋 間', '新宿 〜 東京 間', '北千住 〜 松戸 間', '松戸 〜 柏 間'],
   tsuchiura: ['全線', '松戸 〜 土浦 間', '土浦 〜 日立 間', '守谷 〜 荒川沖 間', '茨城空港 〜 日立 間'],
+  takamiya: ['全線', '大宮 〜 宇都宮 間', '宇都宮 〜 高根沢 間', '加須 〜 下妻 間', '新治 〜 群馬製作所 間'],
 };
 
 export interface ForecastPresetDef {

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ArrowRightLeft, MapPin, Train, ChevronDown, ChevronUp } from 'lucide-react';
+import { TK_LINE_COLOR } from '../utils/tkLine';
 
 export interface LocationStationInfo {
   name: string;
@@ -26,6 +27,8 @@ const COMPANY_LINES: Record<string, CompanyLineInfo> = {
   NI: { id: 'kanzaki_kosoku', name: '神埼高速線', code: 'NI', color: '#3B82F6', direction: '横浜方面 / 東京方面' },
   SC: { id: 'saichi_loop', name: '埼千環状線', code: 'SC', color: '#EC4899', direction: '大宮・柏方面 / 新宿・東京方面' },
   TC: { id: 'tsuchiura', name: '土浦線', code: 'TC', color: '#10B981', direction: '土浦・日立方面 / 松戸・東京方面' },
+  // 高宮線(大宮の乗換などに出るのは、tkLine.ts のスイッチが入ってから)
+  TK: { id: 'takamiya', name: '高宮線', code: 'TK', color: TK_LINE_COLOR, direction: '宇都宮・高根沢方面 / 大宮方面' },
 };
 
 // 他社線・接続マスター情報

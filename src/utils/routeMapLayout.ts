@@ -1,6 +1,8 @@
 // 路線図の配置。ダイヤのデータ(master.json)の駅の並びから、神埼線・神埼高速線・埼千環状線の略図の、駅の位置を求める。
 // 駅の名前・順番・乗換駅は、データから決まる。位置の決め方(環状線は楕円・神埼線の東側は環状線の内側・
 // 神埼線の西側は外側を回って横浜へ・高速線は東京から真下へ)だけが、ここの決めごと。
+import { TK_LINE_COLOR } from './tkLine';
+
 export interface MapMaster {
   name: string;
   stations: [string, number][];
@@ -33,7 +35,7 @@ export interface NetworkMap {
   stations: MapStation[];
 }
 
-export const LINE_COLORS: Record<string, string> = { Y: '#8B5CF6', NI: '#3B82F6', SC: '#EC4899', TC: '#10B981' };
+export const LINE_COLORS: Record<string, string> = { Y: '#8B5CF6', NI: '#3B82F6', SC: '#EC4899', TC: '#10B981', TK: TK_LINE_COLOR };
 
 // 路線図の形は、オーナーが用意した図(2026-10-14)の形にそろえる。縦・横・斜めの線だけで、環状線が少し折れ曲がる、東京の路線図のような形。
 // 下の座標は、その図の上の座標(幅1316×高さ2000)。駅の位置は、データの駅の並びを、この線の上に、等しい間隔で並べて決める。

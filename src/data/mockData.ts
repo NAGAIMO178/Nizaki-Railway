@@ -1,4 +1,5 @@
 import { TrainLine, EquipItem } from '../types';
+import { TK_LINE_COLOR, withTk } from '../utils/tkLine';
 import gyokuroImg from '../assets/images/item_gyokuro.webp';
 import clockImg from '../assets/images/item_clock.webp';
 import parfaitImg from '../assets/images/item_parfait.webp';
@@ -6,7 +7,8 @@ import craftbeerImg from '../assets/images/item_craftbeer.webp';
 import makunouchiImg from '../assets/images/item_makunouchi.webp';
 import hidaMatsutakeImg from '../assets/images/item_hida_matsutake.webp';
 
-export const MOCK_LINES: TrainLine[] = [
+// 高宮線は、見せるのは、tkLine.ts のスイッチが入ってから
+export const MOCK_LINES: TrainLine[] = withTk([
   {
     id: 'kanzaki',
     name: '1. 神埼線 (Y)',
@@ -43,7 +45,15 @@ export const MOCK_LINES: TrainLine[] = [
     statusText: '平常運転',
     infoMessage: '松戸〜土浦・茨城空港・日立方面(全22駅)ともに順調です。',
   },
-];
+], {
+  id: 'takamiya',
+  name: '5. 高宮線 (TK)',
+  code: 'TK',
+  color: TK_LINE_COLOR,
+  status: 'normal',
+  statusText: '平常運転',
+  infoMessage: '大宮〜高根沢(全13駅)ともに順調です。',
+});
 
 export const MOCK_EQUIP_ITEMS: EquipItem[] = [
   {
