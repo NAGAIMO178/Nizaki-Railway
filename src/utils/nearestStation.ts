@@ -1,4 +1,5 @@
 import { RegisterableStation } from '../components/MyStationRegisterCard';
+import { isTkLaunched, TK_STATION_NAMES } from './tkLine';
 
 export interface StationGeoData {
   id: string;
@@ -94,6 +95,31 @@ export const KANZAKI_STATION_GEOS: StationGeoData[] = [
   { id: 'tsuchiura_TC22', name: '日立', code: 'TC22', lineName: '4. 土浦線', lat: 36.5986, lng: 140.6625 },
 ];
 
+// 高宮線(見せるのは、tkLine.ts のスイッチが入ってから)。駅の名前は TK_STATION_NAMES から取る(ここには、座標だけ。順番は TK02〜TK13)。
+// 大宮(TK01)は、神埼線 Y12 と同じ駅なので、足さない(最寄り駅の候補は、大宮が1つのまま)。
+export const TK_STATION_COORDS: [number, number][] = [
+  [36.00751475276408, 139.60846768824695], // TK02
+  [36.12317097416528, 139.5954981851527], // TK03
+  [36.19473522899807, 139.70953374651063], // TK04
+  [36.16873476864688, 139.8234840723313], // TK05
+  [36.18198513672376, 139.96460020395523], // TK06
+  [36.223106029430106, 139.97655296173536], // TK07
+  [36.327908326144566, 140.03916498495653], // TK08
+  [36.51158738395048, 139.86375813229552], // TK09
+  [36.53938156619438, 139.86983637284263], // TK10
+  [36.558954401568506, 139.89845109745053], // TK11
+  [36.56287593782337, 139.97351394639338], // TK12
+  [36.624419555624925, 139.99304989679882], // TK13
+];
+export const TK_STATION_GEOS: StationGeoData[] = TK_STATION_NAMES.slice(1).map((name, i) => {
+  const code = `TK${String(i + 2).padStart(2, '0')}`;
+  const [lat, lng] = TK_STATION_COORDS[i];
+  return { id: `takamiya_${code}`, name, code, lineName: '5. 高宮線', lat, lng };
+});
+
+// 最寄り駅の候補。見せないあいだは、4路線・74駅のまま(高宮線は入れない)
+export const stationGeos = (): StationGeoData[] => (isTkLaunched() ? [...KANZAKI_STATION_GEOS, ...TK_STATION_GEOS] : KANZAKI_STATION_GEOS);
+
 // Haversine formula: 2点間の距離(km)を計算
 export function calculateDistanceKm(
   lat1: number,
@@ -138,7 +164,7 @@ export async function findNearestStation(): Promise<NearestStationResult> {
         let closestStation: StationGeoData | null = null;
         let minDistance = Infinity;
 
-        KANZAKI_STATION_GEOS.forEach((st) => {
+        stationGeos().forEach((st) => {
           const dist = calculateDistanceKm(userLat, userLng, st.lat, st.lng);
           if (dist < minDistance) {
             minDistance = dist;
