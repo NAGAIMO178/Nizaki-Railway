@@ -179,7 +179,7 @@ describe('スイッチを入れたとき(このテストの中だけ)', () => {
     expect(EXPRESS_TYPES.sumikaze.typeName).toBe('特急すみかぜ');
     expect(data.master.types.some((t) => t[0] === EXPRESS_TYPES.sumikaze.typeName && t[2] === 1)).toBe(true); // 有料(master の3つ目の値 1)
     const stops = dia.getExpressStations(data, EXPRESS_TYPES.sumikaze.typeName);
-    expect(stops).toEqual(['大宮', '古賀', '宇都宮', '高根沢']); // どの列車かが停まる駅(宇都宮〜高根沢だけの列車も、大宮〜高根沢の列車もある)
+    expect(stops).toEqual(['大宮', '古河', '宇都宮', '高根沢']); // どの列車かが停まる駅(宇都宮〜高根沢だけの列車も、大宮〜高根沢の列車もある)
     const down = dia.findExpressTrips(data, EXPRESS_TYPES.sumikaze.typeName, '大宮', '高根沢');
     expect(down.length).toBeGreaterThan(3);
     down.forEach((t) => {

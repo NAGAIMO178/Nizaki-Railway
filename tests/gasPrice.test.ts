@@ -91,7 +91,7 @@ describe('正しい予約は、1件も断らない(アプリの料金で作っ�
     it(`${EXPRESS_TYPES[type].label}: 全駅の組 × 席種 × 席の数 × クーポン × デリバリー(あり・なし・最大)× N-POINT払い`, async () => {
       const data = await loadExpressData(type);
       const stations = getExpressStations(data, EXPRESS_TYPES[type].typeName);
-      expect(stations.length).toBeGreaterThan(type === 'sumikaze' ? 3 : 5); // すみかぜは、停車駅が4つ(大宮・古賀・宇都宮・高根沢)
+      expect(stations.length).toBeGreaterThan(type === 'sumikaze' ? 3 : 5); // すみかぜは、停車駅が4つ(大宮・古河・宇都宮・高根沢)
       const check = gas.checkOrderPrice as (o: unknown) => string | null;
       let checked = 0;
       const refused: string[] = [];

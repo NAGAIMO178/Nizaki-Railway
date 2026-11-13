@@ -196,7 +196,7 @@ const TK_LINE: DisplayLine = {
     { id: 'TK01', code: 'TK01', name: '大宮', transfers: ['Y', 'SC', 'JR', '新幹線', '東武', 'ニューシャトル'] },
     { id: 'TK02', code: 'TK02', name: '羽貫' },
     { id: 'TK03', code: 'TK03', name: '加須' },
-    { id: 'TK04', code: 'TK04', name: '古賀' },
+    { id: 'TK04', code: 'TK04', name: '古河' },
     { id: 'TK05', code: 'TK05', name: '八俣' },
     { id: 'TK06', code: 'TK06', name: '下妻' },
     { id: 'TK07', code: 'TK07', name: '騰波ノ江' },

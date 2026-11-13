@@ -5,13 +5,14 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../src/utils/accountApi', () => ({ callGas: vi.fn(async () => ({ status: 'success' })) }));
 
-import { TK_LAUNCH_AT, isTkLaunched, visibleLineCodes } from '../src/utils/tkLine';
+import { TK_LAUNCH_AT, TK_STATION_NAMES, isTkLaunched, visibleLineCodes } from '../src/utils/tkLine';
+import { TK_STATION_GEOS } from '../src/utils/nearestStation';
 
 const DIA = path.resolve(__dirname, '..', 'public', 'data', 'dia-2');
 const CROWD = path.resolve(__dirname, '..', 'public', 'data', 'crowd-2');
 const json = (dir: string, file: string) => JSON.parse(fs.readFileSync(path.join(dir, file), 'utf-8'));
 const hm = (h: number, m = 0) => h * 3600 + m * 60;
-const TK_STATIONS = ['羽貫', '加須', '古賀', '八俣', '下妻', '騰波ノ江', '新治', '栃木県総合運動公園', '群馬製作所', '宇都宮', '清原', '高根沢'];
+const TK_STATIONS = ['羽貫', '加須', '古河', '八俣', '下妻', '騰波ノ江', '新治', '栃木県総合運動公園', '群馬製作所', '宇都宮', '清原', '高根沢'];
 
 // 読み込んだファイル名を記録する(見せないあいだに、高宮線のファイルを読んでいないことの確認)
 const fetched: string[] = [];
@@ -41,7 +42,27 @@ describe('データ', () => {
     expect(Object.keys(m).sort()).toEqual(['NI', 'SC', 'TC', 'Y']);
     expect(Object.keys(mu).sort()).toEqual(['NI', 'SC', 'TC', 'TK', 'Y']);
     for (const c of ['NI', 'SC', 'TC', 'Y']) expect(mu[c], c).toEqual(m[c]);
-    expect(mu.TK.stations.map((s: [string, number]) => s[0])).toEqual(['大宮', '羽貫', '加須', '古賀', '八俣', '下妻', '騰波ノ江', '新治', '栃木県総合運動公園', '群馬製作所', '宇都宮', '清原', '高根沢']);
+    expect(mu.TK.stations.map((s: [string, number]) => s[0])).toEqual(['大宮', '羽貫', '加須', '古河', '八俣', '下妻', '騰波ノ江', '新治', '栃木県総合運動公園', '群馬製作所', '宇都宮', '清原', '高根沢']);
+  });
+
+  it('駅名の並び(TK_STATION_NAMES)が、master-tk.json・配線.json・最寄り駅の駅名と、そろっている。誤った駅名(古+賀)は、どこにも残っていない', () => {
+    const mu = json(DIA, 'master-tk.json');
+    expect(mu.TK.stations.map((s: [string, number]) => s[0])).toEqual(TK_STATION_NAMES);
+    expect(Object.keys(json(DIA, '配線.json').高宮線).sort()).toEqual([...TK_STATION_NAMES].sort());
+    expect(TK_STATION_GEOS.map((g) => g.name)).toEqual(TK_STATION_NAMES.slice(1));
+    const wrong = '古' + '賀';
+    expect(TK_STATION_NAMES).toContain('古' + '河');
+    const roots = ['src', 'public', 'tests', 'gas', 'tools'].map((d) => path.resolve(__dirname, '..', d));
+    const hits: string[] = [];
+    const walk = (dir: string) => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const p = path.join(dir, e.name);
+        if (e.isDirectory()) walk(p);
+        else if (/\.(ts|tsx|json|csv|gs|md|html|js|css|txt)$/.test(e.name) && fs.readFileSync(p, 'utf-8').includes(wrong)) hits.push(path.relative(path.resolve(__dirname, '..'), p));
+      }
+    };
+    roots.filter((r) => fs.existsSync(r)).forEach(walk);
+    expect(hits).toEqual([]);
   });
 
   it('旧名(宇都宮線・UT)のデータが残っていない: UT_ のファイル・master-ut.json が無い。路線名は 高宮線、種別は 特急すみかぜ・快速・各停', () => {

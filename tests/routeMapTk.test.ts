@@ -89,7 +89,7 @@ describe('見せるとき(master-tk.json): 大宮から真上へのび、上の�
     const horizontal = stops.filter((s) => s.y === 130);
     expect(horizontal.map((s) => s.name)).toEqual(['騰波ノ江', '新治', '栃木県総合運動公園', '群馬製作所', '宇都宮', '清原', '高根沢']);
     expect(horizontal.map((s) => s.label.dy)).toEqual([-16, 30, -16, 30, -16, 30, -16]);
-    expect(stops.filter((s) => s.y !== 130).map((s) => s.name)).toEqual(['羽貫', '加須', '古賀', '八俣', '下妻']);
+    expect(stops.filter((s) => s.y !== 130).map((s) => s.name)).toEqual(['羽貫', '加須', '古河', '八俣', '下妻']);
   });
 
   it('高宮線の線は、オレンジ(#EA580C)で、大宮から真上へ、角を丸めて横へ。図の外にはみ出さない', () => {
