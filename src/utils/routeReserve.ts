@@ -1,12 +1,12 @@
 // 経路の詳細(公開後)で、有料の特急の区間に、号数を出す・予約画面へ飛ぶための決まり。
 // 号数・列車の選び方は、予約画面と同じもの(diaTimetable の expressNames・findExpressTrips)を使う。
-import { EXPRESS_TYPES, expressNames, findExpressTrips, getCachedExpressData, getCachedLineData } from './diaTimetable';
+import { EXPRESS_TYPES, expressNames, findExpressTrips, getCachedExpressData, getCachedLineData, visibleExpressKeys } from './diaTimetable';
 import type { ExpressKey } from './diaTimetable';
 import type { RouteLeg } from './routeSearch';
 import type { ReservationPreset } from '../components/ReservationTab';
 
 const keyOfLeg = (leg: RouteLeg): ExpressKey | undefined =>
-  leg.paid ? (Object.keys(EXPRESS_TYPES) as ExpressKey[]).find((k) => EXPRESS_TYPES[k].typeName === leg.typeName) : undefined;
+  leg.paid ? visibleExpressKeys().find((k) => EXPRESS_TYPES[k].typeName === leg.typeName) : undefined;
 
 // 区間の特急の号数(例: 「21号」)。特急でない・引けないときは undefined。直通の2区間は、同じ号数
 export const legGou = (leg: RouteLeg): string | undefined => {

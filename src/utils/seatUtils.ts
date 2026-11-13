@@ -7,6 +7,8 @@ export function getSeatClassLabel(seatType?: SeatClass): string {
       return 'めぐシート';
     case 'green':
       return 'あやみ+';
+    case 'special':
+      return '特別車';
     case 'premium':
       return 'プレミアム席';
     case 'reserved':
@@ -189,13 +191,14 @@ export function generateOccupiedSeats(
   dateStr: string,
   trainKey: string,
   carNo: number,
-  isSpecialCar: boolean
+  isSpecialCar: boolean,
+  rowsOverride?: number // 列の数(既定は、特別車 8列・普通車 10列。すみかぜは、どちらも 16列)
 ): string[] {
   const isWeekend = isTodayWeekend();
   const seedString = `${dateStr}_${trainKey}_car_${carNo}`;
   let seed = stringToSeed(seedString);
 
-  const rows = isSpecialCar ? 8 : 10;
+  const rows = rowsOverride ?? (isSpecialCar ? 8 : 10);
   const cols = isSpecialCar ? ['A', 'B', 'C'] : ['A', 'B', 'C', 'D'];
   const occupied: string[] = [];
 

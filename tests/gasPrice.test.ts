@@ -4,10 +4,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { MOCK_EQUIP_ITEMS } from '../src/data/mockData';
 import { EXPRESS_TYPES, type ExpressKey, getExpressStations, getTripDistanceKm, loadExpressData } from '../src/utils/diaTimetable';
 import { calculateFare } from '../src/utils/fare';
+import { SUMIKAZE, sumikazeFee } from '../src/utils/sumikaze';
+
+// 高宮線(非表示)の特急すみかぜも、全部流して確かめる。高宮線を見せるスイッチを、このテストの中だけ入れる(本物のスイッチは、変えない)
+vi.mock('../src/utils/tkLine', async (importOriginal) => ({ ...(await importOriginal<typeof import('../src/utils/tkLine')>()), isTkLaunched: () => true, visibleLineCodes: (codes: string[]) => codes }));
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Gas = Record<string, any>;
@@ -30,8 +34,9 @@ beforeAll(() => {
 });
 
 // ---- アプリの料金の決まり(src/components/ReservationTab.tsx の calculateTicketPrice と同じ) ----
-const SEAT_TYPES = ['standard', 'reserved', 'green', 'premium', 'megu'] as const;
+const SEAT_TYPES = ['standard', 'reserved', 'green', 'premium', 'megu', 'special'] as const;
 const appExpressFee = (type: ExpressKey, seatType: string): number => {
+  if (type === 'sumikaze') return sumikazeFee(seatType);
   if (type === 'ayami') return seatType === 'standard' ? 750 : seatType === 'reserved' ? 1150 : seatType === 'green' ? 2200 : 1150;
   if (type === 'nliner') return 1250;
   return seatType === 'megu' ? 2050 : 1250;
@@ -86,7 +91,7 @@ describe('正しい予約は、1件も断らない(アプリの料金で作っ�
     it(`${EXPRESS_TYPES[type].label}: 全駅の組 × 席種 × 席の数 × クーポン × デリバリー(あり・なし・最大)× N-POINT払い`, async () => {
       const data = await loadExpressData(type);
       const stations = getExpressStations(data, EXPRESS_TYPES[type].typeName);
-      expect(stations.length).toBeGreaterThan(5);
+      expect(stations.length).toBeGreaterThan(type === 'sumikaze' ? 3 : 5); // すみかぜは、停車駅が4つ(大宮・古賀・宇都宮・高根沢)
       const check = gas.checkOrderPrice as (o: unknown) => string | null;
       let checked = 0;
       const refused: string[] = [];
@@ -155,7 +160,12 @@ describe('サーバーの表が、アプリの値と、そろっている', () =
 
   it('特急料金の表は、予約画面(ReservationTab.tsx)の値と同じ(画面の値を書き換えたら、ここで気づく)', () => {
     const tab = fs.readFileSync(path.resolve(__dirname, '..', 'src', 'components', 'ReservationTab.tsx'), 'utf-8');
-    ['baseExpressFee = 750', 'baseExpressFee = 1150', 'baseExpressFee = 2200', 'baseExpressFee = 1250', 'baseExpressFee = 2050', 'expressDiscount = 300'].forEach((w) => expect(tab, w).toContain(w));
+    ['baseExpressFee = 750', 'baseExpressFee = 1150', 'baseExpressFee = 2200', 'baseExpressFee = 1250', 'baseExpressFee = 2050', 'expressDiscount = 300', 'baseExpressFee = sumikazeFee(seatType)'].forEach((w) => expect(tab, w).toContain(w));
+    // すみかぜの料金は、サーバーの表と、アプリの決めごと(sumikaze.ts)が同じ(どちらかを変えたら、ここで落ちる)
+    const fee0 = gas.expressFeeMax as (t: string, s: string) => number;
+    expect(fee0('特急すみかぜ 1号', 'reserved')).toBe(SUMIKAZE.fees.reserved);
+    expect(fee0('特急すみかぜ 1号', 'special')).toBe(SUMIKAZE.fees.special);
+    expect(SUMIKAZE.fees).toEqual({ reserved: 1250, special: 2200 });
     const fee = gas.expressFeeMax as (t: string, s: string) => number;
     (Object.keys(EXPRESS_TYPES) as ExpressKey[]).forEach((type) => {
       SEAT_TYPES.forEach((seatType) => expect(fee(`${EXPRESS_TYPES[type].label} 1号`, seatType), `${type}/${seatType}`).toBe(appExpressFee(type, seatType)));

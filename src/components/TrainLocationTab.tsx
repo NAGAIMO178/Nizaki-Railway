@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ChevronRight, ChevronDown, ChevronUp, Info, HelpCircle, AlertCircle, ArrowLeftRight, X, Clock, RotateCcw, CheckCircle2 } from 'lucide-react';
-import { computeLiveTrains as computeDiaLiveTrains, EXPRESS_TYPES, getCachedLineData, getExpressTrainEnds, loadLineData, normalizeStationName } from '../utils/diaTimetable';
+import { computeLiveTrains as computeDiaLiveTrains, EXPRESS_TYPES, getCachedLineData, getExpressTrainEnds, loadLineData, normalizeStationName, visibleExpressKeys } from '../utils/diaTimetable';
 import { TrainDetailV2 } from './TrainDetailV2';
 import type { ReservationPreset } from './ReservationTab';
 import { LocationStationDetailCard, LocationStationInfo } from './LocationStationDetailCard';
@@ -536,7 +536,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
   const reservationOf = (train: LiveTrainPos) =>
     onOpenReservation && train.paid
       ? () => {
-          const key = (Object.keys(EXPRESS_TYPES) as (keyof typeof EXPRESS_TYPES)[]).find((k) => EXPRESS_TYPES[k].typeName === train.typeName);
+          const key = visibleExpressKeys().find((k) => EXPRESS_TYPES[k].typeName === train.typeName);
           if (!key || !train.trainNo) return;
           const stops = (train.rows ?? []).filter((r) => !r.pass);
           // 直通の特急(めぐり)は、2つの路線にまたがる全体の始発と終着(東京〜日立)で、予約を開く

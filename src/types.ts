@@ -25,8 +25,8 @@ export interface EquipItem {
   onlySeatTypes?: SeatClass[]; // 指定した座席の種類で予約したお客様だけ注文できる(未指定なら誰でも)
 }
 
-// 座席の種類(予約画面で選んだもの): 自由席 / 普通指定席 / あやみ+ / プレミアム / めぐシート
-export type SeatClass = 'standard' | 'reserved' | 'green' | 'premium' | 'megu';
+// 座席の種類(予約画面で選んだもの): 自由席 / 普通指定席 / あやみ+ / プレミアム / めぐシート / 特別車(すみかぜ)
+export type SeatClass = 'standard' | 'reserved' | 'green' | 'premium' | 'megu' | 'special';
 
 export interface ActiveOrder {
   orderId: string;

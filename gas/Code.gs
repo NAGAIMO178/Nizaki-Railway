@@ -907,12 +907,14 @@ function checkOrderLimits(order) {
 // この表は、アプリの src/utils/fare.ts(運賃表)・ReservationTab.tsx(特急料金)・data/mockData.ts(商品)と同じ値にする
 // (tests/gas.test.ts が、アプリ側の値と、そろっているかを見張る)。
 const PRICE_FARE_MAX = 3300; // 運賃表の最高の区分(営業キロ200km超)。実際の路線は、最長でも約143km
-// 特急料金(1席)。[列車名の頭, { 席種: 料金 }, 席種が表にないときの料金]
+// 特急料金(1席)。[列車名の頭, { 席種: 料金 }, 席種が表にないときの料金]。席種 special は、すみかぜの特別車
 const EXPRESS_FEE_TABLE = [
   { prefix: '特急あやみ', fees: { standard: 750, reserved: 1150, green: 2200 }, other: 1150 },
   { prefix: '特急Nライナー', fees: {}, other: 1250 },
   { prefix: '特急(Nライナー)', fees: {}, other: 1250 },
-  { prefix: '特急めぐり', fees: { megu: 2050 }, other: 1250 }
+  { prefix: '特急めぐり', fees: { megu: 2050 }, other: 1250 },
+  // 高宮線の特急(全席指定・全区間一律)。普通車指定席 1,250円・特別車 2,200円
+  { prefix: '特急すみかぜ', fees: { reserved: 1250, special: 2200 }, other: 1250 }
 ];
 const EXPRESS_FEE_UNKNOWN_TRAIN = 2200; // 列車名が分からないときは、全種別の最高額
 // 車内デリバリーの商品の価格(商品の番号 → 円)。表にない番号は断る

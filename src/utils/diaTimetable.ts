@@ -624,9 +624,14 @@ export const EXPRESS_TYPES = {
   ayami: { lineCode: 'SC', typeName: '特急あやみ', label: '特急あやみ', numberBase: 100 },
   nliner: { lineCode: 'Y', typeName: '特急(Nライナー)', label: '特急Nライナー', numberBase: 0 },
   meguri: { lineCode: 'TC', typeName: '特急めぐり', label: '特急めぐり', numberBase: 0 },
+  sumikaze: { lineCode: 'TK', typeName: '特急すみかぜ', label: '特急すみかぜ', numberBase: 0 }, // 高宮線(非表示のあいだは、予約に出さない)
 } as const;
 
 export type ExpressKey = keyof typeof EXPRESS_TYPES;
+
+// その特急を、いま見せてよいか。高宮線の特急(すみかぜ)は、tkLine.ts のスイッチが入るまで、どの画面にも出さない・読み込まない
+export const isExpressVisible = (key: ExpressKey): boolean => EXPRESS_TYPES[key].lineCode !== TK_CODE || isTkLaunched();
+export const visibleExpressKeys = (): ExpressKey[] => (Object.keys(EXPRESS_TYPES) as ExpressKey[]).filter(isExpressVisible);
 
 // 特急の予約で使う、もとの路線のコード(直通の特急は、つないだ2つの路線。ほかは、その路線だけ)
 export const expressSourceLines = (key: ExpressKey): string[] => {
@@ -784,6 +789,19 @@ export const getExpressStations = (data: LineData, typeName: string): string[] =
   for (let i = 0; i < sample[5].length; i += 3) {
     const name = data.master.stations[sample[5][i]][0];
     if (!names.includes(name)) names.push(name);
+  }
+  // 列車によって停まる駅の並びが違う路線(高宮線のすみかぜ: 宇都宮〜高根沢だけの列車がある)は、どの列車かが停まる駅を、すべて出す(路線の並び順)。
+  // 停まる駅の並びが1通りの路線(これまでの特急)は、上の並びのまま
+  if (!data.master.loop) {
+    const extra = new Set<number>();
+    data.trains.forEach((t) => {
+      if (t[1] !== typeIdx || t[2] !== dirCode) return;
+      for (let i = 0; i < t[5].length; i += 3) if (!names.includes(data.master.stations[t[5][i]][0])) extra.add(t[5][i]);
+    });
+    if (extra.size > 0) {
+      const idx = new Set<number>([...extra, ...names.map((n) => data.master.stations.findIndex((s) => s[0] === n))]);
+      return [...idx].sort((a, b) => a - b).map((i) => data.master.stations[i][0]);
+    }
   }
   return names;
 };

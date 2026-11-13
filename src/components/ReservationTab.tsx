@@ -30,13 +30,16 @@ import { NPointPayRow } from './NPointPayRow';
 import { getLocalDateString } from '../utils/orderExpiry';
 import {
   EXPRESS_TYPES,
+  ExpressKey,
   ExpressTrip,
   findExpressTrips,
   getExpressStations,
   getTripDistanceKm,
   loadExpressData,
   getCachedExpressData,
+  visibleExpressKeys,
 } from '../utils/diaTimetable';
+import { SUMIKAZE, sumikazeFee } from '../utils/sumikaze';
 import { isLaunched } from '../utils/launch';
 import { TicketSummary, reservationRibbon } from '../utils/ticketApi';
 import { calculateFare } from '../utils/fare';
@@ -49,7 +52,7 @@ import { useBackClose } from '../utils/backClose';
 // 列車位置の特急の詳細から、予約画面を、その列車を選んだ状態で開くための指定(公開後だけ。key が変わるたびに適用する)
 export interface ReservationPreset {
   key: number;
-  expressType: 'ayami' | 'nliner' | 'meguri';
+  expressType: ExpressKey;
   boarding?: string; // 駅名(「駅」なし)
   destination?: string;
   trainCode: string;
@@ -96,8 +99,12 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
   const [spendError, setSpendError] = useState<string | null>(null);
   const canUsePoints = !!onSpendPoints && (pointBalance ?? 0) > 0;
   // Express Train Selection in E-Quick Service
-  const [expressType, setExpressType] = useState<'ayami' | 'nliner' | 'meguri'>('ayami');
+  const [expressType, setExpressType] = useState<ExpressKey>('ayami');
 
+  // 高宮線の特急(すみかぜ)は、tkLine.ts のスイッチが入るまで、選べない
+  const showSumikaze = visibleExpressKeys().includes('sumikaze');
+  // 特急の切り替えの札(4つ並ぶときは、少し小さくして、1行に収める)
+  const typeBtn = showSumikaze ? 'py-2 px-1 rounded-lg text-[11px] font-bold whitespace-nowrap transition-all cursor-pointer' : 'py-2 px-2 rounded-lg text-xs font-bold transition-all cursor-pointer';
   // 駅の一覧・時刻・営業キロは、全駅ダイヤ(小分けJSON)から取る
   const expressConfig = EXPRESS_TYPES[expressType];
   const [diaTick, setDiaTick] = useState(0);
@@ -148,7 +155,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
   const currentStationList: string[] = lineData
     ? getExpressStations(lineData, expressConfig.typeName).map((n) => `${n}駅`)
     : [boardingStation, destinationStation];
-  const [seatType, setSeatType] = useState<'standard' | 'reserved' | 'green' | 'premium' | 'megu'>('reserved');
+  const [seatType, setSeatType] = useState<'standard' | 'reserved' | 'green' | 'premium' | 'megu' | 'special'>('reserved');
   // 席の数(=人数。公開後だけ複数)。指定席は座席選択で選んだ席の数、自由席は人数のボタンで決める。運賃・特急料金・クーポン割引は、この人数ぶん
   const [seatCount, setSeatCount] = useState(1);
   const maxSeats = isLaunched() ? MAX_SEATS : 1;
@@ -231,7 +238,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
     : [];
 
   // Train Switcher Effect
-  const handleExpressTypeChange = (type: 'ayami' | 'nliner' | 'meguri') => {
+  const handleExpressTypeChange = (type: ExpressKey) => {
     setExpressType(type);
     if (type === 'ayami') {
       setBoardingStation('東京駅');
@@ -241,6 +248,10 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
       setBoardingStation('東京駅');
       setDestinationStation('横浜駅');
       setSeatType('reserved'); // Nライナーは普通指定席のみ
+    } else if (type === 'sumikaze') {
+      setBoardingStation('大宮駅');
+      setDestinationStation('高根沢駅');
+      setSeatType('reserved'); // すみかぜは、普通車指定席・特別車の2つ(自由席は、ない)
     } else {
       setBoardingStation(isLaunched() ? '東京駅' : '松戸駅'); // 公開後は、東京〜日立で通しの特急めぐり
       setDestinationStation('日立駅');
@@ -349,6 +360,8 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
       else if (seatType === 'green') baseExpressFee = 2200; // あやみ+
     } else if (expressType === 'nliner') {
       baseExpressFee = 1250; // 普通指定席のみ
+    } else if (expressType === 'sumikaze') {
+      baseExpressFee = sumikazeFee(seatType); // 普通車指定席 / 特別車(全区間一律)
     } else {
       if (seatType === 'megu') baseExpressFee = 2050; // めぐシート
       else baseExpressFee = 1250; // 普通指定席
@@ -734,11 +747,11 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
           {/* Ticketless Booking Card - Minimal Clean */}
           <div className="bg-white rounded-2xl p-4 shadow-2xs border border-[#E6E2EE] space-y-3.5">
             {/* Train Type Selection */}
-            <div className="grid grid-cols-3 gap-1 p-1 bg-[#F4F3F8] rounded-xl">
+            <div className={`grid ${showSumikaze ? 'grid-cols-4' : 'grid-cols-3'} gap-1 p-1 bg-[#F4F3F8] rounded-xl`}>
               <button
                 type="button"
                 onClick={() => handleExpressTypeChange('ayami')}
-                className={`py-2 px-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                className={`${typeBtn} ${
                   expressType === 'ayami'
                     ? 'bg-[#5B21B6] text-white shadow-2xs'
                     : 'text-[#6B6380] hover:text-[#221C35]'
@@ -750,7 +763,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
               <button
                 type="button"
                 onClick={() => handleExpressTypeChange('nliner')}
-                className={`py-2 px-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                className={`${typeBtn} ${
                   expressType === 'nliner'
                     ? 'bg-[#5B21B6] text-white shadow-2xs'
                     : 'text-[#6B6380] hover:text-[#221C35]'
@@ -762,7 +775,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
               <button
                 type="button"
                 onClick={() => handleExpressTypeChange('meguri')}
-                className={`py-2 px-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                className={`${typeBtn} ${
                   expressType === 'meguri'
                     ? 'bg-[#5B21B6] text-white shadow-2xs'
                     : 'text-[#6B6380] hover:text-[#221C35]'
@@ -770,6 +783,20 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
               >
                 特急めぐり
               </button>
+
+              {showSumikaze && (
+                <button
+                  type="button"
+                  onClick={() => handleExpressTypeChange('sumikaze')}
+                  className={`${typeBtn} ${
+                    expressType === 'sumikaze'
+                      ? 'bg-[#5B21B6] text-white shadow-2xs'
+                      : 'text-[#6B6380] hover:text-[#221C35]'
+                  }`}
+                >
+                  すみかぜ
+                </button>
+              )}
             </div>
 
             {/* Boarding & Destination Selectors */}
@@ -895,6 +922,36 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
                     <div>普通指定席 (固定)</div>
                     <div className="text-xs font-mono mt-0.5">¥1,250</div>
                   </div>
+                </div>
+              )}
+
+              {expressType === 'sumikaze' && (
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setSeatType('reserved')}
+                    className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer ${
+                      seatType === 'reserved'
+                        ? 'bg-[#F4F3F8] border-[#5B21B6] font-bold text-[#5B21B6]'
+                        : 'bg-white border-[#E6E2EE] text-[#221C35]'
+                    }`}
+                  >
+                    <div>普通指定席</div>
+                    <div className="text-xs font-mono mt-0.5">¥{SUMIKAZE.fees.reserved.toLocaleString()}</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSeatType('special')}
+                    className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer ${
+                      seatType === 'special'
+                        ? 'bg-[#F4F3F8] border-[#5B21B6] font-bold text-[#5B21B6]'
+                        : 'bg-white border-[#E6E2EE] text-[#221C35]'
+                    }`}
+                  >
+                    <div>特別車</div>
+                    <div className="text-xs font-mono mt-0.5">¥{SUMIKAZE.fees.special.toLocaleString()}</div>
+                  </button>
                 </div>
               )}
 
