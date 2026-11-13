@@ -33,8 +33,8 @@ export const bundleBackLayers = (total: number): number => Math.max(0, Math.min(
 // 束ね札の高さ(px。重ならない高さの計算用): 先頭の札の高さ + ずらした札が、本体の外へはみ出すぶん(両側)
 export const bundleHeight = (head: { delayed: boolean; passing: boolean }, total: number): number => pinHeight(head) + 2 * BUNDLE_STEP * bundleBackLayers(total);
 
-// 帯の字の大きさ(px)。帯の字は、3文字まで(あやみ・めぐり)で、9px で幅(38px)に収まる。それより長いときは、収まるまで小さくする(知らない種別のための備え)
-export const bandFontSize = (label: string): number => (label.length <= 3 ? 9 : Math.floor((34 / label.length) * 10) / 10);
+// 帯の字の大きさ(px)。3文字まで(あやみ・めぐり)は 9px。4文字(すみかぜ)は 8.5px(幅38pxに、左右2pxずつの余白)。それより長いときは、収まるまで小さくする(知らない種別のための備え)
+export const bandFontSize = (label: string): number => (label.length <= 3 ? 9 : label.length === 4 ? 8.5 : Math.floor((34 / label.length) * 10) / 10);
 
 const Person: React.FC<{ color: string }> = ({ color }) => (
   <svg width="7" height="9.8" viewBox="0 0 10 14" aria-hidden="true">

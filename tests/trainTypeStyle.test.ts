@@ -24,15 +24,15 @@ describe('帯の字(種別の略称。帯専用の表)', () => {
     expect(bandLabelOf('特急めぐり')).toBe('めぐり');
     expect(bandLabelOf('特急(Nライナー)')).toBe('N');
     expect(bandLabelOf('特急')).toBe('特');
-    expect(bandLabelOf('特急すみかぜ')).toBe('特'); // 高宮線の特急(種別名・色・帯の略称は、そのまま)
+    expect(bandLabelOf('特急すみかぜ')).toBe('すみかぜ'); // 高宮線(非表示)の特急
     expect(typeStyleOf('特急すみかぜ').hex).toBe('#6D28D9');
   });
 
-  it('帯の字は、3文字まで(9pxで、幅38pxに収まる)', () => {
+  it('帯の字は、4文字まで(3文字までは9px・4文字は8.5pxで、幅38pxに収まる)', () => {
     const dia = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'public', 'data', 'dia-2', 'master-tk.json'), 'utf-8')) as Record<string, { types: [string, string, number][] }>;
     const names = new Set(Object.values(dia).flatMap((m) => m.types.map((t) => displayType(t[0]))));
     expect(names.size).toBeGreaterThanOrEqual(9);
-    for (const n of names) expect(bandLabelOf(n).length, n).toBeLessThanOrEqual(3);
+    for (const n of names) expect(bandLabelOf(n).length, n).toBeLessThanOrEqual(4);
   });
 
   it('master の types の2番目の値(時刻表の凡例などの略称)は、別物。帯用の表で、置き換えていない', () => {

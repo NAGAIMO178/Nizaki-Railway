@@ -1,6 +1,6 @@
 // 種別ごとの色・帯の字を決める、1か所の表。発車案内(MyStationCard)・列車位置の札(TrainPin)・列車の詳細(TrainDetailV2)が、ここを見る。
 //  - 色の決まり: 各停=灰 / 快速=青 / 区間快速=緑 / 急行・通勤特快=赤(同じ色。字で区別) / 特別快速=黄 / 有料特急=紫
-//  - 帯の字(列車位置の札だけ): 種別名の略称。各=各停・急=急行・快=快速・区快=区間快速・特快=特別快速・通快=通勤特快・あやみ・めぐり・N(特急(Nライナー))。
+//  - 帯の字(列車位置の札だけ): 種別名の略称。各=各停・急=急行・快=快速・区快=区間快速・特快=特別快速・通快=通勤特快・あやみ・めぐり・すみかぜ・N(特急(Nライナー))。
 //    master の types の2番目の値(時刻表の凡例などが使う略称)とは別の表で、そちらは変えない。
 // 種別名は、画面の種別の名前(diaTimetable.ts の displayType を通したもの)。
 
@@ -22,6 +22,7 @@ const SPECIAL_RAPID: TypeStyle = { band: '特快', hex: '#F59E0B', solid: 'bg-am
 const LIMITED_SOFT = 'bg-purple-100 text-purple-950 border border-purple-300 font-extrabold';
 const AYAMI: TypeStyle = { band: 'あやみ', hex: '#6D28D9', solid: 'bg-purple-700', soft: LIMITED_SOFT };
 const MEGURI: TypeStyle = { band: 'めぐり', hex: '#7C3AED', solid: 'bg-purple-700', soft: LIMITED_SOFT };
+const SUMIKAZE: TypeStyle = { band: 'すみかぜ', hex: '#6D28D9', solid: 'bg-purple-700', soft: LIMITED_SOFT }; // 高宮線(非表示)の特急。色は、有料特急の紫のまま
 const N_LINER: TypeStyle = { band: 'N', hex: '#6D28D9', solid: 'bg-purple-700', soft: LIMITED_SOFT };
 const LIMITED: TypeStyle = { band: '特', hex: '#6D28D9', solid: 'bg-purple-700', soft: LIMITED_SOFT };
 
@@ -35,6 +36,7 @@ export const typeStyleOf = (trainType: string): TypeStyle => {
   if (trainType === '通勤特快' || trainType === '通特') return COMMUTER_SPECIAL;
   if (trainType.includes('あやみ')) return AYAMI;
   if (trainType.includes('めぐり')) return MEGURI;
+  if (trainType.includes('すみかぜ')) return SUMIKAZE;
   if (trainType.includes('Nライナー')) return N_LINER;
   if (trainType.includes('特急') || trainType.includes('サークル')) return LIMITED;
   return LOCAL;
