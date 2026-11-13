@@ -12,7 +12,7 @@ import { isLaunched } from '../utils/launch';
 import { trainIconCenter, isBundle, trainRank } from '../utils/trainIconLayout';
 import { bandLabelOf, typeStyleOf } from '../utils/trainTypeStyle';
 import { crowdInfo, loadAllCrowdTrains } from '../utils/crowd';
-import { isUtLaunched } from '../utils/utLine';
+import { isTkLaunched } from '../utils/tkLine';
 import { THROUGH_STYLE, throughLineAt, trainThrough } from '../utils/throughLine';
 import { bundleHeight, pinHeight, TrainPin, TrainPinBundle } from './TrainPin';
 
@@ -184,39 +184,39 @@ const BASE_LINES_DATA: DisplayLine[] = [
   },
 ];
 
-// 宇都宮線(UT。大宮〜高根沢)。見せるのは、utLine.ts のスイッチが入ってから(それまでは、タブにも、乗換駅の「UT」にも出ない)
-const UT_LINE: DisplayLine = {
-  id: 'utsunomiya',
-  name: '宇都宮線',
-  code: 'UT',
+// 高宮線(TK。大宮〜高根沢)。見せるのは、tkLine.ts のスイッチが入ってから(それまでは、タブにも、乗換駅の「TK」にも出ない)
+const TK_LINE: DisplayLine = {
+  id: 'takamiya',
+  name: '高宮線',
+  code: 'TK',
   color: '#F97316',
   direction1: '宇都宮・高根沢方面',
   direction2: '大宮方面',
   stations: [
-    { id: 'UT01', code: 'UT01', name: '大宮', transfers: ['Y', 'SC', 'JR', '新幹線', '東武', 'ニューシャトル'] },
-    { id: 'UT02', code: 'UT02', name: '羽貫' },
-    { id: 'UT03', code: 'UT03', name: '加須' },
-    { id: 'UT04', code: 'UT04', name: '古賀' },
-    { id: 'UT05', code: 'UT05', name: '八俣' },
-    { id: 'UT06', code: 'UT06', name: '下妻' },
-    { id: 'UT07', code: 'UT07', name: '騰波ノ江' },
-    { id: 'UT08', code: 'UT08', name: '新治' },
-    { id: 'UT09', code: 'UT09', name: '栃木県総合運動公園' },
-    { id: 'UT10', code: 'UT10', name: '群馬製作所' },
-    { id: 'UT11', code: 'UT11', name: '宇都宮' },
-    { id: 'UT12', code: 'UT12', name: '清原' },
-    { id: 'UT13', code: 'UT13', name: '高根沢' },
+    { id: 'TK01', code: 'TK01', name: '大宮', transfers: ['Y', 'SC', 'JR', '新幹線', '東武', 'ニューシャトル'] },
+    { id: 'TK02', code: 'TK02', name: '羽貫' },
+    { id: 'TK03', code: 'TK03', name: '加須' },
+    { id: 'TK04', code: 'TK04', name: '古賀' },
+    { id: 'TK05', code: 'TK05', name: '八俣' },
+    { id: 'TK06', code: 'TK06', name: '下妻' },
+    { id: 'TK07', code: 'TK07', name: '騰波ノ江' },
+    { id: 'TK08', code: 'TK08', name: '新治' },
+    { id: 'TK09', code: 'TK09', name: '栃木県総合運動公園' },
+    { id: 'TK10', code: 'TK10', name: '群馬製作所' },
+    { id: 'TK11', code: 'TK11', name: '宇都宮' },
+    { id: 'TK12', code: 'TK12', name: '清原' },
+    { id: 'TK13', code: 'TK13', name: '高根沢' },
   ],
 };
 
-export const LINES_DATA: DisplayLine[] = isUtLaunched()
+export const LINES_DATA: DisplayLine[] = isTkLaunched()
   ? [
-      // 大宮は、宇都宮線の乗換駅にもなる
+      // 大宮は、高宮線の乗換駅にもなる
       ...BASE_LINES_DATA.map((l) => ({
         ...l,
-        stations: l.stations.map((st) => (st.name === '大宮' ? { ...st, transfers: [...(st.transfers ?? []), 'UT'] } : st)),
+        stations: l.stations.map((st) => (st.name === '大宮' ? { ...st, transfers: [...(st.transfers ?? []), 'TK'] } : st)),
       })),
-      UT_LINE,
+      TK_LINE,
     ]
   : BASE_LINES_DATA;
 
@@ -226,7 +226,7 @@ const DIA_LINE_CODES: Record<string, string> = {
   kanzaki_kosoku: 'NI',
   saichi_loop: 'SC',
   tsuchiura: 'TC',
-  utsunomiya: 'UT',
+  takamiya: 'TK',
 };
 
 export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReservation, reselectKey = 0 }) => {

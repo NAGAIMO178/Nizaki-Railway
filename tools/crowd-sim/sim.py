@@ -13,10 +13,10 @@ OUT = os.environ.get("CROWD_OUT", os.path.join(ROOT, "public", "data", "crowd-2"
 N_AGENTS = int(os.environ.get("N_AGENTS", 60000))   # 仮想住民の数(1人が、何人分かは、乗降客数に合わせて自動で決める)
 SEED = 20261101
 DEMAND = float(os.environ.get("DEMAND", 0.7))   # 乗降客数の倍率(列車の数に対する、混み具合の調整)
-LINE_NAME = {"神埼高速線": "NI", "神埼線": "Y", "埼千環状線": "SC", "土浦線": "TC", "宇都宮線": "UT"}
+LINE_NAME = {"神埼高速線": "NI", "神埼線": "Y", "埼千環状線": "SC", "土浦線": "TC", "高宮線": "TK"}
 # 路線ごとの倍率(DEMAND にかけ算)。何も指定しなくても、いまの混雑データ(public/data/crowd-2)と同じ結果になる値。
 # 環境変数 LINE_DEMAND='{"NI":1.2,...}' で変える。書かない路線は 1.0
-LINE_DEMAND = {"NI": 2.1, "Y": 1.75, "SC": 0.65, "TC": 1.8, "UT": 2.86}
+LINE_DEMAND = {"NI": 2.1, "Y": 1.75, "SC": 0.65, "TC": 1.8, "TK": 2.86}
 LINE_DEMAND.update(json.loads(os.environ.get("LINE_DEMAND", "{}")))
 STATIONS_FILE = os.environ.get("STATIONS", "stations.csv")   # 乗降客数の表(stations.csv=中堅級 / stations_large.csv=大手級)
 MIN_TRANSFER = 150          # 乗換に要する最小の秒数
@@ -43,8 +43,8 @@ TOURIST = {"茨城空港": 4, "大洗": 4, "ひたちなか海浜公園": 5, "�
 
 
 def load():
-    # 宇都宮線(UT)つきの路線一覧(master-ut.json)。公開で master.json に移したあとは、MASTER=master.json でよい
-    master = json.load(open(os.path.join(DIA, os.environ.get("MASTER", "master-ut.json")), encoding="utf-8"))
+    # 高宮線(TK)つきの路線一覧(master-tk.json)。公開で master.json に移したあとは、MASTER=master.json でよい
+    master = json.load(open(os.path.join(DIA, os.environ.get("MASTER", "master-tk.json")), encoding="utf-8"))
     trains = {c: json.load(open(os.path.join(DIA, f"{c}_trains.json"), encoding="utf-8")) for c in master}
     rows = list(csv.DictReader(open(os.path.join(HERE, STATIONS_FILE), encoding="utf-8-sig")))
     man = "1日の乗降客数(万人・概算)"
