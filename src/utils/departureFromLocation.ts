@@ -1,7 +1,7 @@
 // 経路検索の出発駅を、いまいる場所の最寄り駅にする。
 // 位置情報は、ブラウザの許可の画面で許可されたときだけ使う。座標は、最寄り駅を決めるあいだだけ使い、サーバーへ送らず、端末にも残さない
 // (外へ出すのは、駅の名前だけ)。許可されない・失敗・遠すぎるときは、何も決めない(null)。
-import { KANZAKI_STATION_GEOS, calculateDistanceKm } from './nearestStation';
+import { stationGeos, calculateDistanceKm } from './nearestStation';
 import { normalizeStationName } from './diaTimetable';
 
 // これより遠いときは、最寄り駅にしない(km)
@@ -11,7 +11,7 @@ export const MAX_DEPARTURE_KM = 20;
 export const departureFromCoords = (lat: number, lng: number, available: string[], maxKm: number = MAX_DEPARTURE_KM): string | null => {
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
   let best: { name: string; km: number } | null = null;
-  for (const st of KANZAKI_STATION_GEOS) {
+  for (const st of stationGeos()) {
     const name = normalizeStationName(st.name);
     if (!available.includes(name)) continue;
     const km = calculateDistanceKm(lat, lng, st.lat, st.lng);
