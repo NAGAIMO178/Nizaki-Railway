@@ -15,7 +15,7 @@ export const MASTER_TK_FILE = 'master-tk.json';
 // 種別の色(特別快速=黄 #F59E0B と 急行=赤 #E11D48)の、どちらからも 20 以上離れる(orange-500 #F97316 だと、特別快速の黄と 15.7 で近すぎる)。
 export const TK_LINE_COLOR = '#EA580C';
 // 高宮線の駅(駅コード TK01〜13。路線のダイヤ master と同じ並び)
-export const TK_STATION_NAMES = ['大宮', '羽貫', '加須', '古賀', '八俣', '下妻', '騰波ノ江', '新治', '栃木県総合運動公園', '群馬製作所', '宇都宮', '清原', '高根沢'];
+export const TK_STATION_NAMES = ['大宮', '羽貫', '加須', '古河', '八俣', '下妻', '騰波ノ江', '新治', '栃木県総合運動公園', '群馬製作所', '宇都宮', '清原', '高根沢'];
 
 export const isTkLaunched = (): boolean => TK_LAUNCH_AT !== null && Date.now() >= Date.parse(TK_LAUNCH_AT);
 
