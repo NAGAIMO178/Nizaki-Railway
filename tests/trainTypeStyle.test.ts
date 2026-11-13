@@ -23,11 +23,13 @@ describe('帯の字(種別の略称。帯専用の表)', () => {
     expect(bandLabelOf('特急あやみ')).toBe('あやみ');
     expect(bandLabelOf('特急めぐり')).toBe('めぐり');
     expect(bandLabelOf('特急(Nライナー)')).toBe('N');
-    expect(bandLabelOf('特急')).toBe('特'); // 宇都宮線の特急
+    expect(bandLabelOf('特急')).toBe('特');
+    expect(bandLabelOf('特急すみかぜ')).toBe('特'); // 高宮線の特急(種別名・色・帯の略称は、そのまま)
+    expect(typeStyleOf('特急すみかぜ').hex).toBe('#6D28D9');
   });
 
   it('帯の字は、3文字まで(9pxで、幅38pxに収まる)', () => {
-    const dia = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'public', 'data', 'dia-2', 'master-ut.json'), 'utf-8')) as Record<string, { types: [string, string, number][] }>;
+    const dia = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'public', 'data', 'dia-2', 'master-tk.json'), 'utf-8')) as Record<string, { types: [string, string, number][] }>;
     const names = new Set(Object.values(dia).flatMap((m) => m.types.map((t) => displayType(t[0]))));
     expect(names.size).toBeGreaterThanOrEqual(9);
     for (const n of names) expect(bandLabelOf(n).length, n).toBeLessThanOrEqual(3);
@@ -67,7 +69,7 @@ describe('種別の色(画面ごとにそろえた、1か所の表)', () => {
   });
 
   it('ダイヤの種別は、すべて、知っている種別(各停の灰に落ちるのは、各停・普通だけ)', () => {
-    const dia = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'public', 'data', 'dia-2', 'master-ut.json'), 'utf-8')) as Record<string, { types: [string, string, number][] }>;
+    const dia = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'public', 'data', 'dia-2', 'master-tk.json'), 'utf-8')) as Record<string, { types: [string, string, number][] }>;
     for (const m of Object.values(dia)) {
       for (const t of m.types) {
         const n = displayType(t[0]);

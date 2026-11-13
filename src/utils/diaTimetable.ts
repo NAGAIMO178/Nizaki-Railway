@@ -7,7 +7,7 @@ import { bumpForDelay, crowdDelayRate, dayTypeOf, loadAllCrowdTrains, trainMaxLe
 import type { DynamicDeparture } from '../components/MyStationCard';
 import { platformAtStop, departurePlatformOfRow } from './platform';
 import { adminDelaySeed } from './serviceDay';
-import { isUtLaunched, MASTER_FILE, MASTER_UT_FILE, UT_CODE } from './utLine';
+import { isTkLaunched, MASTER_FILE, MASTER_TK_FILE, TK_CODE } from './tkLine';
 
 type MasterLine = {
   name: string;
@@ -35,7 +35,7 @@ const LINE_IDS: Record<string, string> = {
   NI: 'kanzaki_kosoku',
   SC: 'saichi',
   TC: 'tsuchiura',
-  UT: 'utsunomiya', // 宇都宮線(見せるのは、utLine.ts のスイッチが入ってから)
+  TK: 'takamiya', // 高宮線(見せるのは、tkLine.ts のスイッチが入ってから)
 };
 
 const DAY = 86400;
@@ -154,11 +154,11 @@ const loadOnce = <T>(file: string): Promise<T> => {
   return p;
 };
 
-// 路線の一覧(master.json)。宇都宮線は、見せないあいだは、一覧に入れない(読むのは、4路線の master.json のまま。念のため、UT を取り除く)
+// 路線の一覧(master.json)。高宮線は、見せないあいだは、一覧に入れない(読むのは、4路線の master.json のまま。念のため、TK を取り除く)
 const loadMaster = async (): Promise<Master> => {
-  const master = await loadOnce<Master>(isUtLaunched() ? MASTER_UT_FILE : MASTER_FILE);
-  if (isUtLaunched()) return master;
-  return Object.fromEntries(Object.entries(master).filter(([code]) => code !== UT_CODE));
+  const master = await loadOnce<Master>(isTkLaunched() ? MASTER_TK_FILE : MASTER_FILE);
+  if (isTkLaunched()) return master;
+  return Object.fromEntries(Object.entries(master).filter(([code]) => code !== TK_CODE));
 };
 
 export interface BoardLine {

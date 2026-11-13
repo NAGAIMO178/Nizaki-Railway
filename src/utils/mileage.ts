@@ -3,7 +3,7 @@
 import { EXPRESS_TYPES, ExpressKey, getTripDistanceKm, loadExpressData, loadLineData, LineData } from './diaTimetable';
 import { loadRouteStations } from './routeSearch';
 import { RideRecord } from './cloudAccount';
-import { visibleLineCodes } from './utLine';
+import { visibleLineCodes } from './tkLine';
 
 export const RANKS = [
   { name: 'レギュラー', km: 0 },
@@ -33,8 +33,8 @@ export interface Mileage {
   log: RideLog[]; // 新しい順
 }
 
-// 宇都宮線(UT)は、utLine.ts のスイッチが入るまで、入れない
-const ALL_LINE_CODES = ['Y', 'NI', 'SC', 'TC', 'UT'];
+// 高宮線(TK)は、tkLine.ts のスイッチが入るまで、入れない
+const ALL_LINE_CODES = ['Y', 'NI', 'SC', 'TC', 'TK'];
 
 const stripEki = (name: string) => name.replace(/駅$/, '').trim();
 

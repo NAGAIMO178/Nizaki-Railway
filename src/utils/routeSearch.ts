@@ -6,11 +6,11 @@ import { RouteOptions, DEFAULT_ROUTE_OPTIONS } from './routeOptions';
 import { bumpForDelay, crowdDelayRate, dayTypeOf, loadAllCrowdTrains, trainMaxLevel, trainSegmentLevel } from './crowd';
 import { isLaunched } from './launch';
 import { platformAtStop } from './platform';
-import { visibleLineCodes } from './utLine';
+import { visibleLineCodes } from './tkLine';
 import { quietWindowFromBounds, serviceBoundsOf, type QuietWindow } from './quietTime';
 
-// 経路検索の路線。宇都宮線(UT)は、utLine.ts のスイッチが入るまで、入れない
-const ALL_LINE_CODES = ['Y', 'NI', 'SC', 'TC', 'UT'];
+// 経路検索の路線。高宮線(TK)は、tkLine.ts のスイッチが入るまで、入れない
+const ALL_LINE_CODES = ['Y', 'NI', 'SC', 'TC', 'TK'];
 // 乗換に必要な最短の時間(秒)。模擬の値で、駅による違いは付けていない
 export const TRANSFER_SEC = 4 * 60;
 export const RELAXED_TRANSFER_SEC = 8 * 60;

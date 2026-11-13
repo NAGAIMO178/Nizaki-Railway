@@ -50,14 +50,14 @@ describe('混雑の段階の区切り', () => {
     expect(app).toEqual(th.slice(0, 4));
   });
 
-  it('混雑データ(平日・休日)の区間の数。段階は、1〜5(6は0件)。宇都宮線のキーも入っている', () => {
+  it('混雑データ(平日・休日)の区間の数。段階は、1〜5(6は0件)。高宮線のキーも入っている', () => {
     const expected: Record<string, Record<string, number>> = {
       'train_wd.json': { '1': 17504, '2': 1091, '3': 55, '4': 28, '5': 3 },
       'train_we.json': { '1': 18072, '2': 579, '3': 24, '4': 6 },
     };
     for (const [file, want] of Object.entries(expected)) {
       const d = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'public', 'data', 'crowd-2', file), 'utf-8')) as Record<string, Record<string, string>>;
-      expect(Object.keys(d)).toEqual(['NI', 'Y', 'SC', 'TC', 'UT']);
+      expect(Object.keys(d)).toEqual(['NI', 'Y', 'SC', 'TC', 'TK']);
       const count: Record<string, number> = {};
       for (const line of Object.values(d)) for (const s of Object.values(line)) for (const ch of s) count[ch] = (count[ch] ?? 0) + 1;
       expect(count, file).toEqual(want);
@@ -69,6 +69,6 @@ describe('混雑の段階の区切り', () => {
     expect(/^DEMAND = float\(os\.environ\.get\("DEMAND", 0\.7\)\)/m.test(sim)).toBe(true);
     const m = /^LINE_DEMAND = (\{[^}]*\})/m.exec(sim);
     expect(m).not.toBeNull();
-    expect(JSON.parse(m![1])).toEqual({ NI: 2.1, Y: 1.75, SC: 0.65, TC: 1.8, UT: 2.86 });
+    expect(JSON.parse(m![1])).toEqual({ NI: 2.1, Y: 1.75, SC: 0.65, TC: 1.8, TK: 2.86 });
   });
 });
