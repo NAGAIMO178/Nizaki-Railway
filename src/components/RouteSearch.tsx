@@ -10,7 +10,7 @@ import { getCachedQuietWindow, loadRouteStations, searchRoutes, RouteResult } fr
 import { planArrival, ArrivalPlan, ArrivalOption } from '../utils/arrivalPlan';
 import { isLaunched } from '../utils/launch';
 import { emptyResultText } from '../utils/routeEmptyMessage';
-import { locateDepartureStation } from '../utils/departureFromLocation';
+import { findNearestForPicker, locateDepartureStation } from '../utils/departureFromLocation';
 import { StationPickerSheet } from './StationPickerSheet';
 import { saveRecentStation } from '../utils/stationPicker';
 import type { ReservationPreset } from './ReservationTab';
@@ -515,7 +515,7 @@ export const RouteSearch: React.FC<{ onReserve?: (preset: Omit<ReservationPreset
         exclude={picker !== null && typeof picker === 'object' ? [from, to, ...vias] : []}
         nearest={picker === 'from' ? nearest : undefined}
         onLocate={() =>
-          locateDepartureStation(stations).then((name) => {
+          findNearestForPicker(stations).then((name) => {
             if (name) setNearest(name); // 次に開いたとき、「最寄り駅」の見出しで出す
             return name;
           })

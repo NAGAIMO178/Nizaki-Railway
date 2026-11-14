@@ -3,6 +3,7 @@
 // (外へ出すのは、駅の名前だけ)。許可されない・失敗・遠すぎるときは、何も決めない(null)。
 import { stationGeos, calculateDistanceKm } from './nearestStation';
 import { normalizeStationName } from './diaTimetable';
+import { recentPosition, rememberPosition } from './recentPosition';
 
 // これより遠いときは、最寄り駅にしない(km)
 export const MAX_DEPARTURE_KM = 20;
@@ -20,13 +21,19 @@ export const departureFromCoords = (lat: number, lng: number, available: string[
   return best && best.km <= maxKm ? best.name : null;
 };
 
-// 許可の画面を出して、最寄り駅を探す。位置情報が使えない・許可されない・時間切れ・遠すぎるときは null
-export const locateDepartureStation = (available: string[]): Promise<string | null> => {
+// 許可の画面を出して、いまいる場所を調べる(同時に何度頼まれても、1回だけ。分かった場所は、数分だけ覚えて使い回せる=recentPosition)。使えない・許可されない・時間切れは null
+let pending: Promise<{ lat: number; lng: number } | null> | null = null;
+const requestPosition = (): Promise<{ lat: number; lng: number } | null> => {
   if (typeof navigator === 'undefined' || !navigator.geolocation) return Promise.resolve(null);
-  return new Promise((resolve) => {
+  if (pending) return pending;
+  const p = new Promise<{ lat: number; lng: number } | null>((resolve) => {
     try {
       navigator.geolocation.getCurrentPosition(
-        (pos) => resolve(departureFromCoords(pos.coords.latitude, pos.coords.longitude, available)),
+        (pos) => {
+          const { latitude: lat, longitude: lng } = pos.coords;
+          rememberPosition(lat, lng);
+          resolve({ lat, lng });
+        },
         () => resolve(null),
         { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
       );
@@ -34,4 +41,21 @@ export const locateDepartureStation = (available: string[]): Promise<string | nu
       resolve(null);
     }
   });
+  pending = p;
+  void p.then(() => {
+    if (pending === p) pending = null;
+  });
+  return p;
+};
+
+// 許可の画面を出して、最寄り駅を探す。位置情報が使えない・許可されない・時間切れ・遠すぎるときは null
+export const locateDepartureStation = async (available: string[]): Promise<string | null> => {
+  const p = await requestPosition();
+  return p ? departureFromCoords(p.lat, p.lng, available) : null;
+};
+
+// 駅を選ぶシート用: 直近に場所が分かっていれば(ホームの最寄り駅の探しなど)、それを使い回す。無ければ、探す
+export const findNearestForPicker = (available: string[]): Promise<string | null> => {
+  const p = recentPosition();
+  return p ? Promise.resolve(departureFromCoords(p.lat, p.lng, available)) : locateDepartureStation(available);
 };

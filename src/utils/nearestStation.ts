@@ -1,5 +1,6 @@
 import { RegisterableStation } from '../components/MyStationRegisterCard';
 import { isTkLaunched, TK_STATION_NAMES } from './tkLine';
+import { rememberPosition } from './recentPosition';
 
 export interface StationGeoData {
   id: string;
@@ -160,6 +161,7 @@ export async function findNearestStation(): Promise<NearestStationResult> {
       (position) => {
         const userLat = position.coords.latitude;
         const userLng = position.coords.longitude;
+        rememberPosition(userLat, userLng); // 駅を選ぶシートが、数分のあいだ使い回す(アプリのメモリの中だけ)
 
         let closestStation: StationGeoData | null = null;
         let minDistance = Infinity;
