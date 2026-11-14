@@ -1197,6 +1197,7 @@ export default function App() {
           cloudMode={cloudOn}
           cloudSynced={cloudOn && !!cloud.account && !cloud.error}
           mileage={mileage}
+          eventCleared={isLaunched() && eventProgress.cleared}
           ticketSummary={ticketSummary}
           onLogout={handleLogout}
           onOpenNPointModal={() => {
@@ -1217,7 +1218,6 @@ export default function App() {
           balance={shownBalance}
           pointHistory={shownPointHistory}
           currentUser={shownUser}
-          eventCleared={isLaunched() && eventProgress.cleared}
           onRedeemCode={redeemPointCode}
         />
       </LazyOnOpen>

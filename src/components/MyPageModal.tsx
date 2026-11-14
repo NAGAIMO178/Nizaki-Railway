@@ -29,6 +29,7 @@ import { formatSeats, getSeatClassLabel, seatTitle } from '../utils/seatUtils';
 import { usePushEnabled } from '../utils/notifySettings';
 import { parseActivityTime, sortNewestFirst, UPCOMING_AT } from '../utils/activityOrder';
 import { isLaunched } from '../utils/launch';
+import { EVENT_TARE } from '../utils/eventTare';
 import { TicketSummary, ticketBadgeLabel } from '../utils/ticketApi';
 import { calcReservationPoints } from '../utils/points';
 import { formatJoinDate } from '../utils/joinDate';
@@ -58,6 +59,8 @@ interface MyPageModalProps {
   mileage?: Mileage | null;
   // QR乗車券の状態(公開後。予約のバナーに、「利用済み」の札を出す)
   ticketSummary?: TicketSummary | null;
+  // 公開記念イベント「幻のタレ事件」を、クリア済みの会員か(クリア済みのときだけ、上のカードに名札を出す。判定は、イベントの画面と同じ印)
+  eventCleared?: boolean;
 }
 
 export const MyPageModal: React.FC<MyPageModalProps> = ({
@@ -75,6 +78,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
   cloudMode = false,
   cloudSynced = false,
   mileage = null,
+  eventCleared = false,
   ticketSummary = null,
 }) => {
   const ticketLabel = ticketBadgeLabel(ticketSummary);
@@ -302,6 +306,12 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
                   <div>会員番号: <span className="text-white font-bold">{currentUser.memberId}</span></div>
                   <div>入会日: <span className="text-white">{formatJoinDate(currentUser.joinDate)}</span></div>
                 </div>
+                {eventCleared && (
+                  // イベントの特設ページの名札と、同じ色・形の小さな札。会員番号・入会日のすぐ下(上の文字・アバターの位置は、動かない)
+                  <div className="mt-2">
+                    <span className="inline-block whitespace-nowrap rounded-full border border-amber-500/50 bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-extrabold text-amber-400">{EVENT_TARE.tagName}</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>

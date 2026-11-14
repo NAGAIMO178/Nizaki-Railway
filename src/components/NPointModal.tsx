@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { X, Award, CreditCard, Sparkles, Gift, Download } from 'lucide-react';
 import { PointHistoryItem, UserProfile } from '../types';
 import { isLaunched } from '../utils/launch';
-import { EVENT_TARE } from '../utils/eventTare';
 import { ledgerDateTimeText } from '../utils/jstDate';
 import { pointTitleText } from '../utils/pointTitle';
 import { memberBarcode } from '../utils/memberBarcode';
@@ -18,8 +17,6 @@ interface NPointModalProps {
   balance: number;
   pointHistory?: PointHistoryItem[];
   currentUser?: UserProfile | null;
-  // 公開記念イベント「幻のタレ事件」を、クリア済みの会員か(クリア済みのときだけ、会員証に名札を出す。判定は、イベントの画面と同じ印)
-  eventCleared?: boolean;
   // クラウドが基準の会員は、サーバーの返事を待つので、返事が遅れて届くこともある
   onRedeemCode?: (code: string) => { ok: boolean; message: string } | Promise<{ ok: boolean; message: string }>;
 }
@@ -39,7 +36,6 @@ export const NPointModal: React.FC<NPointModalProps> = ({
   balance,
   pointHistory = [],
   currentUser = null,
-  eventCleared = false,
   onRedeemCode,
 }) => {
   const [redeemInput, setRedeemInput] = useState('');
@@ -180,10 +176,6 @@ export const NPointModal: React.FC<NPointModalProps> = ({
               </div>
 
               <div className="text-right">
-                {currentUser && eventCleared && (
-                  // イベントの特設ページの名札と、同じ色・形の小さな札。会員番号のすぐ上に、重ねて置く(ほかの文字・バーコードの位置は、ずらさない)
-                  <div className="relative h-0"><span className="absolute bottom-0 right-0 mb-0.5 whitespace-nowrap rounded-full border border-amber-500/50 bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-extrabold text-amber-400">{EVENT_TARE.tagName}</span></div>
-                )}
                 <div className="text-[9px] text-slate-400 font-mono">
                   {currentUser ? `神埼ID: ${currentUser.memberId}` : '未ログイン'}
                 </div>
