@@ -514,6 +514,12 @@ export const RouteSearch: React.FC<{ onReserve?: (preset: Omit<ReservationPreset
         stations={stations}
         exclude={picker !== null && typeof picker === 'object' ? [from, to, ...vias] : []}
         nearest={picker === 'from' ? nearest : undefined}
+        onLocate={() =>
+          locateDepartureStation(stations).then((name) => {
+            if (name) setNearest(name); // 次に開いたとき、「最寄り駅」の見出しで出す
+            return name;
+          })
+        }
         onSelect={(name) => {
           saveRecentStation(name);
           if (picker === 'from') {
