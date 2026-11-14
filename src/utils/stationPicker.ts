@@ -44,21 +44,16 @@ export const buildPickerData = (lines: TimetableLine[], routeStations: string[])
   return { all: [...all.values()], byLine };
 };
 
-// 「最寄り駅」「履歴」「最寄り駅を探す」の行を出すのは、路線が「すべて」で、検索の文字が空のときだけ
+// 「最寄り駅」「最寄り駅を探しています…」「履歴」の行を出すのは、路線が「すべて」で、検索の文字が空のときだけ
 export const showPickerExtras = (lineCode: string, query: string): boolean => lineCode === 'all' && query.trim() === '';
 
-// 駅を選ぶシートの「最寄り駅を探す」を押したときの結果。found=その駅を選ぶ / none=見つからない(使えない・許可されない・時間切れ・遠い) / taken=見つかったが、ほかの欄で選んでいて選べない
-export type NearestSearchResult = { kind: 'found'; name: string } | { kind: 'none' } | { kind: 'taken' };
-
-export const searchNearestForPicker = async (locate: () => Promise<string | null>, blocked: ReadonlySet<string>): Promise<NearestSearchResult> => {
-  let name: string | null = null;
+// 駅を選ぶシートが開いたときの、最寄り駅の探し。探しが失敗したときも、見つからなかったときと同じ(null)
+export const searchNearestForPicker = async (locate: () => Promise<string | null>): Promise<string | null> => {
   try {
-    name = await locate();
+    return (await locate()) || null;
   } catch {
-    name = null;
+    return null;
   }
-  if (!name) return { kind: 'none' };
-  return blocked.has(name) ? { kind: 'taken' } : { kind: 'found', name };
 };
 
 const toKatakana = (s: string): string => s.replace(/[ぁ-ゖ]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0x60));

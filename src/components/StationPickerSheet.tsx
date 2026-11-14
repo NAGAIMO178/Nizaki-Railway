@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Loader, LocateFixed, Search } from 'lucide-react';
+import { Check, Loader, Search } from 'lucide-react';
 import { REGISTERABLE_LINES } from './MyStationRegisterCard';
 import { loadTimetableLines } from '../utils/diaTimetable';
 import type { TimetableLine } from '../utils/diaTimetable';
@@ -14,8 +14,8 @@ interface StationPickerSheetProps {
   value: string; // いま選んでいる駅(空もある)
   stations: string[]; // 経路検索で選べる駅
   exclude?: string[]; // 選べなくする駅(経由駅で、出発・到着・ほかの経由駅)
-  nearest?: string; // 最寄り駅(位置情報が許可されて、分かったとき)
-  onLocate?: () => Promise<string | null>; // 「最寄り駅を探す」を押したとき、最寄り駅を探す(渡されたときだけ、その行を出す。見つからなければ null)
+  nearest?: string; // 最寄り駅(すでに分かっているとき)
+  onLocate?: () => Promise<string | null>; // 開いたとき、最寄り駅がまだ分かっていなければ、自動で探す(渡されたときだけ。見つからなければ null)
   onSelect: (name: string) => void;
   onClose: () => void;
 }
@@ -29,15 +29,30 @@ export const StationPickerSheet: React.FC<StationPickerSheetProps> = ({ isOpen, 
   const [lineCode, setLineCode] = useState<string>('all');
   const [recent, setRecent] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement | null>(null);
-  // 「最寄り駅を探す」: 探している最中か・探した結果の知らせ。閉じたり開き直したりしたら、前の探しの結果は使わない
+  // 最寄り駅の自動の探し: 探している最中か・見つかった駅。閉じたり開き直したりしたら、前の探しの結果は使わない
   const [finding, setFinding] = useState(false);
-  const [findNote, setFindNote] = useState<string | null>(null);
+  const [located, setLocated] = useState<string | null>(null);
   const findRun = useRef(0);
+  const locateRef = useRef(onLocate);
+  locateRef.current = onLocate;
+  const knownRef = useRef(nearest);
+  knownRef.current = nearest;
 
   useEffect(() => {
-    findRun.current++;
+    const run = ++findRun.current;
     setFinding(false);
-    setFindNote(null);
+    setLocated(null);
+    const locate = locateRef.current;
+    if (!isOpen || !locate || knownRef.current) return; // 渡されていない・すでに分かっているときは、探さない
+    setFinding(true);
+    void searchNearestForPicker(locate).then((name) => {
+      if (run !== findRun.current) return; // 探しているあいだに、閉じた・開き直した
+      setFinding(false);
+      setLocated(name);
+    });
+    return () => {
+      findRun.current++;
+    };
   }, [isOpen]);
 
   // 開くたびに、入力と路線を戻す
@@ -89,18 +104,6 @@ export const StationPickerSheet: React.FC<StationPickerSheetProps> = ({ isOpen, 
   const byName = useMemo(() => new Map(data.all.map((s) => [s.name, s])), [data]);
   const pick = (name: string) => onSelect(name);
 
-  const findNearest = async () => {
-    if (!onLocate || finding) return;
-    const run = ++findRun.current;
-    setFinding(true);
-    setFindNote(null);
-    const r = await searchNearestForPicker(onLocate, blocked);
-    if (run !== findRun.current) return; // 探しているあいだに、閉じた・開き直した
-    setFinding(false);
-    if (r.kind === 'found') pick(r.name);
-    else setFindNote(r.kind === 'taken' ? '最寄り駅は、ほかの欄で選んでいます' : '見つかりませんでした');
-  };
-
   useBackClose(isOpen, onClose);
   if (!isOpen) return null;
 
@@ -127,10 +130,11 @@ export const StationPickerSheet: React.FC<StationPickerSheetProps> = ({ isOpen, 
   };
 
   const sectionTitle = (t: string) => <div className="px-4 pt-3 pb-1 text-[11px] font-bold text-[#857D99]">{t}</div>;
-  const nearestStation = nearest && !blocked.has(nearest) ? byName.get(nearest) : undefined;
+  const nearestName = nearest ?? located;
+  const nearestStation = nearestName && !blocked.has(nearestName) ? byName.get(nearestName) : undefined;
   const recents = recent.map((n) => byName.get(n)).filter((s): s is PickerStation => !!s && !blocked.has(s.name));
   const showExtras = showPickerExtras(lineCode, query);
-  const showLocate = showExtras && !!onLocate && !nearest; // 最寄り駅がまだ分かっていないときだけ、探す行を出す
+  const showFinding = showExtras && finding; // 探している間だけ、小さく出す(見つからなければ、何も出さない)
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-end bg-slate-900/40 animate-fadeIn" role="dialog" aria-modal="true" aria-label={title}>
@@ -168,23 +172,10 @@ export const StationPickerSheet: React.FC<StationPickerSheetProps> = ({ isOpen, 
           </div>
         )}
         <div ref={drag.contentRef} className="flex-1 overflow-y-auto overscroll-contain pb-6">
-          {showLocate && (
-            <div className="px-4 pt-2 pb-1">
-              <button
-                type="button"
-                onClick={findNearest}
-                disabled={finding}
-                aria-busy={finding}
-                className="w-full flex items-center gap-2.5 rounded-xl bg-[#F4F0FB] px-3 py-3 text-left text-[15px] font-bold text-[#5B21B6] cursor-pointer active:bg-[#EFE8FA] disabled:cursor-default disabled:opacity-70"
-              >
-                {finding ? <Loader className="w-4 h-4 shrink-0 animate-spin" /> : <LocateFixed className="w-4 h-4 shrink-0" />}
-                <span className="flex-1 min-w-0 truncate">{finding ? '探しています…' : '最寄り駅を探す'}</span>
-              </button>
-              {findNote && (
-                <div role="status" className="px-1 pt-1.5 text-xs font-bold text-[#857D99]">
-                  {findNote}
-                </div>
-              )}
+          {showFinding && (
+            <div role="status" className="flex items-center gap-2 px-4 pt-3 pb-1 text-[11px] font-bold text-[#857D99]">
+              <Loader className="w-3.5 h-3.5 shrink-0 animate-spin" />
+              最寄り駅を探しています…
             </div>
           )}
           {showExtras && nearestStation && (
@@ -201,7 +192,7 @@ export const StationPickerSheet: React.FC<StationPickerSheetProps> = ({ isOpen, 
               ))}
             </>
           )}
-          {showExtras && (showLocate || nearestStation || recents.length > 0) && sectionTitle('すべての駅')}
+          {showExtras && (nearestStation || recents.length > 0) && sectionTitle('すべての駅')}
           {shown.map((s) => (
             <Row key={s.name} s={s} showCode={lineCode !== 'all'} />
           ))}
