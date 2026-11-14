@@ -394,6 +394,22 @@ const DISRUPTION_LINE_DEFS = [
   { id: 'tsuchiura', name: '土浦線' },
 ];
 
+// 高宮線(TK)の公開の日時。アプリ側(src/utils/tkLine.ts の TK_LAUNCH_AT)と、同じ日時にする
+// (tests/gasTkLaunch.test.ts が、そろっているかを見張る)。GAS の時計は全員同じ。この時刻になるまで、高宮線は、
+// LINE の運行情報の返信・アプリが取りに来る運行支障のデータの、どこにも出さない(公開の前に、先に見えてしまわないように)。
+const TK_LAUNCH_AT = '2026-11-20T08:00:00+09:00';
+const TK_LAUNCH_AT_MS = Date.parse(TK_LAUNCH_AT);
+const DISRUPTION_LINE_TK = { id: 'takamiya', name: '高宮線' }; // アプリの運行支障の路線ID(disruptionManager.ts の 'takamiya')と同じ
+
+function isTkLaunched() {
+  return Date.now() >= TK_LAUNCH_AT_MS;
+}
+
+// 運行情報に載せる路線(公開の前は、4路線のまま)
+function disruptionLineDefs() {
+  return isTkLaunched() ? DISRUPTION_LINE_DEFS.concat([DISRUPTION_LINE_TK]) : DISRUPTION_LINE_DEFS;
+}
+
 /**
  * 保存済みの運行支障・運行予報データを取得(無ければ空)
  */
@@ -409,6 +425,7 @@ function getStoredDisruptionsData() {
       const stored = parsed.disruptions || {};
       Object.keys(stored).forEach(function (key) {
         const d = stored[key];
+        if (key === DISRUPTION_LINE_TK.id && !isTkLaunched()) return; // 高宮線は、公開の前は、返さない
         if (!d.expiresAtTimestamp || now < d.expiresAtTimestamp) disruptions[key] = d;
       });
       const forecasts = (parsed.forecasts || []).filter(function (f) {
@@ -451,7 +468,7 @@ function buildDisruptionSummary() {
   let hasDelay = false;
   const delayedNames = [];
 
-  const lines = DISRUPTION_LINE_DEFS.map(function (def) {
+  const lines = disruptionLineDefs().map(function (def) {
     const d = disruptions[def.id] || (def.id === 'saichi' ? disruptions['saichi_loop'] : null);
     let status = '平常運転';
     let message = '現在、全線でほぼ平常通り運転しております。';
