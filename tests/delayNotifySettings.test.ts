@@ -1,5 +1,12 @@
 // 遅れの知らせの設定: すべて / 路線 / オフ。以前の「マイ駅だけ」は「すべて」に読み替える
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../src/utils/tkLine', async (importOriginal) => {
+  // 「見せない」状態に固定する(公開の日時や時計に、左右されないように)。高宮線を見せたときの動きは、tkPrep.test.ts などで確かめる
+  const actual = await importOriginal<typeof import('../src/utils/tkLine')>();
+  return { ...actual, isTkLaunched: () => false, visibleLineCodes: (c: string[]) => c.filter((x) => x !== actual.TK_CODE), withTk: <T,>(base: T[]) => base };
+});
+
 import {
   DELAY_NOTIFY_LINES,
   getDelayNotifyLines,

@@ -4,8 +4,14 @@ import path from 'node:path';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../src/utils/accountApi', () => ({ callGas: vi.fn(async () => ({ status: 'success' })) }));
+// 「見せない」の確認は、公開の日時や時計に左右されないように、スイッチの状態(隠れている)を、こちらで決める(公開の日時を過ぎても、落ちない)。
+// スイッチそのもの(日時で切り替わる)は、下の「スイッチ」で、本物を使って確かめる。
+vi.mock('../src/utils/tkLine', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/utils/tkLine')>();
+  return { ...actual, isTkLaunched: () => false, visibleLineCodes: (c: string[]) => c.filter((x) => x !== actual.TK_CODE) };
+});
 
-import { TK_LAUNCH_AT, TK_STATION_NAMES, isTkLaunched, visibleLineCodes } from '../src/utils/tkLine';
+import { TK_STATION_NAMES } from '../src/utils/tkLine';
 import { TK_STATION_GEOS } from '../src/utils/nearestStation';
 
 const DIA = path.resolve(__dirname, '..', 'public', 'data', 'dia-2');
@@ -27,11 +33,25 @@ beforeAll(() => {
 });
 afterEach(() => vi.resetModules());
 
-describe('スイッチ', () => {
-  it('既定は、見せない(公開日が決まるまで null)', () => {
-    expect(TK_LAUNCH_AT).toBeNull();
-    expect(isTkLaunched()).toBe(false);
-    expect(visibleLineCodes(['Y', 'NI', 'SC', 'TC', 'TK'])).toEqual(['Y', 'NI', 'SC', 'TC']);
+describe('スイッチ(本物): 公開の日時の前は見せない・日時になったら見せる', () => {
+  it('公開の日時(TK_LAUNCH_AT)の 1ミリ秒前までは見せず、ちょうどの時刻から見せる。見せないあいだは、路線の一覧から高宮線を除く', async () => {
+    const real = await vi.importActual<typeof import('../src/utils/tkLine')>('../src/utils/tkLine');
+    expect(Number.isFinite(Date.parse(real.TK_LAUNCH_AT as string))).toBe(true);
+    const at = Date.parse(real.TK_LAUNCH_AT as string);
+    try {
+      for (const t of [at - 30 * 24 * 3600 * 1000, at - 1]) {
+        vi.setSystemTime(t);
+        expect(real.isTkLaunched(), String(t)).toBe(false);
+        expect(real.visibleLineCodes(['Y', 'NI', 'SC', 'TC', 'TK'])).toEqual(['Y', 'NI', 'SC', 'TC']);
+      }
+      for (const t of [at, at + 1, at + 24 * 3600 * 1000]) {
+        vi.setSystemTime(t);
+        expect(real.isTkLaunched(), String(t)).toBe(true);
+        expect(real.visibleLineCodes(['Y', 'NI', 'SC', 'TC', 'TK'])).toEqual(['Y', 'NI', 'SC', 'TC', 'TK']);
+      }
+    } finally {
+      vi.setSystemTime(new Date(2026, 10, 2, 8, 0, 0));
+    }
   });
 });
 

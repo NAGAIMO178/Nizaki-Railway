@@ -9,6 +9,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../src/utils/launch', async () => (await import('./helpers/fixedLaunch')).buildLaunchModule('2026-11-01T00:00:00+09:00'));
 vi.mock('../src/utils/accountApi', () => ({ callGas: vi.fn(async () => ({ status: 'success' })) }));
+vi.mock('../src/utils/tkLine', async (importOriginal) => {
+  // 「見せない」状態に固定する(公開の日時や時計に、左右されないように)。高宮線を見せたときの動きは、tkPrep.test.ts などで確かめる
+  const actual = await importOriginal<typeof import('../src/utils/tkLine')>();
+  return { ...actual, isTkLaunched: () => false, visibleLineCodes: (c: string[]) => c.filter((x) => x !== actual.TK_CODE), withTk: <T,>(base: T[]) => base };
+});
 
 import LaunchCountdown from '../src/components/LaunchCountdown';
 import { EventsTab } from '../src/components/EventsTab';

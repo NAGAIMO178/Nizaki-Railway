@@ -4,6 +4,11 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../src/utils/accountApi', () => ({ callGas: vi.fn(async () => ({ status: 'success' })) }));
+vi.mock('../src/utils/tkLine', async (importOriginal) => {
+  // 「見せない」状態に固定する(公開の日時や時計に、左右されないように)。高宮線を見せたときの動きは、tkPrep.test.ts などで確かめる
+  const actual = await importOriginal<typeof import('../src/utils/tkLine')>();
+  return { ...actual, isTkLaunched: () => false, visibleLineCodes: (c: string[]) => c.filter((x) => x !== actual.TK_CODE), withTk: <T,>(base: T[]) => base };
+});
 
 import { computeBoard, computeLiveTrains, getCachedLineData, loadBoardData, loadLineData, TrainRow } from '../src/utils/diaTimetable';
 import { departurePlatformOfRow, legPlatformParts, platformAtStop } from '../src/utils/platform';

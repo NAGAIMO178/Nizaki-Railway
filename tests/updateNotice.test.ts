@@ -11,6 +11,7 @@ import {
   evaluateUpdate,
   parseShowAfter,
 } from '../src/utils/updateNotice';
+import { TK_LAUNCH_AT } from '../src/utils/tkLine';
 
 const LAUNCH = Date.parse('2026-11-01T00:00:00+09:00');
 const APP = '3.49.16';
@@ -113,13 +114,31 @@ describe('version.json の中身(ビルド)', () => {
     expect('showAfter' in out).toBe('showAfter' in notes);
   });
 
-  it('保留する日時が書いてあるときは、公開の日時(LAUNCH_AT)と同じ時刻(ずれたら落ちる)', () => {
+  it('保留する日時が書いてあるときは、いま公開を待っている機能の公開の日時(高宮線: TK_LAUNCH_AT / NIZAKI 2.0: LAUNCH_AT)と同じ時刻(ずれたら落ちる)', () => {
     const notes = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'release-notes.json'), 'utf-8'));
     if (notes.showAfter === undefined) return;
     const src = fs.readFileSync(path.resolve(__dirname, '..', 'src', 'utils', 'launch.ts'), 'utf-8');
     const m = /export const LAUNCH_AT: string \| null = '([^']*)'/.exec(src);
-    expect(m, 'launch.ts の LAUNCH_AT').not.toBeNull();
-    expect(Date.parse(notes.showAfter)).toBe(Date.parse(m![1]));
+    const launchTimes = [TK_LAUNCH_AT, m ? m[1] : null].filter((t): t is string => t !== null).map((t) => Date.parse(t));
+    expect(launchTimes, 'どちらかの公開の日時').not.toHaveLength(0);
+    expect(launchTimes).toContain(Date.parse(notes.showAfter));
+  });
+});
+
+describe('高宮線の公開のお知らせ: 公開の時刻(TK_LAUNCH_AT)より前は出さず、その時刻から出す', () => {
+  // 公開の PR(4.6.0)で、release-notes.json に入れた形。公開の日時は、高宮線のスイッチと同じものを使う
+  const AT = Date.parse(TK_LAUNCH_AT as string);
+  const out = JSON.parse(buildVersionJson('4.6.0', { notes: ['新しい路線「高宮線」ができました', '有料特急「すみかぜ」を、予約できるようになりました'], showAfter: TK_LAUNCH_AT }));
+
+  it('前の版のアプリには、公開の 1 ミリ秒前まで出さず(保留)、ちょうどの時刻とそのあとは出す', () => {
+    expect(evaluateUpdate(out, '4.5.1', AT - 1)).toEqual({ kind: 'held', showAtMs: AT });
+    expect(evaluateUpdate(out, '4.5.1', AT - 7 * 24 * 3600 * 1000)).toEqual({ kind: 'held', showAtMs: AT });
+    expect(evaluateUpdate(out, '4.5.1', AT)).toEqual({ kind: 'show', version: '4.6.0', notes: out.notes });
+    expect(evaluateUpdate(out, '4.5.1', AT + 3600 * 1000)).toEqual({ kind: 'show', version: '4.6.0', notes: out.notes });
+  });
+
+  it('すでに同じ版のアプリには、いつでも出さない', () => {
+    for (const t of [AT - 1, AT, AT + 1]) expect(evaluateUpdate(out, '4.6.0', t).kind).toBe('none');
   });
 });
 
