@@ -3,6 +3,7 @@ import { X, Award, CreditCard, Sparkles, Gift, Download } from 'lucide-react';
 import { PointHistoryItem, UserProfile } from '../types';
 import { isLaunched } from '../utils/launch';
 import { EVENT_TARE } from '../utils/eventTare';
+import { pointTitleText } from '../utils/pointTitle';
 import { memberBarcode } from '../utils/memberBarcode';
 import { EAN13_MODULES, EAN13_QUIET, ean13DigitCells } from '../utils/ean13';
 import { renderMemberCardPng } from '../utils/memberCard';
@@ -260,7 +261,7 @@ export const NPointModal: React.FC<NPointModalProps> = ({
                     className="flex justify-between items-center p-3 rounded-xl bg-white border border-[#E6E2EE]"
                   >
                     <div>
-                      <div className="font-bold text-[#221C35]">{item.title}</div>
+                      <div className="font-bold text-[#221C35]">{pointTitleText(item.title)}</div>
                       <div className="text-[10px] text-[#6B6380]">{item.date}</div>
                     </div>
                     <span className={`font-mono font-black text-sm ${item.points < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
