@@ -2,7 +2,7 @@
 // 見せないあいだ(既定)は、既存4路線のまま。スイッチを入れた状態(作りもの)では、高宮線が加わる。
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../src/utils/accountApi', () => ({ callGas: vi.fn(async () => ({ status: 'success' })) }));
 
@@ -36,6 +36,18 @@ describe('路線の色(オレンジ)', () => {
 });
 
 describe('見せないとき(既定): 一覧は、既存4路線のまま', () => {
+  // 「見せない」状態に固定する(公開の日時や時計に、左右されないように)
+  beforeEach(() => {
+    vi.resetModules();
+    vi.doMock('../src/utils/tkLine', async () => {
+      const actual = await vi.importActual<typeof import('../src/utils/tkLine')>('../src/utils/tkLine');
+      return { ...actual, isTkLaunched: () => false, withTk: <T,>(b: T[]) => b };
+    });
+  });
+  afterEach(() => {
+    vi.doUnmock('../src/utils/tkLine');
+    vi.resetModules();
+  });
   it('マイ駅の登録・遅れの通知の設定・管理画面の路線・運行状況の路線に、高宮線がない', async () => {
     const { REGISTERABLE_LINES } = await import('../src/components/MyStationRegisterCard');
     const { DELAY_NOTIFY_LINES } = await import('../src/utils/delayNotifySettings');

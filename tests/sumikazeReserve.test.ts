@@ -6,7 +6,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SUMIKAZE, SUMIKAZE_NORMAL_SEATS, SUMIKAZE_SPECIAL_SEATS, SUMIKAZE_TOTAL_SEATS, sumikazeFee } from '../src/utils/sumikaze';
 import { EXPRESS_TYPES, findExpressTrips, getExpressStations, getTripDistanceKm, loadExpressData, visibleExpressKeys } from '../src/utils/diaTimetable';
 import { calculateFare } from '../src/utils/fare';
@@ -144,8 +144,19 @@ describe('席種の表示(特別車)', () => {
 });
 
 describe('見せないあいだ(高宮線のスイッチが切れているとき)', () => {
+  // 「見せない」状態に固定する(公開の日時や時計に、左右されないように)
+  beforeEach(() => {
+    vi.resetModules();
+    vi.doMock('../src/utils/tkLine', async (importOriginal) => ({ ...(await importOriginal<typeof import('../src/utils/tkLine')>()), isTkLaunched: () => false, visibleLineCodes: (c: string[]) => c.filter((x) => x !== 'TK') }));
+  });
+  afterEach(() => {
+    vi.doUnmock('../src/utils/tkLine');
+    vi.resetModules();
+  });
+
   it('予約できる特急は、あやみ・Nライナー・めぐりの3つだけ。すみかぜは、画面に出ない', async () => {
-    expect(visibleExpressKeys()).toEqual(['ayami', 'nliner', 'meguri']);
+    const { visibleExpressKeys: keys } = await import('../src/utils/diaTimetable');
+    expect(keys()).toEqual(['ayami', 'nliner', 'meguri']);
     const { ReservationTab } = await import('../src/components/ReservationTab');
     const html = renderToStaticMarkup(
       React.createElement(ReservationTab, { activeOrder: null, onOpenDeliveryCatalog: () => undefined, onConfirmOrder: () => undefined, onCancelOrder: () => undefined })
