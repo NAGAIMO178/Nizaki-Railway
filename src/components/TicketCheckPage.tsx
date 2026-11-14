@@ -3,6 +3,7 @@ import { Ban, CalendarX, Check, CircleAlert, Clock, LucideIcon } from 'lucide-re
 import { SeatClass } from '../types';
 import { getSeatClassLabel, seatDisplayName, seatLabel } from '../utils/seatUtils';
 import { TICKET_STATE_LABEL, TicketResult, TicketState, summarizeTicket, ticketBadgeLabel, ticketSeatsOf, useTicket, verifyTicket } from '../utils/ticketApi';
+import { ledgerDateText } from '../utils/jstDate';
 
 // QR乗車券を読み取った先の、検札用の画面。列車・区間・座席・状態だけを出す(名前・メール・会員IDは出さない)
 const STATE_STYLE: Record<TicketState, { Icon: LucideIcon; tone: string }> = {
@@ -91,7 +92,7 @@ export const TicketCheckPage: React.FC<{ token: string }> = ({ token }) => {
                   { label: '列車', value: `${info.trainName} ${info.departureTime || '—'}発` },
                   { label: '区間', value: `${info.boardingStation || '—'} → ${info.destinationStation || '—'}` },
                   ...(multi ? [] : [{ label: '座席', value: seatLabel({ carNo: info.carNo, seatType: info.seatType as SeatClass, seatNo: info.seatNo }) }]),
-                  ...(result.state !== 'valid' ? [{ label: '日付', value: info.reservedDate }] : []),
+                  ...(result.state !== 'valid' ? [{ label: '日付', value: ledgerDateText(info.reservedDate) }] : []),
                 ].map((r) => (
                   <div key={r.label} className="flex justify-between gap-3 py-2.5 border-b border-[#EFEDF5] last:border-b-0 text-[13px]">
                     <span className="text-[#857D99] shrink-0">{r.label}</span>
