@@ -33,6 +33,7 @@ import { TicketSummary, ticketBadgeLabel } from '../utils/ticketApi';
 import { calcReservationPoints } from '../utils/points';
 import { formatJoinDate } from '../utils/joinDate';
 import { ledgerDateText, ledgerDateTimeText } from '../utils/jstDate';
+import { pointTitleText } from '../utils/pointTitle';
 import { PrivacyPolicyModal } from './PrivacyPolicyModal';
 
 import { useBackClose } from '../utils/backClose';
@@ -198,7 +199,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
       return {
         id: `act_pt_${p.id}`,
         category: (isEventReward ? 'event' : 'point') as 'event' | 'point',
-        title: p.title,
+        title: pointTitleText(p.title),
         subtitle: isEventReward ? 'イベント報酬 (N-POINT付与)' : p.points < 0 ? 'N-POINT 取消' : `N-POINT 獲得・付与`,
         date: ledgerDateTimeText(p.date),
         at: parseActivityTime(p.date),
