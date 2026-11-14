@@ -31,6 +31,7 @@ import { parseActivityTime, sortNewestFirst, UPCOMING_AT } from '../utils/activi
 import { isLaunched } from '../utils/launch';
 import { TicketSummary, ticketBadgeLabel } from '../utils/ticketApi';
 import { calcReservationPoints } from '../utils/points';
+import { formatJoinDate } from '../utils/joinDate';
 import { PrivacyPolicyModal } from './PrivacyPolicyModal';
 
 import { useBackClose } from '../utils/backClose';
@@ -297,7 +298,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
 
                 <div className="flex flex-wrap items-center justify-center sm:justify-start gap-x-4 gap-y-1 text-[11px] text-purple-300/80 font-mono mt-2">
                   <div>会員番号: <span className="text-white font-bold">{currentUser.memberId}</span></div>
-                  <div>入会日: <span className="text-white">{currentUser.joinDate || '—'}</span></div>
+                  <div>入会日: <span className="text-white">{formatJoinDate(currentUser.joinDate)}</span></div>
                 </div>
               </div>
             </div>
