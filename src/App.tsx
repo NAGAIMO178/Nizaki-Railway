@@ -1217,6 +1217,7 @@ export default function App() {
           balance={shownBalance}
           pointHistory={shownPointHistory}
           currentUser={shownUser}
+          eventCleared={isLaunched() && eventProgress.cleared}
           onRedeemCode={redeemPointCode}
         />
       </LazyOnOpen>
