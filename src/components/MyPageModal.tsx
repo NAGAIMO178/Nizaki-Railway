@@ -32,6 +32,7 @@ import { isLaunched } from '../utils/launch';
 import { TicketSummary, ticketBadgeLabel } from '../utils/ticketApi';
 import { calcReservationPoints } from '../utils/points';
 import { formatJoinDate } from '../utils/joinDate';
+import { ledgerDateText, ledgerDateTimeText } from '../utils/jstDate';
 import { pointTitleText } from '../utils/pointTitle';
 import { PrivacyPolicyModal } from './PrivacyPolicyModal';
 
@@ -161,7 +162,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
     // 3. 終了した予約(乗車済み・キャンセル)。特急券とデリバリーに分けて表示する
     ...orderHistory.flatMap((h): AccountActivityItem[] => {
       const done = h.result === 'completed';
-      const date = h.reservedDate ? h.reservedDate.replace(/-/g, '/') : '';
+      const date = h.reservedDate ? String(ledgerDateText(h.reservedDate, '/')).replace(/-/g, '/') : '';
       const deliveryTotal = Math.max(0, h.items.reduce((sum, i) => sum + i.price * i.quantity, 0) - (h.itemDiscount || 0));
       const list: AccountActivityItem[] = [
         {
@@ -200,7 +201,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
         category: (isEventReward ? 'event' : 'point') as 'event' | 'point',
         title: pointTitleText(p.title),
         subtitle: isEventReward ? 'イベント報酬 (N-POINT付与)' : p.points < 0 ? 'N-POINT 取消' : `N-POINT 獲得・付与`,
-        date: p.date,
+        date: ledgerDateTimeText(p.date),
         at: parseActivityTime(p.date),
         status: p.points < 0 ? '取消' : '付与済',
         statusColor: p.points < 0 ? 'slate' : isEventReward ? 'indigo' : 'amber',
