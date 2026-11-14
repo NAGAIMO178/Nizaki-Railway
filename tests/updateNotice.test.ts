@@ -128,7 +128,7 @@ describe('version.json の中身(ビルド)', () => {
 describe('高宮線の公開のお知らせ: 公開の時刻(TK_LAUNCH_AT)より前は出さず、その時刻から出す', () => {
   // 公開の PR(4.6.0)で、release-notes.json に入れた形。公開の日時は、高宮線のスイッチと同じものを使う
   const AT = Date.parse(TK_LAUNCH_AT as string);
-  const out = JSON.parse(buildVersionJson('4.6.0', { notes: ['新しい路線「高宮線」ができました', '有料特急「すみかぜ」を、予約できるようになりました', '会員証に、名札を出せるようにしました'], showAfter: TK_LAUNCH_AT }));
+  const out = JSON.parse(buildVersionJson('4.6.0', { notes: ['新しい路線「高宮線」ができました', '有料特急「すみかぜ」を、予約できるようになりました', 'マイページに、名札を出せるようにしました'], showAfter: TK_LAUNCH_AT }));
 
   it('前の版のアプリには、公開の 1 ミリ秒前まで出さず(保留)、ちょうどの時刻とそのあとは出す', () => {
     expect(evaluateUpdate(out, '4.5.1', AT - 1)).toEqual({ kind: 'held', showAtMs: AT });
