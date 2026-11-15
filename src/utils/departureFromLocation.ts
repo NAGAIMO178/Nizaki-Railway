@@ -23,7 +23,7 @@ export const departureFromCoords = (lat: number, lng: number, available: string[
 
 // 許可の画面を出して、いまいる場所を調べる(同時に何度頼まれても、1回だけ。分かった場所は、数分だけ覚えて使い回せる=recentPosition)。使えない・許可されない・時間切れは null
 let pending: Promise<{ lat: number; lng: number } | null> | null = null;
-const requestPosition = (): Promise<{ lat: number; lng: number } | null> => {
+export const requestPosition = (): Promise<{ lat: number; lng: number } | null> => {
   if (typeof navigator === 'undefined' || !navigator.geolocation) return Promise.resolve(null);
   if (pending) return pending;
   const p = new Promise<{ lat: number; lng: number } | null>((resolve) => {

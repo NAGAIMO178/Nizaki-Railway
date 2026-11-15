@@ -24,6 +24,7 @@ import {
 import { UserAvatar } from './UserAvatar';
 import { MyStationRegisterCard, RegisterableStation } from './MyStationRegisterCard';
 import { LazyOnOpen } from './LazyOnOpen';
+import { LocationSetting } from './LocationSetting';
 import {
   isNotificationSupported,
   getNotificationPermissionState,
@@ -469,6 +470,9 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           </div>
         </div>
       </section>
+
+      {/* SECTION 4: 位置情報(最寄り駅に使う。許可の状態と、許可するボタン) */}
+      <LocationSetting />
 
       {/* 管理者用設定・システム診断を開くボタン (公開後は出さない。入口は、下のバージョン表示のタップだけ) */}
       {!isLaunched() && (
