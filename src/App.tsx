@@ -899,7 +899,7 @@ export default function App() {
       )}
 
       {/* Main Responsive View Container */}
-      <main className="flex-1 w-full bg-[#F4F3F8] text-[#221C35] overflow-y-auto lg:overflow-y-visible">
+      <main className="flex-1 w-full bg-[#F4F3F8] text-[#221C35] overflow-y-auto pc:overflow-y-visible">
         {activeTab === 'home' && (
           <div className="max-w-md mx-auto px-4 py-4 pb-24 space-y-3.5 animate-fadeIn">
             {/* 1. Top Operation Status Area (運行情報) */}
@@ -977,7 +977,7 @@ export default function App() {
         {/* Tab 4: 予約(特急券・座席 / デリバリー) */}
         {activeTab === 'reservation' && (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-28 md:pb-12">
-            <div className="max-w-md lg:max-w-[960px] mx-auto px-4">
+            <div className="max-w-md pc:max-w-[960px] mx-auto px-4">
               <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[#E6E2EE]" role="tablist" aria-label="予約の種類">
                 {([
                   ['ticket', '特急券・座席'],

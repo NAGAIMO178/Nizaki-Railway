@@ -9,6 +9,7 @@ import { systemLogger } from './utils/systemLogger';
 import { installPreloadErrorReload } from './utils/preloadReload';
 import { LazyBoundary } from './components/LazyBoundary';
 import { ticketRouteToken } from './utils/ticketToken';
+import { startPcLayout } from './utils/pcLayout';
 
 // QR乗車券を読み取って開いたリンク(公開後だけ)は、検札用の画面だけを出す
 const TicketCheckPage = lazy(() => import('./components/TicketCheckPage'));
@@ -34,6 +35,9 @@ const Root = () => {
     </>
   );
 };
+
+// PC 表示(日時が来るまで隠す)の印を、描くより先に付ける
+startPcLayout();
 
 // 画面のファイルが取れなかったとき(更新の直後など)、1回だけ自動で再読み込みする
 installPreloadErrorReload();

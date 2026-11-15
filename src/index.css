@@ -1,5 +1,15 @@
 @import "tailwindcss";
 
+/* PC 表示用の指定 pc: 。「PC 表示が出ている(<html data-pc-layout="on">。utils/pcLayout.ts)」かつ「幅 1024px 以上」のときだけ効く。
+   PC 表示は、日時が来るまで隠す(印が付かないあいだは、pc: の指定は、どれも効かない=これまでの画面のまま)。幅の値は、pcLayout.ts の PC_MIN_WIDTH_PX と同じ。 */
+@custom-variant pc {
+  @media (min-width: 1024px) {
+    &:where([data-pc-layout="on"] *) {
+      @slot;
+    }
+  }
+}
+
 /* 縦スクロールバーの場所を、いつも空けておく(PCの幅で、タブによって、バーが出る・出ないで、ヘッダーなど中央の中身の位置が数px動かないように) */
 html {
   scrollbar-gutter: stable;

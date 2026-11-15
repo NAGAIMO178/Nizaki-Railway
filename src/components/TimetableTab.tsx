@@ -209,26 +209,26 @@ export const TimetableTab: React.FC<{ onReserve?: (preset: Omit<ReservationPrese
   // 駅の時刻表
   if (stationIdx !== null) {
     return (
-      <div className="max-w-md lg:max-w-[960px] mx-auto px-4 py-4 pb-28 space-y-3 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-x-3.5 lg:gap-y-3 animate-fadeIn">
+      <div className="max-w-md pc:max-w-[960px] mx-auto px-4 py-4 pb-28 space-y-3 pc:space-y-0 pc:grid pc:grid-cols-2 pc:gap-x-3.5 pc:gap-y-3 animate-fadeIn">
         <button
           type="button"
           onClick={() => setStationIdx(null)}
-          className="flex items-center gap-1 text-xs font-bold text-[#5B21B6] cursor-pointer lg:col-start-1 lg:row-start-1 lg:justify-self-start"
+          className="flex items-center gap-1 text-xs font-bold text-[#5B21B6] cursor-pointer pc:col-start-1 pc:row-start-1 pc:justify-self-start"
         >
           <ChevronLeft className="w-4 h-4" />
           <span>{currentLine?.name ?? '駅'}の駅一覧</span>
         </button>
 
-        <div className="bg-white border border-[#E6E2EE] rounded-2xl p-3.5 flex items-center gap-3 shadow-xs lg:col-start-1 lg:row-start-2">
+        <div className="bg-white border border-[#E6E2EE] rounded-2xl p-3.5 flex items-center gap-3 shadow-xs pc:col-start-1 pc:row-start-2">
           <StationBadge lineCode={lineCode} idx={stationIdx} />
           <div className="min-w-0">
             <div className="text-base font-black text-[#221C35] truncate">{currentLine?.stations[stationIdx]}</div>
-            <div className="text-[11px] text-[#857D99] lg:hidden">{currentLine?.name} 時刻表</div>
+            <div className="text-[11px] text-[#857D99] pc:hidden">{currentLine?.name} 時刻表</div>
           </div>
         </div>
 
         {ttError && (
-          <div className="bg-white border border-[#E6E2EE] rounded-2xl p-4 text-center space-y-2 lg:col-span-2">
+          <div className="bg-white border border-[#E6E2EE] rounded-2xl p-4 text-center space-y-2 pc:col-span-2">
             <p className="text-xs text-[#6B6380]">時刻表を読み込めませんでした。</p>
             <button
               type="button"
@@ -241,11 +241,11 @@ export const TimetableTab: React.FC<{ onReserve?: (preset: Omit<ReservationPrese
           </div>
         )}
 
-        {!ttError && !timetable && <div className="text-center text-xs text-[#857D99] py-10 lg:col-span-2">読み込み中…</div>}
+        {!ttError && !timetable && <div className="text-center text-xs text-[#857D99] py-10 pc:col-span-2">読み込み中…</div>}
 
         {timetable && (
           <>
-            <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[#E6E2EE] lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:self-end" role="tablist" aria-label="方面">
+            <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[#E6E2EE] pc:col-start-2 pc:row-start-1 pc:row-span-2 pc:self-end" role="tablist" aria-label="方面">
               {timetable.directions.map((d, i) => (
                 <button
                   key={d.code}
@@ -263,28 +263,28 @@ export const TimetableTab: React.FC<{ onReserve?: (preset: Omit<ReservationPrese
             </div>
 
             {direction && direction.departures.length === 0 ? (
-              <div className="bg-white border border-[#E6E2EE] rounded-2xl p-5 text-center text-xs text-[#6B6380] lg:col-span-2">
+              <div className="bg-white border border-[#E6E2EE] rounded-2xl p-5 text-center text-xs text-[#6B6380] pc:col-span-2">
                 この方向に発車する列車はありません。
                 <br />
                 （終着駅です。反対の方向をご覧ください）
               </div>
             ) : (
-              <div className="bg-white border border-[#E6E2EE] rounded-2xl overflow-hidden shadow-xs lg:col-span-2">
-                <div className="px-3 py-2 bg-[#EFE8FA] text-[10px] text-[#6B6380] font-bold flex justify-between lg:justify-end gap-2">
-                  <span className="lg:hidden">おもな行き先: {direction?.mainDest}行</span>
+              <div className="bg-white border border-[#E6E2EE] rounded-2xl overflow-hidden shadow-xs pc:col-span-2">
+                <div className="px-3 py-2 bg-[#EFE8FA] text-[10px] text-[#6B6380] font-bold flex justify-between pc:justify-end gap-2">
+                  <span className="pc:hidden">おもな行き先: {direction?.mainDest}行</span>
                   <span>全日共通のダイヤ</span>
                 </div>
                 {/* スマホ: 1列 */}
-                <div className="lg:hidden">{rows.map(([hour, deps]) => hourRow(hour, deps))}</div>
+                <div className="pc:hidden">{rows.map(([hour, deps]) => hourRow(hour, deps))}</div>
                 {/* PC: 左が 15 時台まで、右が 16 時台から */}
-                <div className="hidden lg:grid lg:grid-cols-2">
+                <div className="hidden pc:grid pc:grid-cols-2">
                   <div>{rows.filter(([hour]) => hour < 16).map(([hour, deps]) => hourRow(hour, deps))}</div>
                   <div className="border-l border-[#EFEDF5]">{rows.filter(([hour]) => hour >= 16).map(([hour, deps]) => hourRow(hour, deps))}</div>
                 </div>
               </div>
             )}
 
-            <TimetableLegend rows={legendRows} className="lg:col-span-2" />
+            <TimetableLegend rows={legendRows} className="pc:col-span-2" />
           </>
         )}
       </div>
@@ -294,7 +294,7 @@ export const TimetableTab: React.FC<{ onReserve?: (preset: Omit<ReservationPrese
   // 経路検索
   if (showRoute && mode === 'route') {
     return (
-      <div className="max-w-md lg:max-w-[960px] mx-auto px-4 py-4 pb-28 space-y-3 animate-fadeIn">
+      <div className="max-w-md pc:max-w-[960px] mx-auto px-4 py-4 pb-28 space-y-3 animate-fadeIn">
         {modeToggle}
         <RouteSearch onReserve={onReserve} />
       </div>
@@ -303,7 +303,7 @@ export const TimetableTab: React.FC<{ onReserve?: (preset: Omit<ReservationPrese
 
   // 路線と駅の一覧
   return (
-    <div className="max-w-md lg:max-w-[960px] mx-auto px-4 py-4 pb-28 space-y-3 animate-fadeIn">
+    <div className="max-w-md pc:max-w-[960px] mx-auto px-4 py-4 pb-28 space-y-3 animate-fadeIn">
       {/* 公開後は、上の切り替えに「時刻表」とあるので、見出しは出さない */}
       {!showRoute && <h2 className="text-base font-black text-[#221C35]">時刻表</h2>}
       {modeToggle}

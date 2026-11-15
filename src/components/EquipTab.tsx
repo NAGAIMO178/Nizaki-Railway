@@ -78,7 +78,7 @@ export const EquipTab: React.FC<EquipTabProps> = ({
   const purchasedTotalCount = Object.values(purchasedItemsMap).reduce((sum, q) => sum + q, 0);
 
   return (
-    <div className="space-y-4 pb-12 lg:max-w-[928px] lg:mx-auto">
+    <div className="space-y-4 pb-12 pc:max-w-[928px] pc:mx-auto">
       {/* Title Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -279,7 +279,7 @@ export const EquipTab: React.FC<EquipTabProps> = ({
 
       {/* Bottom Sticky Cart & Order Confirmation Bar */}
       {totalCount > 0 && (
-        <div className="fixed bottom-16 inset-x-0 mx-auto max-w-md lg:max-w-[960px] px-4 z-30 animate-fadeIn">
+        <div className="fixed bottom-16 inset-x-0 mx-auto max-w-md pc:max-w-[960px] px-4 z-30 animate-fadeIn">
           <div className="bg-[#221C35] text-white p-3 rounded-2xl shadow-xl border border-[#5B21B6]/30 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2.5 min-w-0 pl-1">
               <div className="relative shrink-0">
