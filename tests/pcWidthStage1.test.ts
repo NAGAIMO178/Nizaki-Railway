@@ -1,4 +1,4 @@
-// PC 表示 段階1: 本体の幅だけを、PC の幅(Tailwind の lg: = 1024px 以上)のときに 448px → 960px に広げる。
+// PC 表示 段階1: 本体の幅だけを、PC の幅(pc: = PC 表示が出ていて、かつ 1024px 以上)のときに 448px → 960px に広げる。PC 表示は、日時(pcLayout.ts)まで隠す。
 // スマホ(1024px 未満)のクラスは変えない。ホームは、1文字も変えない。
 import fs from 'node:fs';
 import path from 'node:path';
@@ -13,7 +13,7 @@ import { Header } from '../src/components/Header';
 
 const root = path.resolve(__dirname, '..');
 const read = (...p: string[]) => fs.readFileSync(path.join(root, ...p), 'utf-8');
-const W = 'lg:max-w-[960px]';
+const W = 'pc:max-w-[960px]';
 
 // 段階1で足した PC 用のクラスを取り除くと、スマホのクラスが、これまでと同じ文字列に戻る(=スマホは1文字も変わらない)
 const PHONE_ORIGINALS: Record<string, string[]> = {
@@ -38,15 +38,15 @@ const COUNTS: Record<string, number> = {
   'src/components/FooterNav.tsx': 1,
 };
 
-const strip = (s: string) => s.replaceAll(` ${W}`, '').replaceAll(' lg:max-w-[928px] lg:mx-auto', '');
+const strip = (s: string) => s.replaceAll(` ${W}`, '').replaceAll(' pc:max-w-[928px] pc:mx-auto', '');
 
-describe('PC の幅のクラスは、lg: 以上だけ', () => {
-  it('960px は、lg: の付いた形でしか、どこにも書かれていない(スマホ・タブレットの幅には効かない)', () => {
+describe('PC 用のクラスは、pc: だけ(lg: では、書かない)', () => {
+  it('960px は、pc: の付いた形でしか、どこにも書かれていない(スマホ・タブレットの幅には効かない)', () => {
     for (const f of Object.keys(COUNTS)) {
       const src = read(f);
       expect(src.match(/max-w-\[960px\]/g)?.length ?? 0, f).toBe(COUNTS[f]);
-      expect(src, f).not.toMatch(/(?<!lg:)max-w-\[960px\]/);
-      expect(src, f).not.toMatch(/\b(sm|md|xl|2xl):max-w-\[9(28|60)px\]/);
+      expect(src, f).not.toMatch(/(?<!pc:)max-w-\[960px\]/);
+      expect(src, f).not.toMatch(/\b(sm|md|lg|xl|2xl):max-w-\[9(28|60)px\]/);
     }
   });
 
@@ -59,7 +59,7 @@ describe('PC の幅のクラスは、lg: 以上だけ', () => {
 
   it('デリバリーの根は、スマホでは上限なし(これまでどおり)。PC の幅だけ 928px(左右の余白 16px ずつで、カードが 960px の枠に収まる)', () => {
     const src = read('src/components/EquipTab.tsx');
-    expect(src).toContain('<div className="space-y-4 pb-12 lg:max-w-[928px] lg:mx-auto">');
+    expect(src).toContain('<div className="space-y-4 pb-12 pc:max-w-[928px] pc:mx-auto">');
   });
 });
 
@@ -68,15 +68,15 @@ describe('ホームは、変えない', () => {
     const app = read('src/App.tsx');
     expect(app).toContain('<div className="max-w-md mx-auto px-4 py-4 pb-24 space-y-3.5 animate-fadeIn">');
     for (const f of ['StatusCard', 'MyStationCard', 'MyStationRegisterCard', 'LaunchCountdown']) {
-      expect(read('src', 'components', `${f}.tsx`), f).not.toContain('lg:max-w-[960px]');
+      expect(read('src', 'components', `${f}.tsx`), f).not.toContain('pc:max-w-[960px]');
     }
   });
 
   it('ヘッダー・フッターの PC の幅は、ホーム以外のタブのときだけ', () => {
     const header = read('src/components/Header.tsx');
     const footer = read('src/components/FooterNav.tsx');
-    expect(header).toContain("activeTab && activeTab !== 'home' ? ' lg:max-w-[960px]' : ''");
-    expect(footer).toContain("activeTab !== 'home' ? ' lg:max-w-[960px]' : ''");
+    expect(header).toContain("activeTab && activeTab !== 'home' ? ' pc:max-w-[960px]' : ''");
+    expect(footer).toContain("activeTab !== 'home' ? ' pc:max-w-[960px]' : ''");
   });
 });
 
@@ -93,8 +93,8 @@ describe('ヘッダー・フッターの出力', () => {
 
   it('ホーム以外のタブ(列車位置・時刻表・予約・イベント・設定)のときは、PC の幅で 960px。スマホのクラスはそのまま', () => {
     for (const tab of ['location', 'timetable', 'reservation', 'events', 'settings']) {
-      expect(header(tab), tab).toContain('class="max-w-4xl mx-auto px-4 py-2.5 lg:max-w-[960px]"');
-      expect(footer(tab), tab).toContain('class="max-w-md mx-auto flex items-center justify-around lg:max-w-[960px]"');
+      expect(header(tab), tab).toContain('class="max-w-4xl mx-auto px-4 py-2.5 pc:max-w-[960px]"');
+      expect(footer(tab), tab).toContain('class="max-w-md mx-auto flex items-center justify-around pc:max-w-[960px]"');
     }
   });
 

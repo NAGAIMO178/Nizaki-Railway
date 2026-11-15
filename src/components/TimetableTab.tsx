@@ -171,7 +171,7 @@ export const TimetableTab: React.FC<{ onReserve?: (preset: Omit<ReservationPrese
   // 駅の時刻表
   if (stationIdx !== null) {
     return (
-      <div className="max-w-md lg:max-w-[960px] mx-auto px-4 py-4 pb-28 space-y-3 animate-fadeIn">
+      <div className="max-w-md pc:max-w-[960px] mx-auto px-4 py-4 pb-28 space-y-3 animate-fadeIn">
         <button
           type="button"
           onClick={() => setStationIdx(null)}
@@ -277,7 +277,7 @@ export const TimetableTab: React.FC<{ onReserve?: (preset: Omit<ReservationPrese
   // 経路検索
   if (showRoute && mode === 'route') {
     return (
-      <div className="max-w-md lg:max-w-[960px] mx-auto px-4 py-4 pb-28 space-y-3 animate-fadeIn">
+      <div className="max-w-md pc:max-w-[960px] mx-auto px-4 py-4 pb-28 space-y-3 animate-fadeIn">
         {modeToggle}
         <RouteSearch onReserve={onReserve} />
       </div>
@@ -286,7 +286,7 @@ export const TimetableTab: React.FC<{ onReserve?: (preset: Omit<ReservationPrese
 
   // 路線と駅の一覧
   return (
-    <div className="max-w-md lg:max-w-[960px] mx-auto px-4 py-4 pb-28 space-y-3 animate-fadeIn">
+    <div className="max-w-md pc:max-w-[960px] mx-auto px-4 py-4 pb-28 space-y-3 animate-fadeIn">
       {/* 公開後は、上の切り替えに「時刻表」とあるので、見出しは出さない */}
       {!showRoute && <h2 className="text-base font-black text-[#221C35]">時刻表</h2>}
       {modeToggle}

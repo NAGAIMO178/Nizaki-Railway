@@ -557,7 +557,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
 
   return (
     <div
-      className="min-h-screen bg-[#F9F8FD] text-[#221C35] pb-24 max-w-md lg:max-w-[960px] mx-auto relative font-sans"
+      className="min-h-screen bg-[#F9F8FD] text-[#221C35] pb-24 max-w-md pc:max-w-[960px] mx-auto relative font-sans"
       onClick={(e) => {
         // 何もないところをタップしたら、選んだ列車(枠と赤い三角)を外す。列車・札・ボタンと、下の詳細のシートは、そのまま
         const t = e.target as HTMLElement;
