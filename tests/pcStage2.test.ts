@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 const root = path.resolve(__dirname, '..');
 const read = (f: string) => fs.readFileSync(path.join(root, 'src', 'components', `${f}.tsx`), 'utf-8');
 // PC 用のクラス(lg: で始まるもの)を取り除いた、スマホだけのソース
-const phoneOnly = (s: string) => s.replace(/ lg:[^\s"'`}]+/g, '');
+const phoneOnly = (s: string) => s.replace(/ (lg|motion-reduce):[^\s"'`}]+/g, '');
 const lgTokens = (s: string) => [...new Set(s.match(/lg:[^\s"'`}]+/g) ?? [])].sort();
 
 describe('PC 用のクラスは、lg: つきだけ(足してよいクラスの一覧と、ぴったり同じ)', () => {
@@ -18,7 +18,7 @@ describe('PC 用のクラスは、lg: つきだけ(足してよいクラスの�
   });
   it('列車位置・列車の詳細', () => {
     expect(lgTokens(read('TrainLocationTab'))).toEqual(
-      ['lg:border', 'lg:col-start-1', 'lg:col-start-2', 'lg:gap-x-3.5', 'lg:grid', 'lg:grid-cols-2', 'lg:hidden', 'lg:items-start', 'lg:max-h-[calc(100vh-11rem)]', 'lg:max-h-[calc(100vh-13rem)]', 'lg:max-w-[960px]', 'lg:max-w-none', 'lg:mx-0', 'lg:pr-4', 'lg:pt-4', 'lg:rounded-2xl', 'lg:row-start-1', 'lg:space-y-3', 'lg:static', 'lg:sticky', 'lg:top-16'].sort()
+      ['lg:animate-none', 'lg:border', 'lg:duration-300', 'lg:ease-out', 'lg:flex', 'lg:hidden', 'lg:items-start', 'lg:max-h-[calc(100vh-11rem)]', 'lg:max-h-[calc(100vh-13rem)]', 'lg:max-w-[960px]', 'lg:max-w-none', 'lg:mx-0', 'lg:opacity-0', 'lg:opacity-100', 'lg:overflow-x-clip', 'lg:pointer-events-none', 'lg:pr-4', 'lg:pt-4', 'lg:rounded-2xl', 'lg:shrink-0', 'lg:space-y-3', 'lg:static', 'lg:sticky', 'lg:top-16', 'lg:transition-all', 'lg:transition-transform', 'lg:translate-x-0', 'lg:translate-x-1/2', 'lg:translate-x-full', 'lg:w-1/2'].sort()
     );
     expect(lgTokens(read('TrainDetailV2'))).toEqual(['lg:hidden', 'lg:max-h-[calc(100vh-13rem)]']);
   });
@@ -104,21 +104,45 @@ describe('時刻表: 時間帯の分け目と、表の中身', () => {
   });
 });
 
-describe('列車位置: 左(図)・右(詳細)', () => {
+describe('列車位置(PC の幅): 未選択=図が中央 / 選択=図が左・右に詳細 / 閉じる=中央へ戻る', () => {
   const s = read('TrainLocationTab');
-  it('根は PC の幅だけ左右2列。左の列は路線のタブ+図、右の列は詳細(スマホでは、下から出るシートのまま)', () => {
-    expect(s).toContain('relative font-sans lg:grid lg:grid-cols-2 lg:gap-x-3.5 lg:items-start"');
-    expect(s).toContain('<div className="lg:col-start-1">');
-    expect(s).toContain('<div className="lg:col-start-2 lg:row-start-1 lg:sticky lg:top-16 lg:pt-4 lg:pr-4 lg:space-y-3">');
+  it('根は、PC の幅だけ横並び(はみ出しは切る)。左の列は幅の半分(480px)で、選んでいないときは中央(右へ半分ずらす)、選んだときは左(ずらさない)。0.3秒でなめらかに', () => {
+    expect(s).toContain('relative font-sans lg:flex lg:items-start lg:overflow-x-clip"');
+    expect(s).toContain("lg:w-1/2 lg:shrink-0 lg:transition-transform lg:duration-300 lg:ease-out motion-reduce:transition-none ${detailOpen ? 'lg:translate-x-0' : 'lg:translate-x-1/2'}");
   });
-  it('下から出る3つのシートは、PC では、右の列に置く(fixed をやめる)。つまみは出さない', () => {
-    expect(s.split('lg:static lg:max-w-none lg:mx-0 lg:border lg:rounded-2xl').length - 1).toBe(3);
+  it('右の列は、選んだときだけ見える(選んでいないときは、透明で、押せず、右の外へ)。同じ動き(0.3秒)で出入りする', () => {
+    expect(s).toContain("lg:w-1/2 lg:shrink-0 lg:sticky lg:top-16 lg:pt-4 lg:pr-4 lg:space-y-3 lg:transition-all lg:duration-300 lg:ease-out motion-reduce:transition-none ${detailOpen ? 'lg:translate-x-0 lg:opacity-100' : 'lg:translate-x-full lg:opacity-0 lg:pointer-events-none'}");
+  });
+  it('「動きを減らす」設定のとき: CSS の動きを止め(motion-reduce)、閉じるときに、詳細を残さず、すぐ消す', () => {
+    expect(s.split('motion-reduce:transition-none').length - 1).toBe(2);
+    expect(s).toContain("matchesQuery('(prefers-reduced-motion: reduce)')");
+    expect(s).toContain('setLeaving(!detailOpen && isPc && !matchesQuery(');
+  });
+  it('閉じるとき(PC のみ): 0.3秒だけ、最後の詳細を残して、右へ消えるのを見せる。別の列車・駅を選んだときは、中身が差し替わるだけ(開いたまま=図は動かない)', () => {
+    expect(s).toContain('const keep = leaving && !detailOpen ? lastDetail.current : null;');
+    expect(s).toContain('setTimeout(() => setLeaving(false), 300)');
+    for (const n of ['shownTrain', 'shownGroup', 'shownStation']) expect(s).toContain(`const ${n} = `);
+  });
+  it('右の列の3つのシートは、残している中身(shown…)で描く。スマホでは、選んだものと同じ(残さない)', () => {
+    const right = s.slice(s.indexOf('lg:w-1/2 lg:shrink-0 lg:sticky'));
+    expect(right).not.toMatch(/\bselected(Train|Group|Station)\b/);
+    expect(s).toContain('const isPc = useMediaQuery(\'(min-width: 1024px)\');');
+  });
+  it('下から出る3つのシートは、PC では、右の列に置く(fixed をやめ、下から出る動きもやめる)。つまみは出さず、代わりに、既存の「閉じる」(X)を PC のときだけ出す', () => {
+    expect(s.split('lg:animate-none lg:static lg:max-w-none lg:mx-0 lg:border lg:rounded-2xl').length - 1).toBe(3);
     expect(s.split('select-none lg:hidden"').length - 1).toBe(3);
+    expect(s.split('<div className="hidden lg:flex justify-end -mb-2">').length - 1).toBe(3);
+    expect(s).toContain('onClick={() => setSelectedStation(null)}\n              className="p-1.5 rounded-lg text-[#6B6380] hover:bg-[#F4F3F8] cursor-pointer"');
+    expect(s.split('onClick={clearTrainSelection}\n              className="p-1.5 rounded-lg text-[#6B6380] hover:bg-[#F4F3F8] cursor-pointer"').length - 1).toBe(2);
   });
-  it('右の列の中に、3つのシートが入っている(左の列の外)', () => {
-    const rightStart = s.indexOf('lg:col-start-2 lg:row-start-1');
-    const leftEnd = s.lastIndexOf('<div className="lg:col-start-1">');
-    expect(rightStart).toBeGreaterThan(leftEnd);
-    for (const marker of ['stationSheetDrag.style', 'selectedGroup.map', 'contentRef={trainSheetDrag.contentRef}']) expect(s.indexOf(marker), marker).toBeGreaterThan(rightStart);
+  it('スマホのクラスは変わらない: 左右の列の入れ物のクラスは、すべて lg: か motion-reduce: つき(スマホでは何も効かない=これまでと同じ)', () => {
+    for (const marker of ['<div className={`lg:w-1/2 lg:shrink-0 lg:transition-transform', '<div className={`lg:w-1/2 lg:shrink-0 lg:sticky']) {
+      const i = s.indexOf(marker);
+      expect(i, marker).toBeGreaterThan(-1);
+      const tpl = s.slice(i + '<div className={`'.length, s.indexOf('`}>', i));
+      const tokens = tpl.replace(/\$\{[^}]*\}/g, '').split(/\s+/).filter(Boolean);
+      for (const t of tokens) expect(t, marker).toMatch(/^(lg|motion-reduce):/);
+      for (const t of [...tpl.matchAll(/'([^']*)'/g)].flatMap((m) => m[1].split(/\s+/))) expect(t, marker).toMatch(/^lg:/);
+    }
   });
 });
