@@ -60,9 +60,9 @@ export const TrainDetailV2: React.FC<TrainDetailV2Props> = ({ train, lineName, o
   const card = 'bg-[#F9F8FD] rounded-xl border border-[#E6E2EE] overflow-hidden';
 
   return (
-    <div ref={contentRef} className={embedded ? 'space-y-3' : 'max-h-[62vh] overflow-y-auto overscroll-contain -mx-1 px-1 space-y-3'}>
+    <div ref={contentRef} className={embedded ? 'space-y-3' : 'max-h-[62vh] lg:max-h-[calc(100vh-13rem)] overflow-y-auto overscroll-contain -mx-1 px-1 space-y-3'}>
       {/* 見出しの帯: 有料の特急は列車名、ほかは路線名(路線の色は、小さな丸) */}
-      <div className="rounded-xl bg-[#5B21B6] text-white px-3.5 py-2 text-sm font-black flex items-center gap-2 shadow-xs">
+      <div className={`rounded-xl bg-[#5B21B6] text-white px-3.5 py-2 text-sm font-black flex items-center gap-2 shadow-xs${train.paid && train.expressBand ? '' : ' lg:hidden'}`}>
         {train.paid && train.expressBand ? (
           train.expressBand
         ) : (
@@ -120,13 +120,13 @@ export const TrainDetailV2: React.FC<TrainDetailV2Props> = ({ train, lineName, o
           </div>
         ) : info ? (
           <div className="p-3 flex items-center gap-2.5">
-            <span className="shrink-0 text-[10px] font-black px-1.5 py-0.5 rounded bg-white text-[#5B21B6] border border-[#C4B5FD] whitespace-nowrap shadow-2xs">いまの混雑</span>
+            <span className="shrink-0 text-[10px] font-black px-1.5 py-0.5 rounded bg-white text-[#5B21B6] border border-[#C4B5FD] whitespace-nowrap shadow-2xs lg:hidden">いまの混雑</span>
             <div className="leading-tight min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <PeopleMeter level={info.level} />
                 <span className="text-xs font-bold text-[#221C35]">{info.label}</span>
               </div>
-              <div className="text-[10px] font-bold text-[#857D99] mt-0.5">※模擬の混雑です</div>
+              <div className="text-[10px] font-bold text-[#857D99] mt-0.5 lg:hidden">※模擬の混雑です</div>
             </div>
           </div>
         ) : (

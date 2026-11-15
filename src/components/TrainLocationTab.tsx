@@ -557,7 +557,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
 
   return (
     <div
-      className="min-h-screen bg-[#F9F8FD] text-[#221C35] pb-24 max-w-md lg:max-w-[960px] mx-auto relative font-sans"
+      className="min-h-screen bg-[#F9F8FD] text-[#221C35] pb-24 max-w-md lg:max-w-[960px] mx-auto relative font-sans lg:grid lg:grid-cols-2 lg:gap-x-3.5 lg:items-start"
       onClick={(e) => {
         // 何もないところをタップしたら、選んだ列車(枠と赤い三角)を外す。列車・札・ボタンと、下の詳細のシートは、そのまま
         const t = e.target as HTMLElement;
@@ -566,8 +566,10 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
         clearTrainSelection();
       }}
     >
+      {/* 左の列(PC の幅): 路線のタブ+図 */}
+      <div className="lg:col-start-1">
       {/* Top Header Bar */}
-      <div className="sticky top-0 z-30 bg-white border-b border-[#E6E2EE] shadow-2xs">
+      <div className="sticky top-0 z-30 bg-white border-b border-[#E6E2EE] shadow-2xs lg:static">
         <div className="p-3 pb-2 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <h2 className="text-base font-bold text-[#221C35]">列車走行位置</h2>
@@ -819,6 +821,9 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
         </div>
       </div>
 
+      </div>
+      {/* 右の列(PC の幅): 詳細(選んだ列車・重なった列車・駅)。スマホでは、これまでどおり、下から出るシート */}
+      <div className="lg:col-start-2 lg:row-start-1 lg:sticky lg:top-16 lg:pt-4 lg:pr-4 lg:space-y-3">
       {/* Station Transfer Guide Sheet (駅の乗り換え情報カード - 列車詳細と同等のボトムシート表示) */}
       {selectedStation && (
         <div
@@ -827,12 +832,12 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
             stationSheetDrag.contentRef(el);
           }}
           style={stationSheetDrag.style}
-          className="fixed bottom-14 left-0 right-0 max-w-md mx-auto z-40 bg-white border-t border-[#E6E2EE] rounded-t-2xl shadow-xl p-3 space-y-2 animate-slideUp max-h-[45vh] overflow-y-auto overscroll-contain"
+          className="fixed bottom-14 left-0 right-0 max-w-md mx-auto z-40 bg-white border-t border-[#E6E2EE] rounded-t-2xl shadow-xl p-3 space-y-2 animate-slideUp max-h-[45vh] overflow-y-auto overscroll-contain lg:static lg:max-w-none lg:mx-0 lg:border lg:rounded-2xl lg:max-h-[calc(100vh-11rem)]"
         >
           {/* つまみ: 下に引く(または押す)と閉じる */}
           <div
             {...stationSheetDrag.handleProps}
-            className="w-full py-3 -my-1 flex items-center justify-center cursor-grab active:cursor-grabbing group rounded-t-xl select-none"
+            className="w-full py-3 -my-1 flex items-center justify-center cursor-grab active:cursor-grabbing group rounded-t-xl select-none lg:hidden"
             role="button"
             aria-label="閉じる"
           >
@@ -850,18 +855,18 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
         <div
           ref={detailCardRef}
           style={trainSheetDrag.style}
-          className="fixed bottom-14 left-0 right-0 max-w-md mx-auto z-40 bg-white border-t border-[#E6E2EE] rounded-t-2xl shadow-lg p-4 space-y-3 animate-slideUp"
+          className="fixed bottom-14 left-0 right-0 max-w-md mx-auto z-40 bg-white border-t border-[#E6E2EE] rounded-t-2xl shadow-lg p-4 space-y-3 animate-slideUp lg:static lg:max-w-none lg:mx-0 lg:border lg:rounded-2xl"
         >
           {/* つまみ: 下に引く(または押す)と閉じる */}
           <div
             {...trainSheetDrag.handleProps}
-            className="w-full py-3 -mt-3 flex items-center justify-center cursor-grab active:cursor-grabbing group rounded-t-xl select-none"
+            className="w-full py-3 -mt-3 flex items-center justify-center cursor-grab active:cursor-grabbing group rounded-t-xl select-none lg:hidden"
             role="button"
             aria-label="閉じる"
           >
             <div className="w-12 h-1.5 bg-[#D1C9E3] group-hover:bg-[#5B21B6] rounded-full transition-colors" />
           </div>
-          <div ref={trainSheetDrag.contentRef} className="max-h-[62vh] overflow-y-auto overscroll-contain -mx-1 px-1 space-y-5">
+          <div ref={trainSheetDrag.contentRef} className="max-h-[62vh] lg:max-h-[calc(100vh-13rem)] overflow-y-auto overscroll-contain -mx-1 px-1 space-y-5">
             {selectedGroup.map((t, i) => (
               <TrainDetailV2
                 key={t.id}
@@ -883,12 +888,12 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
         <div
           ref={detailCardRef}
           style={trainSheetDrag.style}
-          className="fixed bottom-14 left-0 right-0 max-w-md mx-auto z-40 bg-white border-t border-[#E6E2EE] rounded-t-2xl shadow-lg p-4 space-y-3 animate-slideUp"
+          className="fixed bottom-14 left-0 right-0 max-w-md mx-auto z-40 bg-white border-t border-[#E6E2EE] rounded-t-2xl shadow-lg p-4 space-y-3 animate-slideUp lg:static lg:max-w-none lg:mx-0 lg:border lg:rounded-2xl"
         >
           {/* つまみ: 下に引く(または押す)と閉じる */}
           <div
             {...trainSheetDrag.handleProps}
-            className="w-full py-3 -mt-3 flex items-center justify-center cursor-grab active:cursor-grabbing group rounded-t-xl select-none"
+            className="w-full py-3 -mt-3 flex items-center justify-center cursor-grab active:cursor-grabbing group rounded-t-xl select-none lg:hidden"
             role="button"
             aria-label="閉じる"
           >
@@ -1036,6 +1041,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
           )}
         </div>
       )}
+      </div>
     </div>
   );
 };
