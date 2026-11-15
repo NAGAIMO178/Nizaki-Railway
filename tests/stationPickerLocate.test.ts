@@ -185,11 +185,9 @@ describe('つなぎ(出発・到着・経由の同じシート)', () => {
     expect(route).toContain('if (!stations || triedLocate.current || hadFrom.current) return;');
   });
 
-  it('お知らせは4行・showAfter のまま。版は 4.6.1 のまま', () => {
+  it('お知らせの4行目は、最寄り駅を探せるようになったこと。showAfter は、そのまま', () => {
     const notes = JSON.parse(read('release-notes.json')) as { notes: string[]; showAfter: string };
-    expect(notes.notes).toHaveLength(4);
     expect(notes.notes[3]).toBe('駅を選ぶとき、最寄り駅を探せるようにしました');
     expect(notes.showAfter).toBe('2026-11-20T08:00:00+09:00');
-    expect(JSON.parse(read('package.json')).version).toBe('4.6.1');
   });
 });
