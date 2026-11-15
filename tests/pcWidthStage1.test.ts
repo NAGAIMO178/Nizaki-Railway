@@ -19,26 +19,20 @@ const W = 'pc:max-w-[960px]';
 const PHONE_ORIGINALS: Record<string, string[]> = {
   'src/components/TimetableTab.tsx': ['className="max-w-md mx-auto px-4 py-4 pb-28 space-y-3 animate-fadeIn"'],
   'src/components/TrainLocationTab.tsx': ['pb-24 max-w-md mx-auto relative font-sans'],
-  'src/components/ReservationTab.tsx': ['className="space-y-4 text-[#221C35] max-w-md mx-auto p-4 pb-20 animate-fadeIn"'],
-  'src/components/EquipTab.tsx': ['<div className="space-y-4 pb-12">', 'className="fixed bottom-16 inset-x-0 mx-auto max-w-md px-4 z-30 animate-fadeIn"'],
   'src/components/EventsTab.tsx': ['className="max-w-3xl mx-auto px-4 py-5 pb-24 space-y-5 animate-fadeIn text-[#221C35]"'],
   'src/components/SettingsTab.tsx': ['className="space-y-4 text-[#221C35] max-w-xl mx-auto p-4 pb-28 animate-fadeIn"'],
-  'src/App.tsx': ['<div className="max-w-md mx-auto px-4">\n              <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[#E6E2EE]" role="tablist" aria-label="予約の種類">'],
 };
 // ファイルごとの、PC 用クラスの数
 const COUNTS: Record<string, number> = {
   'src/components/TimetableTab.tsx': 3,
   'src/components/TrainLocationTab.tsx': 1,
-  'src/components/ReservationTab.tsx': 1,
-  'src/components/EquipTab.tsx': 1,
   'src/components/EventsTab.tsx': 1,
   'src/components/SettingsTab.tsx': 1,
-  'src/App.tsx': 1,
   'src/components/Header.tsx': 1,
   'src/components/FooterNav.tsx': 1,
 };
 
-const strip = (s: string) => s.replaceAll(` ${W}`, '').replaceAll(' pc:max-w-[928px] pc:mx-auto', '');
+const strip = (s: string) => s.replaceAll(` ${W}`, '');
 
 describe('PC 用のクラスは、pc: だけ(lg: では、書かない)', () => {
   it('960px は、pc: の付いた形でしか、どこにも書かれていない(スマホ・タブレットの幅には効かない)', () => {
@@ -57,9 +51,12 @@ describe('PC 用のクラスは、pc: だけ(lg: では、書かない)', () => 
     }
   });
 
-  it('デリバリーの根は、スマホでは上限なし(これまでどおり)。PC の幅だけ 928px(左右の余白 16px ずつで、カードが 960px の枠に収まる)', () => {
-    const src = read('src/components/EquipTab.tsx');
-    expect(src).toContain('<div className="space-y-4 pb-12 pc:max-w-[928px] pc:mx-auto">');
+  it('予約タブ(特急券・座席/デリバリー)は、広げない: PC 用の指定が、1つもない(ReservationTab・EquipTab・予約の種類の切り替えの枠)', () => {
+    for (const f of ['ReservationTab', 'EquipTab', 'SeatSelectionModal', 'EDeliveryModal', 'SeatList']) expect(read('src', 'components', `${f}.tsx`), f).not.toMatch(/\bpc:/);
+    const app = read('src/App.tsx');
+    expect(app).toContain('<div className="max-w-md mx-auto px-4">\n              <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[#E6E2EE]" role="tablist" aria-label="予約の種類">');
+    expect(app).toContain('<div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-28 md:pb-12">');
+    expect(app).not.toMatch(/pc:max-w-\[960px\]/);
   });
 });
 
@@ -72,11 +69,11 @@ describe('ホームは、変えない', () => {
     }
   });
 
-  it('ヘッダー・フッターの PC の幅は、ホーム以外のタブのときだけ', () => {
+  it('ヘッダー・フッターの PC の幅は、ホームと予約以外のタブのときだけ', () => {
     const header = read('src/components/Header.tsx');
     const footer = read('src/components/FooterNav.tsx');
-    expect(header).toContain("activeTab && activeTab !== 'home' ? ' pc:max-w-[960px]' : ''");
-    expect(footer).toContain("activeTab !== 'home' ? ' pc:max-w-[960px]' : ''");
+    expect(header).toContain("activeTab && activeTab !== 'home' && activeTab !== 'reservation' ? ' pc:max-w-[960px]' : ''");
+    expect(footer).toContain("activeTab !== 'home' && activeTab !== 'reservation' ? ' pc:max-w-[960px]' : ''");
   });
 });
 
@@ -84,15 +81,17 @@ describe('ヘッダー・フッターの出力', () => {
   const header = (activeTab?: string) => renderToStaticMarkup(React.createElement(Header as never, { activeTab, onOpenMenu: () => undefined, onGoHome: () => undefined, onOpenLoginModal: () => undefined }));
   const footer = (activeTab: string) => renderToStaticMarkup(React.createElement(FooterNav as never, { activeTab, onChangeTab: () => undefined, onReselect: () => undefined, hasActiveOrder: false }));
 
-  it('ホームのときは、PC 用のクラスが付かない(これまでと同じ)', () => {
-    expect(header('home')).not.toContain(W);
-    expect(footer('home')).not.toContain(W);
+  it('ホームと予約のときは、PC 用のクラスが付かない(これまでと同じ=ホーム・予約は、広げない)', () => {
+    for (const tab of ['home', 'reservation']) {
+      expect(header(tab), tab).not.toContain(W);
+      expect(footer(tab), tab).not.toContain(W);
+    }
     expect(header('home')).toContain('class="max-w-4xl mx-auto px-4 py-2.5"');
     expect(footer('home')).toContain('class="max-w-md mx-auto flex items-center justify-around"');
   });
 
-  it('ホーム以外のタブ(列車位置・時刻表・予約・イベント・設定)のときは、PC の幅で 960px。スマホのクラスはそのまま', () => {
-    for (const tab of ['location', 'timetable', 'reservation', 'events', 'settings']) {
+  it('ホームと予約以外のタブ(列車位置・時刻表・イベント・設定)のときは、PC の幅で 960px。スマホのクラスはそのまま', () => {
+    for (const tab of ['location', 'timetable', 'events', 'settings']) {
       expect(header(tab), tab).toContain('class="max-w-4xl mx-auto px-4 py-2.5 pc:max-w-[960px]"');
       expect(footer(tab), tab).toContain('class="max-w-md mx-auto flex items-center justify-around pc:max-w-[960px]"');
     }

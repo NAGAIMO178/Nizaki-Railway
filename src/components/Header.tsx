@@ -35,7 +35,7 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   return (
     <header className="bg-white border-b border-[#E6E2EE] text-[#221C35] sticky top-0 z-40 shadow-xs transition-all">
-      <div className={`max-w-4xl mx-auto px-4 py-2.5${activeTab && activeTab !== 'home' ? ' pc:max-w-[960px]' : ''}`}>
+      <div className={`max-w-4xl mx-auto px-4 py-2.5${activeTab && activeTab !== 'home' && activeTab !== 'reservation' ? ' pc:max-w-[960px]' : ''}`}>
         {/* Main Header Bar */}
         <div className="flex items-center justify-between gap-3">
           {/* Left: App Logo & Header Title */}
