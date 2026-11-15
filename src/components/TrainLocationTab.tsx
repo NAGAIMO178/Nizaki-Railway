@@ -592,7 +592,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
       }}
     >
       {/* 左の列(PC の幅): 路線のタブ+図 */}
-      <div className={`lg:w-1/2 lg:shrink-0 lg:transition-transform lg:duration-300 lg:ease-out motion-reduce:transition-none ${detailOpen ? 'lg:translate-x-0' : 'lg:translate-x-1/2'}`}>
+      <div className={`lg:w-[432px] lg:shrink-0 lg:transition-transform lg:duration-300 lg:ease-out motion-reduce:transition-none ${detailOpen ? 'lg:translate-x-0' : 'lg:translate-x-[264px]'}`}>
       {/* Top Header Bar */}
       <div className="sticky top-0 z-30 bg-white border-b border-[#E6E2EE] shadow-2xs lg:static">
         <div className="p-3 pb-2 flex items-center justify-between">
@@ -848,7 +848,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
 
       </div>
       {/* 右の列(PC の幅): 詳細(選んだ列車・重なった列車・駅)。スマホでは、これまでどおり、下から出るシート */}
-      <div className={`lg:w-1/2 lg:shrink-0 lg:sticky lg:top-16 lg:pt-4 lg:pr-4 lg:space-y-3 lg:transition-all lg:duration-300 lg:ease-out motion-reduce:transition-none ${detailOpen ? 'lg:translate-x-0 lg:opacity-100' : 'lg:translate-x-full lg:opacity-0 lg:pointer-events-none'}`}>
+      <div className={`lg:w-[480px] lg:ml-6 lg:shrink-0 lg:sticky lg:top-16 lg:pt-4 lg:space-y-3 lg:transition-all lg:duration-300 lg:ease-out motion-reduce:transition-none ${detailOpen ? 'lg:translate-x-0 lg:opacity-100' : 'lg:translate-x-full lg:opacity-0 lg:pointer-events-none'}`}>
       {/* Station Transfer Guide Sheet (駅の乗り換え情報カード - 列車詳細と同等のボトムシート表示) */}
       {shownStation && (
         <div
