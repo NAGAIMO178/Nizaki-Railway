@@ -582,7 +582,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
 
   return (
     <div
-      className="min-h-screen bg-[#F9F8FD] text-[#221C35] pb-24 max-w-md lg:max-w-[960px] mx-auto relative font-sans lg:flex lg:items-start lg:overflow-x-clip"
+      className="min-h-screen bg-[#F9F8FD] text-[#221C35] pb-24 max-w-md lg:max-w-[960px] mx-auto relative font-sans lg:flex lg:items-start lg:overflow-x-clip lg:bg-transparent"
       onClick={(e) => {
         // 何もないところをタップしたら、選んだ列車(枠と赤い三角)を外す。列車・札・ボタンと、下の詳細のシートは、そのまま
         const t = e.target as HTMLElement;
@@ -592,7 +592,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
       }}
     >
       {/* 左の列(PC の幅): 路線のタブ+図 */}
-      <div className={`lg:w-[432px] lg:shrink-0 lg:transition-transform lg:duration-300 lg:ease-out motion-reduce:transition-none ${detailOpen ? 'lg:translate-x-0' : 'lg:translate-x-[264px]'}`}>
+      <div className={`lg:w-[432px] lg:bg-[#F9F8FD] lg:shrink-0 lg:transition-transform lg:duration-300 lg:ease-out motion-reduce:transition-none ${detailOpen ? 'lg:translate-x-0' : 'lg:translate-x-[264px]'}`}>
       {/* Top Header Bar */}
       <div className="sticky top-0 z-30 bg-white border-b border-[#E6E2EE] shadow-2xs lg:static">
         <div className="p-3 pb-2 flex items-center justify-between">

@@ -18,7 +18,7 @@ describe('PC 用のクラスは、lg: つきだけ(足してよいクラスの�
   });
   it('列車位置・列車の詳細', () => {
     expect(lgTokens(read('TrainLocationTab'))).toEqual(
-      ['lg:animate-none', 'lg:border', 'lg:duration-300', 'lg:ease-out', 'lg:flex', 'lg:hidden', 'lg:items-start', 'lg:max-h-[calc(100vh-11rem)]', 'lg:max-h-[calc(100vh-13rem)]', 'lg:max-w-[960px]', 'lg:max-w-none', 'lg:mx-0', 'lg:opacity-0', 'lg:opacity-100', 'lg:overflow-x-clip', 'lg:pointer-events-none', 'lg:pt-4', 'lg:rounded-2xl', 'lg:shrink-0', 'lg:space-y-3', 'lg:static', 'lg:sticky', 'lg:top-16', 'lg:transition-all', 'lg:transition-transform', 'lg:translate-x-0', 'lg:translate-x-[264px]', 'lg:translate-x-full', 'lg:w-[432px]', 'lg:w-[480px]', 'lg:ml-6'].sort()
+      ['lg:animate-none', 'lg:bg-[#F9F8FD]', 'lg:bg-transparent', 'lg:border', 'lg:duration-300', 'lg:ease-out', 'lg:flex', 'lg:hidden', 'lg:items-start', 'lg:max-h-[calc(100vh-11rem)]', 'lg:max-h-[calc(100vh-13rem)]', 'lg:max-w-[960px]', 'lg:max-w-none', 'lg:mx-0', 'lg:opacity-0', 'lg:opacity-100', 'lg:overflow-x-clip', 'lg:pointer-events-none', 'lg:pt-4', 'lg:rounded-2xl', 'lg:shrink-0', 'lg:space-y-3', 'lg:static', 'lg:sticky', 'lg:top-16', 'lg:transition-all', 'lg:transition-transform', 'lg:translate-x-0', 'lg:translate-x-[264px]', 'lg:translate-x-full', 'lg:w-[432px]', 'lg:w-[480px]', 'lg:ml-6'].sort()
     );
     expect(lgTokens(read('TrainDetailV2'))).toEqual(['lg:hidden', 'lg:max-h-[calc(100vh-13rem)]']);
   });
@@ -107,11 +107,16 @@ describe('時刻表: 時間帯の分け目と、表の中身', () => {
 describe('列車位置(PC の幅): 未選択=図が中央 / 選択=図が左・右に詳細 / 閉じる=中央へ戻る', () => {
   const s = read('TrainLocationTab');
   it('根は、PC の幅だけ横並び(はみ出しは切る)。左の列は幅 432px 固定(選ぶ前後で変えない)で、選んでいないときは中央(右へ 264px ずらす)、選んだときは左(ずらさない)。0.3秒でなめらかに', () => {
-    expect(s).toContain('relative font-sans lg:flex lg:items-start lg:overflow-x-clip"');
-    expect(s).toContain("lg:w-[432px] lg:shrink-0 lg:transition-transform lg:duration-300 lg:ease-out motion-reduce:transition-none ${detailOpen ? 'lg:translate-x-0' : 'lg:translate-x-[264px]'}");
+    expect(s).toContain('relative font-sans lg:flex lg:items-start lg:overflow-x-clip lg:bg-transparent"');
+    expect(s).toContain("lg:w-[432px] lg:bg-[#F9F8FD] lg:shrink-0 lg:transition-transform lg:duration-300 lg:ease-out motion-reduce:transition-none ${detailOpen ? 'lg:translate-x-0' : 'lg:translate-x-[264px]'}");
+  });
+  it('空き地を出さない: 根の背景(明るい色)は PC では透明にし、図の列(432px)だけが、明るい背景を持つ(図の左右に、明るい何もない領域が出ない)', () => {
+    expect(s).toContain('lg:overflow-x-clip lg:bg-transparent"');
+    expect(s).toContain('lg:w-[432px] lg:bg-[#F9F8FD] lg:shrink-0');
+    expect(s).toContain('pb-24 max-w-md lg:max-w-[960px] mx-auto relative font-sans');
   });
   it('図(432px)と詳細(480px)の間に、24px のすき間(432+24+480=936px で、本体の 960px に収まる)', () => {
-    expect(s).toContain('lg:w-[432px] lg:shrink-0');
+    expect(s).toContain('lg:w-[432px] lg:bg-[#F9F8FD] lg:shrink-0');
     expect(s).toContain('lg:w-[480px] lg:ml-6 lg:shrink-0');
     expect((960 - 432) / 2).toBe(264);
     expect(432 + 24 + 480).toBeLessThanOrEqual(960);
@@ -142,7 +147,7 @@ describe('列車位置(PC の幅): 未選択=図が中央 / 選択=図が左・�
     expect(s.split('onClick={clearTrainSelection}\n              className="p-1.5 rounded-lg text-[#6B6380] hover:bg-[#F4F3F8] cursor-pointer"').length - 1).toBe(2);
   });
   it('スマホのクラスは変わらない: 左右の列の入れ物のクラスは、すべて lg: か motion-reduce: つき(スマホでは何も効かない=これまでと同じ)', () => {
-    for (const marker of ['<div className={`lg:w-[432px] lg:shrink-0 lg:transition-transform', '<div className={`lg:w-[480px] lg:ml-6 lg:shrink-0 lg:sticky']) {
+    for (const marker of ['<div className={`lg:w-[432px] lg:bg-[#F9F8FD] lg:shrink-0 lg:transition-transform', '<div className={`lg:w-[480px] lg:ml-6 lg:shrink-0 lg:sticky']) {
       const i = s.indexOf(marker);
       expect(i, marker).toBeGreaterThan(-1);
       const tpl = s.slice(i + '<div className={`'.length, s.indexOf('`}>', i));
