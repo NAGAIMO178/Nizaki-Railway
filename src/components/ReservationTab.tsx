@@ -510,7 +510,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
   const ribbon = reservationRibbon(activeOrder?.seatType, ticketSummary);
 
   return (
-    <div className="space-y-4 text-[#221C35] max-w-md mx-auto p-4 pb-20 animate-fadeIn">
+    <div className="space-y-4 text-[#221C35] max-w-md lg:max-w-[960px] mx-auto p-4 pb-20 animate-fadeIn">
       {/* Title Header */}
       {/* 公開後は、上の切り替えに「特急券・座席」とあるので、見出しも「予約済み」の札も出さない(状態は、カードの右上の札に出す) */}
       {!isLaunched() && (

@@ -145,7 +145,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
   // =========================================================================
   if (selectedEventId === 'portal' || (isLaunched() && selectedEventId === 'kaitan')) {
     return (
-      <div className="max-w-3xl mx-auto px-4 py-5 pb-24 space-y-5 animate-fadeIn text-[#221C35]">
+      <div className="max-w-3xl lg:max-w-[960px] mx-auto px-4 py-5 pb-24 space-y-5 animate-fadeIn text-[#221C35]">
         {/* 1. 画面タイトルヘッダー（他タブと統一されたアイデンティティ） */}
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">

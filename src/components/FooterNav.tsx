@@ -47,7 +47,7 @@ export const FooterNav: React.FC<FooterNavProps> = ({
 
   return (
     <nav className="bg-white/95 backdrop-blur-md text-[#221C35] border-t border-[#E6E2EE] fixed bottom-0 left-0 right-0 z-40 px-2 py-1.5 shadow-md">
-      <div className="max-w-md mx-auto flex items-center justify-around">
+      <div className={`max-w-md mx-auto flex items-center justify-around${activeTab !== 'home' ? ' lg:max-w-[960px]' : ''}`}>
         {tabs.map((tab) => {
           const isActive = activeTab === tab.id;
 

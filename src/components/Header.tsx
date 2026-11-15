@@ -28,13 +28,14 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenMyPage,
   onOpenMenu,
   onGoHome,
+  activeTab,
   isLoggedIn = false,
   currentUser = null,
   onOpenLoginModal,
 }) => {
   return (
     <header className="bg-white border-b border-[#E6E2EE] text-[#221C35] sticky top-0 z-40 shadow-xs transition-all">
-      <div className="max-w-4xl mx-auto px-4 py-2.5">
+      <div className={`max-w-4xl mx-auto px-4 py-2.5${activeTab && activeTab !== 'home' ? ' lg:max-w-[960px]' : ''}`}>
         {/* Main Header Bar */}
         <div className="flex items-center justify-between gap-3">
           {/* Left: App Logo & Header Title */}
