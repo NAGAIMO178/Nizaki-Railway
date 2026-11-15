@@ -125,33 +125,74 @@ describe('version.json の中身(ビルド)', () => {
   });
 });
 
-describe('高宮線の公開のお知らせ: 公開の時刻(TK_LAUNCH_AT)より前は出さず、その時刻から出す', () => {
-  // 公開の PR(4.6.0)と、最寄り駅の PR(4.6.1)・位置情報の設定の PR(4.6.2)で、release-notes.json に入れた形(5行)。公開の日時は、高宮線のスイッチと同じものを使う
+// お知らせは、機能ごとに、そのつど届ける。ただし、高宮線の予告だけは、公開の時刻(TK_LAUNCH_AT)まで隠す(その分だけ、別の版・別の組にして、showAfter をつける)。
+//  形A(いまの版 4.6.2): showAfter なし・高宮線の言葉なし。すでに出した機能のお知らせが、すぐ届く
+//  形B(公開の前日にマージする版 4.7.0): showAfter あり(=TK_LAUNCH_AT)・高宮線の2行だけ
+const NOTES_A = ['マイページに、名札を出せるようにしました', '駅を選ぶとき、最寄り駅を探せるようにしました', '設定から、位置情報を許可できるようにしました'];
+const NOTES_B = ['新しい路線「高宮線」ができました', '有料特急「すみかぜ」を、予約できるようになりました'];
+const FORM_A = { version: '4.6.2', notes: NOTES_A };
+const FORM_B = { version: '4.7.0', notes: NOTES_B, showAfter: TK_LAUNCH_AT };
+
+describe('形A: すぐ届くお知らせ(showAfter なし・3行・高宮線の言葉なし)', () => {
+  const out = JSON.parse(buildVersionJson(FORM_A.version, { notes: FORM_A.notes }));
+
+  it('前の版(4.6.1・4.6.0 など)のアプリには、公開の時刻より前でも、すぐ出す(保留しない)', () => {
+    const AT = Date.parse(TK_LAUNCH_AT as string);
+    for (const app of ['4.6.1', '4.6.0', '4.5.1']) {
+      for (const t of [0, AT - 1, AT, AT + 1]) expect(evaluateUpdate(out, app, t), `${app} @ ${t}`).toEqual({ kind: 'show', version: '4.6.2', notes: NOTES_A });
+    }
+  });
+
+  it('すでに 4.6.2 のアプリには、出さない', () => {
+    expect(evaluateUpdate(out, '4.6.2', 0).kind).toBe('none');
+  });
+
+  it('showAfter は入らない(これまでと同じ { version, notes } の形)。高宮線の言葉は、1つも入っていない(公開の前に、予告が見えない)', () => {
+    expect(buildVersionJson(FORM_A.version, { notes: FORM_A.notes })).toBe(`{"version":"4.6.2","notes":${JSON.stringify(NOTES_A)}}`);
+    expect(JSON.stringify(out)).not.toMatch(/高宮|すみかぜ/);
+  });
+});
+
+describe('形B: 高宮線の公開のお知らせ(showAfter あり・2行)は、公開の時刻(TK_LAUNCH_AT)より前は出さず、その時刻から出す', () => {
   const AT = Date.parse(TK_LAUNCH_AT as string);
-  const out = JSON.parse(buildVersionJson('4.6.2', { notes: ['新しい路線「高宮線」ができました', '有料特急「すみかぜ」を、予約できるようになりました', 'マイページに、名札を出せるようにしました', '駅を選ぶとき、最寄り駅を探せるようにしました', '設定から、位置情報を許可できるようにしました'], showAfter: TK_LAUNCH_AT }));
+  const out = JSON.parse(buildVersionJson(FORM_B.version, { notes: FORM_B.notes, showAfter: FORM_B.showAfter }));
 
-  it('前の版のアプリには、公開の 1 ミリ秒前まで出さず(保留)、ちょうどの時刻とそのあとは出す', () => {
-    expect(evaluateUpdate(out, '4.5.1', AT - 1)).toEqual({ kind: 'held', showAtMs: AT });
-    expect(evaluateUpdate(out, '4.5.1', AT - 7 * 24 * 3600 * 1000)).toEqual({ kind: 'held', showAtMs: AT });
-    expect(evaluateUpdate(out, '4.5.1', AT)).toEqual({ kind: 'show', version: '4.6.2', notes: out.notes });
-    expect(evaluateUpdate(out, '4.5.1', AT + 3600 * 1000)).toEqual({ kind: 'show', version: '4.6.2', notes: out.notes });
-  });
-
-  it('すでに 4.6.0 を開いている端末にも、公開の時刻より前は出さず、その時刻から、5行のお知らせが届く', () => {
-    expect(out.notes).toHaveLength(5);
-    expect(evaluateUpdate(out, '4.6.0', AT - 1)).toEqual({ kind: 'held', showAtMs: AT });
-    expect(evaluateUpdate(out, '4.6.0', AT)).toEqual({ kind: 'show', version: '4.6.2', notes: out.notes });
-  });
-
-  it('いまの package.json の版と release-notes.json(5行・showAfter)が、この形と同じ', () => {
-    const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf-8'));
-    const notes = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'release-notes.json'), 'utf-8'));
-    expect(pkg.version).toBe('4.6.2');
-    expect(JSON.parse(buildVersionJson(pkg.version, notes))).toEqual(out);
+  it('前の版(4.6.2 など)のアプリには、公開の 1 ミリ秒前まで出さず(保留)、ちょうどの時刻とそのあとは出す', () => {
+    for (const app of ['4.6.2', '4.6.1', '4.5.1']) {
+      expect(evaluateUpdate(out, app, AT - 1), app).toEqual({ kind: 'held', showAtMs: AT });
+      expect(evaluateUpdate(out, app, AT - 7 * 24 * 3600 * 1000), app).toEqual({ kind: 'held', showAtMs: AT });
+      expect(evaluateUpdate(out, app, AT), app).toEqual({ kind: 'show', version: '4.7.0', notes: NOTES_B });
+      expect(evaluateUpdate(out, app, AT + 3600 * 1000), app).toEqual({ kind: 'show', version: '4.7.0', notes: NOTES_B });
+    }
   });
 
   it('すでに同じ版のアプリには、いつでも出さない', () => {
-    for (const t of [AT - 1, AT, AT + 1]) expect(evaluateUpdate(out, '4.6.2', t).kind).toBe('none');
+    for (const t of [AT - 1, AT, AT + 1]) expect(evaluateUpdate(out, '4.7.0', t).kind).toBe('none');
+  });
+
+  it('showAfter は、高宮線の公開の日時(TK_LAUNCH_AT)と同じ', () => {
+    expect(Date.parse(out.showAfter)).toBe(AT);
+  });
+});
+
+describe('いまの package.json と release-notes.json は、形A か 形B のどちらか', () => {
+  const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf-8')) as { version: string };
+  const notes = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'release-notes.json'), 'utf-8')) as { notes: string[]; showAfter?: string };
+  const out = JSON.parse(buildVersionJson(pkg.version, notes));
+
+  it('出る version.json が、形A(4.6.2)か 形B(4.7.0)と、そのまま同じ', () => {
+    const a = JSON.parse(buildVersionJson(FORM_A.version, { notes: FORM_A.notes }));
+    const b = JSON.parse(buildVersionJson(FORM_B.version, { notes: FORM_B.notes, showAfter: FORM_B.showAfter }));
+    expect([a, b]).toContainEqual(out);
+  });
+
+  it('showAfter が無い(すぐ届く)形に、高宮線の言葉が入っていない。showAfter がある形は、高宮線の行だけ', () => {
+    if (notes.showAfter === undefined) {
+      expect(JSON.stringify(notes.notes)).not.toMatch(/高宮|すみかぜ/);
+    } else {
+      expect(Date.parse(notes.showAfter)).toBe(Date.parse(TK_LAUNCH_AT as string));
+      for (const n of notes.notes) expect(n).toMatch(/高宮|すみかぜ/);
+    }
   });
 });
 

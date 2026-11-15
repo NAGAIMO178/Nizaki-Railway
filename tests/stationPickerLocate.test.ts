@@ -184,10 +184,4 @@ describe('つなぎ(出発・到着・経由の同じシート)', () => {
     expect(route).toContain("nearest={picker === 'from' ? nearest : undefined}");
     expect(route).toContain('if (!stations || triedLocate.current || hadFrom.current) return;');
   });
-
-  it('お知らせの4行目は、最寄り駅を探せるようになったこと。showAfter は、そのまま', () => {
-    const notes = JSON.parse(read('release-notes.json')) as { notes: string[]; showAfter: string };
-    expect(notes.notes[3]).toBe('駅を選ぶとき、最寄り駅を探せるようにしました');
-    expect(notes.showAfter).toBe('2026-11-20T08:00:00+09:00');
-  });
 });

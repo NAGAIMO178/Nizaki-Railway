@@ -151,12 +151,4 @@ describe('守ること', () => {
       expect(src, f.join('/')).not.toMatch(/localStorage|sessionStorage|indexedDB|fetch\(|callGas|latitude|longitude|coords/);
     }
   });
-
-  it('版 4.6.2・お知らせ5行(5行目が位置情報)・showAfter そのまま', () => {
-    expect(JSON.parse(read('package.json')).version).toBe('4.6.2');
-    const notes = JSON.parse(read('release-notes.json')) as { notes: string[]; showAfter: string };
-    expect(notes.notes).toHaveLength(5);
-    expect(notes.notes[4]).toBe('設定から、位置情報を許可できるようにしました');
-    expect(notes.showAfter).toBe('2026-11-20T08:00:00+09:00');
-  });
 });
