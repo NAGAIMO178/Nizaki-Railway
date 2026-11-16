@@ -60,7 +60,7 @@ export const TrainDetailV2: React.FC<TrainDetailV2Props> = ({ train, lineName, o
   const card = 'bg-[#F9F8FD] rounded-xl border border-[#E6E2EE] overflow-hidden';
 
   return (
-    <div ref={contentRef} className={embedded ? 'space-y-3' : 'max-h-[62vh] pc:max-h-[calc(100vh-13rem)] overflow-y-auto overscroll-contain -mx-1 px-1 space-y-3'}>
+    <div ref={contentRef} className={embedded ? 'space-y-3' : 'max-h-[62vh] pc:max-h-[calc(100vh-17rem)] overflow-y-auto overscroll-contain -mx-1 px-1 space-y-3'}>
       {/* 見出しの帯: 有料の特急は列車名、ほかは路線名(路線の色は、小さな丸) */}
       <div className={`rounded-xl bg-[#5B21B6] text-white px-3.5 py-2 text-sm font-black flex items-center gap-2 shadow-xs${train.paid && train.expressBand ? '' : ' pc:hidden'}`}>
         {train.paid && train.expressBand ? (
