@@ -3,6 +3,7 @@
 //  - contentRef を、シートの中のスクロールする箱に付けると、箱が一番上までスクロールされているときに、下へ引いても閉じられる。
 //    (一番上でないときは、ふつうにスクロールする)
 //  - style を、シート本体に付ける。
+//  - enabled を false にすると(PC 表示のとき)、引いて閉じる動きは、どれも付けない。
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
 
@@ -12,7 +13,7 @@ const TAP_MOVE_PX = 6; // これ以下の動きは、「ちょんと押した」
 const TAP_MAX_MS = 300;
 const CLOSE_ANIMATION_MS = 180;
 
-export function useDragToDismiss(onDismiss: () => void) {
+export function useDragToDismiss(onDismiss: () => void, enabled = true) {
   const [dragY, setDragY] = useState(0);
   const [dragging, setDragging] = useState(false);
   const dismissRef = useRef(onDismiss);
@@ -71,7 +72,7 @@ export function useDragToDismiss(onDismiss: () => void) {
     }, CLOSE_ANIMATION_MS);
   };
 
-  const handleProps = {
+  const dragHandleProps = {
     onPointerDown: (e: ReactPointerEvent) => {
       begin(e.clientY);
       try {
@@ -104,7 +105,7 @@ export function useDragToDismiss(onDismiss: () => void) {
 
   useEffect(() => {
     const el = contentRef.current;
-    if (!el) return;
+    if (!el || !enabled) return;
     let mode: 'idle' | 'undecided' | 'drag' | 'scroll' = 'idle';
     let startY = 0;
 
@@ -157,5 +158,7 @@ export function useDragToDismiss(onDismiss: () => void) {
     transition: dragging ? 'none' : `transform ${CLOSE_ANIMATION_MS}ms ease`,
   };
 
-  return { handleProps, contentRef: attachContent, style };
+  // enabled=false(PC 表示)のときは、引いて閉じる動きを、まったく付けない(閉じるのは、暗幕のクリック・Escape・閉じるボタン)
+  if (!enabled) return { handleProps: {}, contentRef: attachContent, style: {} };
+  return { handleProps: dragHandleProps, contentRef: attachContent, style };
 }

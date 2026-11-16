@@ -1177,7 +1177,7 @@ export const MysteryTrainEvent: React.FC<MysteryTrainEventProps> = ({
       {isStationModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-fadeIn font-sans">
           <div 
-            className="w-full max-w-2xl max-h-[85vh] rounded-xl border-2 border-amber-600/60 shadow-2xl flex flex-col overflow-hidden text-stone-200"
+            className="w-full max-w-2xl pc:max-w-[640px] max-h-[85vh] rounded-xl border-2 border-amber-600/60 shadow-2xl flex flex-col overflow-hidden text-stone-200"
             style={{
               background: 'linear-gradient(180deg, #1C1626 0%, #120E1A 100%)',
             }}
@@ -1279,7 +1279,7 @@ export const MysteryTrainEvent: React.FC<MysteryTrainEventProps> = ({
       {judgementResult && (
         <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn font-sans">
           <div 
-            className="w-full max-w-md rounded-xl border-2 p-5 sm:p-6 text-stone-100 shadow-2xl space-y-4 animate-scaleUp relative overflow-hidden"
+            className="w-full max-w-md pc:max-w-[480px] rounded-xl border-2 p-5 sm:p-6 text-stone-100 shadow-2xl space-y-4 animate-scaleUp relative overflow-hidden"
             style={{
               background: judgementResult.status === 'correct'
                 ? 'radial-gradient(ellipse at 50% 10%, #291B12 0%, #120A07 100%)'

@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Loader, Search } from 'lucide-react';
+import { Check, Loader, Search, X } from 'lucide-react';
 import { REGISTERABLE_LINES } from './MyStationRegisterCard';
 import { loadTimetableLines } from '../utils/diaTimetable';
 import type { TimetableLine } from '../utils/diaTimetable';
 import { buildPickerData, filterPickerStations, loadRecentStations, searchNearestForPicker, showPickerExtras } from '../utils/stationPicker';
 import type { PickerStation } from '../utils/stationPicker';
 import { useDragToDismiss } from '../utils/useDragToDismiss';
+import { usePcLayout } from '../utils/usePcLayout';
 
 import { useBackClose } from '../utils/backClose';
 interface StationPickerSheetProps {
@@ -23,7 +24,8 @@ interface StationPickerSheetProps {
 const lineColor = (code: string): string => REGISTERABLE_LINES.find((l) => l.code === code)?.color ?? '#8B5CF6';
 
 export const StationPickerSheet: React.FC<StationPickerSheetProps> = ({ isOpen, title, value, stations, exclude = [], nearest, onLocate, onSelect, onClose }) => {
-  const drag = useDragToDismiss(onClose);
+  const pcLayout = usePcLayout(); // PC 表示のときは、中央の枠。下へ引いて閉じる動きは付けない
+  const drag = useDragToDismiss(onClose, !pcLayout);
   const [lines, setLines] = useState<TimetableLine[] | null>(null);
   const [query, setQuery] = useState('');
   const [lineCode, setLineCode] = useState<string>('all');
@@ -137,13 +139,19 @@ export const StationPickerSheet: React.FC<StationPickerSheetProps> = ({ isOpen, 
   const showFinding = showExtras && finding; // 探している間だけ、小さく出す(見つからなければ、何も出さない)
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end bg-slate-900/40 animate-fadeIn" role="dialog" aria-modal="true" aria-label={title}>
-      <button type="button" onClick={onClose} className="flex-1 cursor-default" aria-label={`${title}を選ぶのを閉じる`} />
-      <div style={drag.style} className="w-full max-w-md mx-auto bg-white rounded-t-3xl shadow-2xl h-[85vh] flex flex-col">
-        <div {...drag.handleProps} className="shrink-0 px-4 pt-3 pb-1 cursor-grab active:cursor-grabbing select-none">
+    <div className="fixed inset-0 z-50 flex flex-col justify-end bg-slate-900/40 animate-fadeIn pc:justify-center pc:items-center pc:p-4" role="dialog" aria-modal="true" aria-label={title}>
+      <button type="button" onClick={onClose} className="flex-1 cursor-default pc:absolute pc:inset-0 pc:flex-none" aria-label={`${title}を選ぶのを閉じる`} />
+      <div style={drag.style} className="w-full max-w-md mx-auto bg-white rounded-t-3xl shadow-2xl h-[85vh] flex flex-col pc:relative pc:max-w-[560px] pc:rounded-3xl pc:h-auto pc:max-h-[85vh]">
+        <div {...drag.handleProps} className="shrink-0 px-4 pt-3 pb-1 cursor-grab active:cursor-grabbing select-none pc:hidden">
           <div className="mx-auto h-1.5 w-12 rounded-full bg-[#D1C9E3]" />
         </div>
-        <div className="shrink-0 mx-4 my-1.5 flex items-center gap-2 rounded-xl bg-[#F4F3F8] px-3">
+        <div className="hidden pc:flex shrink-0 items-center justify-between px-5 pt-4">
+          <h3 className="text-sm font-black text-[#221C35]">{title}</h3>
+          <button type="button" onClick={onClose} aria-label="閉じる" className="p-1 rounded-lg text-[#6B6380] hover:bg-[#F4F3F8] cursor-pointer">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="shrink-0 mx-4 my-1.5 flex items-center gap-2 rounded-xl bg-[#F4F3F8] px-3 pc:mt-2">
           <Search className="w-4 h-4 text-[#857D99] shrink-0" />
           <input
             ref={inputRef}

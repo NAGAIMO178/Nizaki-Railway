@@ -248,7 +248,7 @@ export const LaunchWelcome: React.FC<LaunchWelcomeProps> = ({ cloudOn, ready, er
         className="fixed inset-x-0 bottom-0 z-[90] flex justify-center p-3"
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)' }}
       >
-        <div role="dialog" aria-label="NIZAKI 2.0 のご案内" className="w-full max-w-sm rounded-2xl border border-[#E6E2EE] bg-white p-4 shadow-2xl">
+        <div role="dialog" aria-label="NIZAKI 2.0 のご案内" className="w-full max-w-sm rounded-2xl border border-[#E6E2EE] bg-white p-4 shadow-2xl pc:max-w-[384px]">
           <div className="flex items-center justify-between">
             <div className="text-xs font-bold text-[#6B6380]">
               {index + 1} / {total}
@@ -303,7 +303,7 @@ export const LaunchWelcome: React.FC<LaunchWelcomeProps> = ({ cloudOn, ready, er
 
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-label="NIZAKI 2.0 公開記念ボーナス">
-      <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
+      <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl pc:max-w-[384px] pc:max-h-[85vh] pc:overflow-y-auto">
         <div className="text-center">
           <div className="text-xs font-bold text-[#6B6380]">公開記念</div>
           <h2 className="mt-1 text-lg font-bold text-[#221C35]">NIZAKI 2.0 公開記念ボーナス</h2>

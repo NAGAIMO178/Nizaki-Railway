@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
+import { X } from 'lucide-react';
 import { useDragToDismiss } from '../utils/useDragToDismiss';
+import { usePcLayout } from '../utils/usePcLayout';
 import { ArrivalTime, ArrivalDay, arrivalFromDate, shiftArrival } from '../utils/arrivalInput';
 
 import { useBackClose } from '../utils/backClose';
@@ -17,7 +19,8 @@ const chipClass = 'flex-1 py-2.5 rounded-xl bg-[#F4F3F8] hover:bg-[#EFE8FA] text
 
 export const ArrivalTimeSheet: React.FC<ArrivalTimeSheetProps> = ({ isOpen, value, onApply, onClose }) => {
   const [draft, setDraft] = useState<ArrivalTime>(value);
-  const drag = useDragToDismiss(onClose);
+  const pcLayout = usePcLayout(); // PC 表示のときは、中央の枠。下へ引いて閉じる動きは付けない
+  const drag = useDragToDismiss(onClose, !pcLayout);
 
   useEffect(() => {
     if (isOpen) setDraft(value);
@@ -52,13 +55,18 @@ export const ArrivalTimeSheet: React.FC<ArrivalTimeSheetProps> = ({ isOpen, valu
   const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end bg-slate-900/40 animate-fadeIn" role="dialog" aria-modal="true" aria-label="到着の日時">
-      <button type="button" onClick={onClose} className="flex-1 cursor-default" aria-label="閉じる" />
-      <div style={drag.style} className="w-full max-w-md mx-auto bg-white rounded-t-3xl shadow-2xl">
-        <div {...drag.handleProps} className="shrink-0 px-4 pt-3 pb-2 cursor-grab active:cursor-grabbing select-none">
+    <div className="fixed inset-0 z-50 flex flex-col justify-end bg-slate-900/40 animate-fadeIn pc:justify-center pc:items-center pc:p-4" role="dialog" aria-modal="true" aria-label="到着の日時">
+      <button type="button" onClick={onClose} className="flex-1 cursor-default pc:absolute pc:inset-0 pc:flex-none" aria-label="閉じる" />
+      <div style={drag.style} className="w-full max-w-md mx-auto bg-white rounded-t-3xl shadow-2xl pc:relative pc:max-w-[480px] pc:rounded-3xl pc:max-h-[85vh] pc:overflow-y-auto">
+        <div {...drag.handleProps} className="shrink-0 px-4 pt-3 pb-2 cursor-grab active:cursor-grabbing select-none pc:hidden">
           <div className="mx-auto h-1.5 w-12 rounded-full bg-[#D1C9E3]" />
         </div>
-        <div className="px-4 pb-6 space-y-3">
+        <div className="px-4 pb-6 space-y-3 pc:pt-4">
+          <div className="hidden pc:flex justify-end -mb-1">
+            <button type="button" onClick={onClose} aria-label="閉じる" className="p-1 rounded-lg text-[#6B6380] hover:bg-[#F4F3F8] cursor-pointer">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
           <div className="grid grid-cols-[1.6fr_1fr_1fr] gap-2">
             <select
               className={selectClass}

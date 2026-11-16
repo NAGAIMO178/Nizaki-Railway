@@ -41,7 +41,7 @@ export const UpdatePrompt: React.FC = () => {
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-lg rounded-2xl bg-[#131a27] p-6 text-white shadow-2xl">
+      <div className="w-full max-w-lg rounded-2xl bg-[#131a27] p-6 text-white shadow-2xl pc:max-w-[384px] pc:max-h-[85vh] pc:overflow-y-auto">
         <h2 className="text-center text-lg font-bold">新しいバージョンが利用できます</h2>
         <p className="mt-4 text-sm leading-relaxed">
           最新の機能を反映するには更新が必要です。「今すぐ更新」ボタンを押してください。

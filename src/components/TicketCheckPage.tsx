@@ -153,7 +153,7 @@ export const TicketCheckPage: React.FC<{ token: string }> = ({ token }) => {
 
       {confirming !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="利用の確認">
-          <div className="w-full max-w-xs bg-white rounded-3xl border border-[#E5E2EE] shadow-2xl p-6 text-center">
+          <div className="w-full max-w-xs pc:max-w-[384px] bg-white rounded-3xl border border-[#E5E2EE] shadow-2xl p-6 text-center">
             <h2 className="text-lg font-black text-[#221C35]">{confirming ? `${seatDisplayName(confirming)} を利用しますか?` : '利用しますか?'}</h2>
             <div className="flex gap-2 mt-5">
               <button

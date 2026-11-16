@@ -59,7 +59,7 @@ export const RouteMapModal: React.FC<RouteMapModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/70 backdrop-blur-xs animate-fadeIn">
-      <div className="bg-white text-[#221C35] w-full max-w-5xl rounded-3xl border border-[#E6E2EE] shadow-2xl overflow-hidden flex flex-col h-[92vh]">
+      <div className="bg-white text-[#221C35] w-full max-w-5xl rounded-3xl border border-[#E6E2EE] shadow-2xl overflow-hidden flex flex-col h-[92vh] pc:max-w-[1000px] pc:h-[85vh]">
         {/* Modal Header */}
         <div className="bg-[#F9F8FD] px-4 py-3 border-b border-[#E6E2EE] flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">

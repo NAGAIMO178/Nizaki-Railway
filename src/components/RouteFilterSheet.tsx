@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { RouteOptions } from '../utils/routeOptions';
 import { useDragToDismiss } from '../utils/useDragToDismiss';
+import { usePcLayout } from '../utils/usePcLayout';
 
 import { useBackClose } from '../utils/backClose';
 interface RouteFilterSheetProps {
@@ -55,7 +56,8 @@ function Segment<T extends string | number>({
 }
 
 export const RouteFilterSheet: React.FC<RouteFilterSheetProps> = ({ isOpen, options, onChange, onClose }) => {
-  const drag = useDragToDismiss(onClose);
+  const pcLayout = usePcLayout(); // PC 表示のときは、中央の枠。下へ引いて閉じる動きは付けない
+  const drag = useDragToDismiss(onClose, !pcLayout);
 
   // シートを開いているあいだは、うしろの画面をスクロールさせない
   useEffect(() => {
@@ -84,12 +86,12 @@ export const RouteFilterSheet: React.FC<RouteFilterSheetProps> = ({ isOpen, opti
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end bg-slate-900/40 animate-fadeIn" role="dialog" aria-modal="true" aria-label="絞り込み">
-      <button type="button" onClick={onClose} className="flex-1 cursor-default" aria-label="絞り込みを閉じる" />
-      <div style={drag.style} className="w-full max-w-md mx-auto bg-white rounded-t-3xl shadow-2xl max-h-[85vh] flex flex-col">
+    <div className="fixed inset-0 z-50 flex flex-col justify-end bg-slate-900/40 animate-fadeIn pc:justify-center pc:items-center pc:p-4" role="dialog" aria-modal="true" aria-label="絞り込み">
+      <button type="button" onClick={onClose} className="flex-1 cursor-default pc:absolute pc:inset-0 pc:flex-none" aria-label="絞り込みを閉じる" />
+      <div style={drag.style} className="w-full max-w-md mx-auto bg-white rounded-t-3xl shadow-2xl max-h-[85vh] flex flex-col pc:relative pc:max-w-[480px] pc:rounded-3xl">
         {/* つまみと見出し: ここを下に引くと、閉じる */}
-        <div {...drag.handleProps} className="shrink-0 px-4 pt-3 pb-2 cursor-grab active:cursor-grabbing select-none">
-          <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-[#D1C9E3]" />
+        <div {...drag.handleProps} className="shrink-0 px-4 pt-3 pb-2 cursor-grab active:cursor-grabbing select-none pc:cursor-default pc:pt-5">
+          <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-[#D1C9E3] pc:hidden" />
           <h3 className="text-sm font-black text-[#221C35]">絞り込み</h3>
         </div>
 

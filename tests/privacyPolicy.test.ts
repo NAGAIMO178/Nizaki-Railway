@@ -27,7 +27,8 @@ describe('公開前', () => {
     beforeLaunch();
     win.location.search = '';
     localStorage.clear();
-    const h = createHash('sha256').update(html()).digest('hex');
+    // PC 用のクラス(pc: つき。PC 表示が出ていて幅が広いときだけ効く)は、取り除いて見る(スマホの画面は、1文字も変えない)
+    const h = createHash('sha256').update(html().replace(/ pc:[^\s"'`}]+/g, '')).digest('hex');
     expect(h).toBe('b1fb4f39108bdfac750e72b363460a6809125cb9731acdae40d266d46c60a7e1');
   });
 });

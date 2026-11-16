@@ -1256,7 +1256,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
          ───────────────────────────────────────────────────────────── */}
       {isCancelModalOpen && activeOrder && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-fadeIn">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-4 shadow-2xl border border-[#E5E2EE] relative animate-scaleUp">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-4 shadow-2xl border border-[#E5E2EE] relative animate-scaleUp pc:max-w-[384px] pc:max-h-[85vh] pc:overflow-y-auto">
             {/* Close Cross Button */}
             <button
               onClick={() => setIsCancelModalOpen(false)}

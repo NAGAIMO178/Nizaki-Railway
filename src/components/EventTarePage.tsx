@@ -453,7 +453,7 @@ const EventTarePageBody: React.FC<EventTarePageProps & { onRestart: () => void }
       </div>
       {confirmReset && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 px-6" role="alertdialog" aria-modal="true" aria-label={UI.resetAsk}>
-          <div className="w-full max-w-xs rounded-2xl border border-amber-600/35 bg-[#15111a] p-4 font-sans">
+          <div className="w-full max-w-xs pc:max-w-[384px] rounded-2xl border border-amber-600/35 bg-[#15111a] p-4 font-sans">
             <p className="text-sm font-bold text-stone-100">{UI.resetAsk}</p>
             <div className="mt-4 flex gap-2">
               <button type="button" onClick={() => setConfirmReset(false)} className="h-11 flex-1 rounded-xl border border-stone-600 text-sm font-bold text-stone-300 cursor-pointer">

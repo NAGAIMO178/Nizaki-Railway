@@ -237,7 +237,7 @@ export const EDeliveryModal: React.FC<EDeliveryModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-slate-900/50 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-white text-[#221C35] w-full max-w-lg rounded-3xl border border-[#E6E2EE] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="bg-white text-[#221C35] w-full max-w-lg rounded-3xl border border-[#E6E2EE] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] pc:max-w-[640px] pc:max-h-[85vh]">
         {/* Modal Header */}
         <div className="bg-gradient-to-r from-[#F5F2FA] via-[#EFE8FA] to-[#F5F2FA] p-4 border-b border-[#E6E2EE] flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3 min-w-0">

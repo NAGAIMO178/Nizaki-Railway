@@ -50,7 +50,8 @@ describe('PC 用のクラスは、pc: だけ(lg: では、書かない)', () => 
   });
 
   it('予約タブ(特急券・座席/デリバリー)は、広げない: PC 用の指定が、1つもない(ReservationTab・EquipTab・予約の種類の切り替えの枠)', () => {
-    for (const f of ['ReservationTab', 'EquipTab', 'SeatSelectionModal', 'EDeliveryModal', 'SeatList']) expect(read('src', 'components', `${f}.tsx`), f).not.toMatch(/\bpc:/);
+    // (予約タブの画面・席の一覧は、PC 用の指定なし。ReservationTab の中のキャンセル確認、座席選択・デリバリー注文のモーダルは、段階3で、中央の枠の幅だけ pc: がある: tests/pcStage3.test.ts)
+    for (const f of ['EquipTab', 'SeatList']) expect(read('src', 'components', `${f}.tsx`), f).not.toMatch(/\bpc:/);
     const app = read('src/App.tsx');
     expect(app).toContain('<div className="max-w-md mx-auto px-4">\n              <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[#E6E2EE]" role="tablist" aria-label="予約の種類">');
     expect(app).toContain('<div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-28 md:pb-12">');
