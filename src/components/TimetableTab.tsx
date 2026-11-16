@@ -296,7 +296,10 @@ export const TimetableTab: React.FC<{ onReserve?: (preset: Omit<ReservationPrese
     return (
       <div className="max-w-md pc:max-w-[960px] mx-auto px-4 py-4 pb-28 space-y-3 animate-fadeIn">
         {modeToggle}
-        <RouteSearch onReserve={onReserve} />
+        {/* PC の幅だけ: 経路検索の中身は、中央の 640px に寄せる(切り替えとヘッダー・フッターは、そのまま) */}
+        <div className="pc:max-w-[640px] pc:mx-auto">
+          <RouteSearch onReserve={onReserve} />
+        </div>
       </div>
     );
   }
