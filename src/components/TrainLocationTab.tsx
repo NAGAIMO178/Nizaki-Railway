@@ -914,7 +914,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
               <X className="w-5 h-5" />
             </button>
           </div>
-          <div ref={trainSheetDrag.contentRef} className="max-h-[62vh] pc:max-h-[calc(100vh-13rem)] overflow-y-auto overscroll-contain -mx-1 px-1 space-y-5">
+          <div ref={trainSheetDrag.contentRef} className="max-h-[62vh] pc:max-h-[calc(100vh-17rem)] overflow-y-auto overscroll-contain -mx-1 px-1 space-y-5">
             {shownGroup.map((t, i) => (
               <TrainDetailV2
                 key={t.id}

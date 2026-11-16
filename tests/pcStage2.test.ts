@@ -18,9 +18,9 @@ describe('PC 用のクラスは、pc: つきだけ(足してよいクラスの�
   });
   it('列車位置・列車の詳細', () => {
     expect(lgTokens(read('TrainLocationTab'))).toEqual(
-      ['pc:animate-none', 'pc:bg-[#F9F8FD]', 'pc:bg-transparent', 'pc:border', 'pc:duration-300', 'pc:ease-out', 'pc:flex', 'pc:hidden', 'pc:items-start', 'pc:max-h-[calc(100vh-11rem)]', 'pc:max-h-[calc(100vh-13rem)]', 'pc:max-w-[960px]', 'pc:max-w-none', 'pc:mx-0', 'pc:opacity-0', 'pc:opacity-100', 'pc:overflow-x-clip', 'pc:pointer-events-none', 'pc:pt-4', 'pc:rounded-2xl', 'pc:shrink-0', 'pc:space-y-3', 'pc:static', 'pc:sticky', 'pc:top-16', 'pc:transition-all', 'pc:transition-transform', 'pc:translate-x-0', 'pc:translate-x-[264px]', 'pc:translate-x-full', 'pc:w-[432px]', 'pc:w-[480px]', 'pc:ml-6'].sort()
+      ['pc:animate-none', 'pc:bg-[#F9F8FD]', 'pc:bg-transparent', 'pc:border', 'pc:duration-300', 'pc:ease-out', 'pc:flex', 'pc:hidden', 'pc:items-start', 'pc:max-h-[calc(100vh-11rem)]', 'pc:max-h-[calc(100vh-17rem)]', 'pc:max-w-[960px]', 'pc:max-w-none', 'pc:mx-0', 'pc:opacity-0', 'pc:opacity-100', 'pc:overflow-x-clip', 'pc:pointer-events-none', 'pc:pt-4', 'pc:rounded-2xl', 'pc:shrink-0', 'pc:space-y-3', 'pc:static', 'pc:sticky', 'pc:top-16', 'pc:transition-all', 'pc:transition-transform', 'pc:translate-x-0', 'pc:translate-x-[264px]', 'pc:translate-x-full', 'pc:w-[432px]', 'pc:w-[480px]', 'pc:ml-6'].sort()
     );
-    expect(lgTokens(read('TrainDetailV2'))).toEqual(['pc:hidden', 'pc:max-h-[calc(100vh-13rem)]']);
+    expect(lgTokens(read('TrainDetailV2'))).toEqual(['pc:hidden', 'pc:max-h-[calc(100vh-17rem)]']);
   });
   it('pc: でない形(sm: md: xl: など)の、PC 用の指定は、足していない', () => {
     for (const f of ['TimetableTab', 'TrainLocationTab', 'TrainDetailV2', 'TimetableLegend']) {
