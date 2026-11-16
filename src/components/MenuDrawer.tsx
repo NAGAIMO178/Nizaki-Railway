@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { X, Settings, User, Barcode, Map, LogIn, ChevronRight, Sparkles } from 'lucide-react';
+import { X, Settings, User, Barcode, Map, LogIn, ChevronRight, Sparkles, Bell } from 'lucide-react';
 import { UserProfile } from '../types';
 
 import { useBackClose } from '../utils/backClose';
@@ -14,6 +14,8 @@ interface MenuDrawerProps {
   onOpenRouteMap: () => void;
   onOpenLogin: () => void;
   onOpenGuide?: () => void; // NIZAKI 2.0 のご案内を、もう一度見る(公開後だけ渡される)
+  onOpenNotices?: () => void; // 通知の一覧を開く
+  hasNewNotice?: boolean; // 新しい通知があるとき、「通知」の行に、赤丸
 }
 
 export const MenuDrawer: React.FC<MenuDrawerProps> = ({
@@ -27,6 +29,8 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
   onOpenRouteMap,
   onOpenLogin,
   onOpenGuide,
+  onOpenNotices,
+  hasNewNotice = false,
 }) => {
   useEffect(() => {
     if (!isOpen) return;
@@ -46,11 +50,12 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
     action();
   };
 
-  const Row: React.FC<{ icon: React.ReactNode; label: string; note?: string; onClick: () => void }> = ({
+  const Row: React.FC<{ icon: React.ReactNode; label: string; note?: string; onClick: () => void; dot?: boolean }> = ({
     icon,
     label,
     note,
     onClick,
+    dot,
   }) => (
     <button
       type="button"
@@ -62,6 +67,7 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
         <span className="block text-sm font-bold text-[#221C35]">{label}</span>
         {note && <span className="block text-[10px] text-[#857D99] mt-0.5 truncate">{note}</span>}
       </span>
+      {dot && <span className="w-2.5 h-2.5 rounded-full bg-[#DC2626] shrink-0" role="img" aria-label="新しい通知があります" />}
       <ChevronRight className="w-4 h-4 text-[#B4ADC4] shrink-0" />
     </button>
   );
@@ -96,6 +102,7 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
         )}
 
         <SectionTitle>案内</SectionTitle>
+        {onOpenNotices && <Row icon={<Bell className="w-5 h-5" />} label="通知" onClick={onOpenNotices} dot={hasNewNotice} />}
         <Row icon={<Map className="w-5 h-5" />} label="路線図" onClick={onOpenRouteMap} />
         {onOpenGuide && <Row icon={<Sparkles className="w-5 h-5" />} label="NIZAKI 2.0 のご案内" note="新しい機能を、もう一度見る" onClick={onOpenGuide} />}
 

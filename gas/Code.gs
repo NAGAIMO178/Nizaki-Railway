@@ -133,6 +133,20 @@ function doPost(e) {
       return handleVerifyAdminToken(json.adminToken);
     }
 
+    // ①.65 通知(アプリのメニューの「通知」)。公開用は、ログインなしで読める。管理用は、すべて、サーバー側で、管理トークンを確かめる
+    if (json.action === 'getNotices') {
+      return handleGetNotices();
+    }
+    if (json.action === 'adminListNotices') {
+      return handleAdminListNotices(json.adminToken);
+    }
+    if (json.action === 'adminSaveNotice') {
+      return handleAdminSaveNotice(json.adminToken, json.notice);
+    }
+    if (json.action === 'adminDeleteNotice') {
+      return handleAdminDeleteNotice(json.adminToken, json.id);
+    }
+
     // ② LINE Messaging APIからのWebhookイベント
     if (json.events && Array.isArray(json.events)) {
       // GAS は、リクエストの見出し(X-Line-Signature)を読めず、署名を検証できない。代わりに、Webhook の URL に付けた秘密の文字で確かめる
@@ -1979,6 +1993,196 @@ function adminTokenErrorResponse(result) {
 
 function handleVerifyAdminToken(adminToken) {
   return adminTokenErrorResponse(checkAdminToken(adminToken)) || createJsonResponse({ status: 'success' });
+}
+
+// ==============================================================================
+// 通知(アプリのメニューの「通知」)
+//  - シート「通知」(なければ自動で作る)。1行が1件。消すときは、行を消さず、「削除」の列に 1 を入れる(論理削除)
+//  - 公開用(getNotices): 公開日時が、いま以前で、消されていない通知を、新しい順に、最大20件。ログイン不要。60秒だけ覚える
+//  - 管理用(adminListNotices / adminSaveNotice / adminDeleteNotice): 管理トークンを、必ず、サーバー側で確かめる(既存の checkAdminToken)
+//  - 入力の長さ: 題名60文字・本文1000文字・URL 500文字。画像・リンクは https:// だけ
+// ==============================================================================
+const SHEET_NOTICES = '通知';
+const NOTICE_HEADERS = ['通知ID', '種類', '題名', '本文', '画像URL', 'リンクURL', '公開日時(ms)', '公開日時', '更新日時', '削除'];
+const NOTICE_KINDS = ['normal', 'event', 'important'];
+const NOTICE_TITLE_MAX = 60;
+const NOTICE_BODY_MAX = 1000;
+const NOTICE_URL_MAX = 500;
+const NOTICE_PUBLIC_LIMIT = 20;
+const NOTICE_ADMIN_LIMIT = 200;
+const NOTICE_CACHE_KEY = 'notices_public_v1';
+const NOTICE_CACHE_SECONDS = 60;
+
+function getOrCreateNoticeSheet() {
+  const ss = getDataSpreadsheet();
+  let sheet = ss.getSheetByName(SHEET_NOTICES);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_NOTICES);
+    sheet.appendRow(NOTICE_HEADERS);
+    sheet.getRange(1, 1, 1, NOTICE_HEADERS.length).setBackground('#5B21B6').setFontColor('#FFFFFF').setFontWeight('bold');
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function formatNoticeTime(ms) {
+  return Utilities.formatDate(new Date(ms), 'Asia/Tokyo', 'yyyy-MM-dd HH:mm');
+}
+
+// 消されていない通知を、すべて読む(新しい公開日時が先)
+function readNotices() {
+  const sheet = getOrCreateNoticeSheet();
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  const values = sheet.getRange(2, 1, lastRow - 1, NOTICE_HEADERS.length).getValues();
+  const out = [];
+  for (let i = 0; i < values.length; i++) {
+    const v = values[i];
+    if (String(v[9]) === '1' || !v[0]) continue;
+    const publishAt = Number(v[6]);
+    if (!isFinite(publishAt)) continue;
+    out.push({
+      id: String(v[0]),
+      kind: NOTICE_KINDS.indexOf(String(v[1])) >= 0 ? String(v[1]) : 'normal',
+      title: String(v[2]),
+      body: String(v[3]),
+      imageUrl: String(v[4]),
+      linkUrl: String(v[5]),
+      publishAt: publishAt
+    });
+  }
+  out.sort(function (a, b) { return b.publishAt - a.publishAt; });
+  return out;
+}
+
+function handleGetNotices() {
+  try {
+    const cache = CacheService.getScriptCache();
+    const cached = cache.get(NOTICE_CACHE_KEY);
+    if (cached) return createJsonResponse({ status: 'success', notices: JSON.parse(cached) });
+    const now = Date.now();
+    const notices = readNotices().filter(function (n) { return n.publishAt <= now; }).slice(0, NOTICE_PUBLIC_LIMIT);
+    try {
+      cache.put(NOTICE_CACHE_KEY, JSON.stringify(notices), NOTICE_CACHE_SECONDS);
+    } catch (ignored) {
+      // 大きすぎて覚えられなくても、読み出しは続ける
+    }
+    return createJsonResponse({ status: 'success', notices: notices });
+  } catch (err) {
+    return internalErrorResponse('getNotices', err);
+  }
+}
+
+function handleAdminListNotices(adminToken) {
+  const denied = adminTokenErrorResponse(checkAdminToken(adminToken));
+  if (denied) return denied;
+  try {
+    return createJsonResponse({ status: 'success', notices: readNotices().slice(0, NOTICE_ADMIN_LIMIT) });
+  } catch (err) {
+    return internalErrorResponse('adminListNotices', err);
+  }
+}
+
+// https:// で始まり、空白を含まず、ユーザー名・パスワード(@)を含まない
+function isHttpsNoticeUrl(url) {
+  return url.length <= NOTICE_URL_MAX && /^https:\/\/[^\s\/?#@]+([\/?#]\S*)?$/.test(url);
+}
+
+// 入力を確かめて、整える。問題があれば { error: 文 }
+function cleanNoticeInput(n) {
+  if (!n || typeof n !== 'object') return { error: '通知の内容がありません。' };
+  const kind = String(n.kind || '');
+  if (NOTICE_KINDS.indexOf(kind) < 0) return { error: '種類が正しくありません。' };
+  const title = String(n.title === undefined || n.title === null ? '' : n.title).trim();
+  if (!title) return { error: '題名を入れてください。' };
+  if (title.length > NOTICE_TITLE_MAX) return { error: '題名は ' + NOTICE_TITLE_MAX + ' 文字までです。' };
+  const body = String(n.body === undefined || n.body === null ? '' : n.body);
+  if (body.length > NOTICE_BODY_MAX) return { error: '本文は ' + NOTICE_BODY_MAX + ' 文字までです。' };
+  const imageUrl = String(n.imageUrl === undefined || n.imageUrl === null ? '' : n.imageUrl).trim();
+  if (imageUrl && !isHttpsNoticeUrl(imageUrl)) return { error: '画像のアドレスは、https:// で始まる ' + NOTICE_URL_MAX + ' 文字までです。' };
+  const linkUrl = String(n.linkUrl === undefined || n.linkUrl === null ? '' : n.linkUrl).trim();
+  if (linkUrl && !isHttpsNoticeUrl(linkUrl)) return { error: 'リンクのアドレスは、https:// で始まる ' + NOTICE_URL_MAX + ' 文字までです。' };
+  const publishAt = Number(n.publishAt);
+  const now = Date.now();
+  if (!isFinite(publishAt) || publishAt < now - 10 * 365 * 86400000 || publishAt > now + 5 * 365 * 86400000) {
+    return { error: '公開する日時が正しくありません。' };
+  }
+  return { value: { kind: kind, title: title, body: body, imageUrl: imageUrl, linkUrl: linkUrl, publishAt: Math.floor(publishAt) } };
+}
+
+function findNoticeRow(sheet, id) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return -1;
+  const ids = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
+  const del = sheet.getRange(2, 10, lastRow - 1, 1).getValues();
+  for (let i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]) === id && String(del[i][0]) !== '1') return i + 2;
+  }
+  return -1;
+}
+
+function handleAdminSaveNotice(adminToken, notice) {
+  const denied = adminTokenErrorResponse(checkAdminToken(adminToken));
+  if (denied) return denied;
+  const cleaned = cleanNoticeInput(notice);
+  if (cleaned.error) return createJsonResponse({ status: 'error', code: 'invalid', message: cleaned.error });
+  const v = cleaned.value;
+  const id = String(notice.id || '');
+  if (id && !/^n[0-9a-f]{12}$/.test(id)) return createJsonResponse({ status: 'error', code: 'invalid', message: '通知IDが正しくありません。' });
+
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+  } catch (err) {
+    return createJsonResponse({ status: 'error', code: 'busy', message: '混み合っています。しばらくしてからもう一度お試しください。' });
+  }
+  try {
+    const sheet = getOrCreateNoticeSheet();
+    const nowText = formatNoticeTime(Date.now());
+    const cols = [v.kind, sheetSafe(v.title), sheetSafe(v.body), sheetSafe(v.imageUrl), sheetSafe(v.linkUrl), v.publishAt, formatNoticeTime(v.publishAt), nowText];
+    let savedId = id;
+    if (id) {
+      const row = findNoticeRow(sheet, id);
+      if (row < 0) return createJsonResponse({ status: 'error', code: 'not_found', message: '通知が見つかりません(消されたかもしれません)。' });
+      sheet.getRange(row, 2, 1, cols.length).setValues([cols]);
+    } else {
+      savedId = 'n' + Utilities.getUuid().replace(/-/g, '').slice(0, 12);
+      sheet.appendRow([savedId].concat(cols).concat(['']));
+    }
+    CacheService.getScriptCache().remove(NOTICE_CACHE_KEY);
+    return createJsonResponse({ status: 'success', id: savedId });
+  } catch (err) {
+    return internalErrorResponse('adminSaveNotice', err);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// 消す(論理削除): 行は残して、「削除」の列に 1 を入れる
+function handleAdminDeleteNotice(adminToken, id) {
+  const denied = adminTokenErrorResponse(checkAdminToken(adminToken));
+  if (denied) return denied;
+  const noticeId = String(id || '');
+  if (!/^n[0-9a-f]{12}$/.test(noticeId)) return createJsonResponse({ status: 'error', code: 'invalid', message: '通知IDが正しくありません。' });
+
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+  } catch (err) {
+    return createJsonResponse({ status: 'error', code: 'busy', message: '混み合っています。しばらくしてからもう一度お試しください。' });
+  }
+  try {
+    const sheet = getOrCreateNoticeSheet();
+    const row = findNoticeRow(sheet, noticeId);
+    if (row < 0) return createJsonResponse({ status: 'error', code: 'not_found', message: '通知が見つかりません。' });
+    sheet.getRange(row, 9, 1, 2).setValues([[formatNoticeTime(Date.now()), '1']]);
+    CacheService.getScriptCache().remove(NOTICE_CACHE_KEY);
+    return createJsonResponse({ status: 'success' });
+  } catch (err) {
+    return internalErrorResponse('adminDeleteNotice', err);
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /**

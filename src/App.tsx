@@ -8,6 +8,8 @@ import { MyStationRegisterCard, RegisterableStation, REGISTERABLE_LINES } from '
 import { FooterNav } from './components/FooterNav';
 import type { ReservationPreset } from './components/ReservationTab';
 import { MenuDrawer } from './components/MenuDrawer';
+import { NoticeSheet } from './components/NoticeSheet';
+import { useNotices } from './utils/useNotices';
 import { LazyOnOpen } from './components/LazyOnOpen';
 import { LazyBoundary } from './components/LazyBoundary';
 import { lazyScreen, prefetchScreens } from './utils/lazyScreen';
@@ -119,6 +121,9 @@ export default function App() {
   // 予約タブの中の切り替え(特急券・座席 / デリバリー)と、ヘッダーのメニュー
   const [reservationView, setReservationView] = useState<'ticket' | 'delivery'>('ticket');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  // 通知(メニューの中)。読むのは、アプリを開いたときと、メニューを開いたときだけ
+  const [isNoticeOpen, setIsNoticeOpen] = useState(false);
+  const notice = useNotices();
   // 下のタブを、もう一度タップした回数(列車位置・時刻表が、自分の最初の表示に戻るために見る)
   const [reselect, setReselect] = useState<{ tab: TabType; n: number }>({ tab: 'home', n: 0 });
   const [headerStationName, setHeaderStationName] = useState<string>('松戸');
@@ -822,6 +827,7 @@ export default function App() {
   // ヘッダーの「神埼線アプリ」: 開いているモーダルを閉じて、ホームへ
   const goHome = () => {
     setIsMenuOpen(false);
+    setIsNoticeOpen(false);
     setIsLoginModalOpen(false);
     setPendingAction(null);
     setIsEDeliveryModalOpen(false);
@@ -844,7 +850,11 @@ export default function App() {
         onOpenRouteMapModal={() => setIsRouteMapModalOpen(true)}
         onOpenQRCodeModal={() => setIsQRCodeModalOpen(true)}
         onOpenMyPage={() => setIsMyPageOpen(true)}
-        onOpenMenu={() => setIsMenuOpen(true)}
+        onOpenMenu={() => {
+          setIsMenuOpen(true);
+          void notice.refresh();
+        }}
+        hasNewNotice={notice.hasNew}
         onGoHome={goHome}
         activeTab={activeTab}
         onChangeTab={setActiveTab}
@@ -1123,7 +1133,13 @@ export default function App() {
           setIsLoginModalOpen(true);
         }}
         onOpenGuide={isLaunched() ? () => setWelcomeReplayKey((k) => k + 1) : undefined}
+        onOpenNotices={() => {
+          setIsNoticeOpen(true);
+          notice.markRead(); // 開くと、すべて既読
+        }}
+        hasNewNotice={notice.hasNew}
       />
+      <NoticeSheet isOpen={isNoticeOpen} notices={notice.notices} onClose={() => setIsNoticeOpen(false)} />
 
       {/* 公開記念イベント(公開後だけ) */}
       {isLaunched() && (

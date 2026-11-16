@@ -11,6 +11,7 @@ interface HeaderProps {
   onOpenNotificationModal?: () => void;
   onOpenMyPage?: () => void;
   onOpenMenu?: () => void;
+  hasNewNotice?: boolean; // 新しい通知があるとき、メニューのボタンに、赤丸
   onGoHome?: () => void; // 「神埼線アプリ」の文字をタップしたとき
   activeTab?: TabType;
   onChangeTab?: (tab: TabType) => void;
@@ -27,6 +28,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenQRCodeModal,
   onOpenMyPage,
   onOpenMenu,
+  hasNewNotice = false,
   onGoHome,
   isLoggedIn = false,
   currentUser = null,
@@ -43,11 +45,12 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               type="button"
               onClick={onOpenMenu}
-              className="p-1.5 -ml-1.5 rounded-lg text-[#221C35] hover:bg-[#F4F3F8] active:bg-[#EFE8FA] transition-colors cursor-pointer shrink-0"
-              aria-label="メニューを開く"
+              className="relative p-1.5 -ml-1.5 rounded-lg text-[#221C35] hover:bg-[#F4F3F8] active:bg-[#EFE8FA] transition-colors cursor-pointer shrink-0"
+              aria-label={hasNewNotice ? 'メニューを開く(新しい通知があります)' : 'メニューを開く'}
               title="メニュー"
             >
               <Menu className="w-5 h-5" />
+              {hasNewNotice && <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-[#DC2626] ring-2 ring-white" />}
             </button>
 
             {/* Custom Brand Logo Icon */}
