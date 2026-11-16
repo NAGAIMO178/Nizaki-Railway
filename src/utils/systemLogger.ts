@@ -1,4 +1,4 @@
-// System Logger & Diagnostics Engine for 神埼鉄道 NIZAKI App
+// System Logger & Diagnostics Engine for 神埼線アプリ
 
 export type LogLevel = 'error' | 'warn' | 'info' | 'critical';
 

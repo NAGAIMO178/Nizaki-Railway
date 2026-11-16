@@ -1,4 +1,4 @@
-// Disruption Dispatcher & Train Delay Manager for 神埼鉄道 NIZAKI App
+// Disruption Dispatcher & Train Delay Manager for 神埼線アプリ
 
 import { safeStorage } from './safeStorage';
 import { callGas } from './accountApi';
