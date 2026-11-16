@@ -137,7 +137,7 @@ export const SeatSelectionModal: React.FC<SeatSelectionModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-3 animate-fadeIn">
-      <div className="bg-white rounded-xl max-w-sm w-full p-3.5 space-y-3 shadow-xl border border-gray-200 relative max-h-[90vh] flex flex-col text-gray-800 text-xs">
+      <div className="bg-white rounded-xl max-w-sm w-full p-3.5 space-y-3 shadow-xl border border-gray-200 relative max-h-[90vh] flex flex-col pc:max-w-[480px] pc:max-h-[85vh] text-gray-800 text-xs">
         {/* Modal Header */}
         <div className="flex items-center justify-between border-b border-gray-100 pb-2.5 shrink-0">
           <div className="flex items-center gap-2">

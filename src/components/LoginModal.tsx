@@ -304,7 +304,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
       <div
         onClick={(e) => e.stopPropagation()}
-        className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-[#E5E2EE] overflow-hidden flex flex-col max-h-[90vh]"
+        className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-[#E5E2EE] overflow-hidden flex flex-col max-h-[90vh] pc:max-w-[480px] pc:max-h-[85vh]"
       >
         {/* ヘッダー */}
         <div className="relative bg-gradient-to-r from-[#221C35] via-[#3B1F68] to-[#5B21B6] text-white p-5">

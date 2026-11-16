@@ -19,7 +19,7 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-fadeIn">
-      <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-4 shadow-2xl border border-[#E0D7F3] relative animate-scaleUp text-[#221C35]">
+      <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-4 pc:max-w-[384px] pc:max-h-[85vh] pc:overflow-y-auto shadow-2xl border border-[#E0D7F3] relative animate-scaleUp text-[#221C35]">
         {/* Close Button */}
         <button
           onClick={onClose}

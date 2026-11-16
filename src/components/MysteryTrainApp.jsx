@@ -1214,7 +1214,7 @@ export const MysteryTrainApp = ({ onAddNPoints, onExit, posterImageUrl }) => {
          ======================================================================= */}
       {isStationModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-fadeIn">
-          <div className="w-full max-w-2xl max-h-[85vh] rounded-2xl border-2 border-amber-600/60 bg-[#140F20] shadow-2xl flex flex-col overflow-hidden text-stone-200">
+          <div className="w-full max-w-2xl pc:max-w-[640px] max-h-[85vh] rounded-2xl border-2 border-amber-600/60 bg-[#140F20] shadow-2xl flex flex-col overflow-hidden text-stone-200">
             <div className="p-4 border-b border-amber-500/30 flex items-center justify-between bg-black/50">
               <div className="flex items-center gap-2">
                 <Compass className="w-4 h-4 text-amber-400" />
@@ -1263,7 +1263,7 @@ export const MysteryTrainApp = ({ onAddNPoints, onExit, posterImageUrl }) => {
       {feedback.isOpen && (
         <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
           <div 
-            className={`w-full max-w-md rounded-2xl border-2 p-6 shadow-2xl space-y-4 animate-scaleUp relative overflow-hidden text-stone-100 ${
+            className={`w-full max-w-md pc:max-w-[480px] rounded-2xl border-2 p-6 shadow-2xl space-y-4 animate-scaleUp relative overflow-hidden text-stone-100 ${
               feedback.isCorrect ? 'bg-[#151C18] border-emerald-500' : 'bg-[#1C1215] border-rose-500'
             }`}
           >

@@ -21,7 +21,7 @@ export const CompletionModal: React.FC<CompletionModalProps> = ({ title, orderId
   useBackClose(true, onClose); // 出ているあいだ、「戻る」で閉じる
   return (
   <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-fadeIn" role="dialog" aria-modal="true" aria-label={title}>
-    <div className="w-full max-w-sm max-h-[92dvh] overflow-y-auto bg-white rounded-3xl border border-[#E5E2EE] shadow-2xl p-6 text-center animate-scaleUp">
+    <div className="w-full max-w-sm max-h-[92dvh] pc:max-w-[384px] pc:max-h-[85vh] overflow-y-auto bg-white rounded-3xl border border-[#E5E2EE] shadow-2xl p-6 text-center animate-scaleUp">
       <div className="w-14 h-14 rounded-full bg-[#EDE9FE] text-[#5B21B6] flex items-center justify-center mx-auto">
         <Check className="w-7 h-7" strokeWidth={3} />
       </div>

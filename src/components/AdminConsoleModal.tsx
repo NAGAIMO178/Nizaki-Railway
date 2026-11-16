@@ -693,7 +693,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
     >
       <div
         id="admin-console-modal-card"
-        className="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-xl h-[620px] max-h-[92vh] flex flex-col shadow-2xl text-slate-100 overflow-hidden relative"
+        className="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-xl h-[620px] max-h-[92vh] pc:max-w-[640px] pc:max-h-[85vh] flex flex-col shadow-2xl text-slate-100 overflow-hidden relative"
       >
         {/* Header - Universal Design Compliant High-Contrast Calm Bar */}
         <div className="px-4 py-3 bg-slate-800 border-b border-slate-700 flex items-center justify-between shrink-0">

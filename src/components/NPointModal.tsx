@@ -72,7 +72,7 @@ export const NPointModal: React.FC<NPointModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-slate-900/40 backdrop-blur-xs animate-fadeIn">
-      <div className="bg-white text-[#221C35] w-full max-w-lg rounded-3xl border border-[#E6E2EE] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="bg-white text-[#221C35] w-full max-w-lg rounded-3xl border border-[#E6E2EE] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] pc:max-w-[640px] pc:max-h-[85vh]">
         {/* Modal Header */}
         <div className="bg-[#F9F8FD] p-4 border-b border-[#E6E2EE] flex items-center justify-between">
           <div className="flex items-center gap-2.5">

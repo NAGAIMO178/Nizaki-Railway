@@ -238,7 +238,7 @@ export const MyPageModal: React.FC<MyPageModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-fadeIn">
       <div
-        className="w-full max-w-lg bg-[#F8F7FB] rounded-3xl shadow-2xl border border-white/60 overflow-hidden flex flex-col max-h-[90vh] animate-scaleUp"
+        className="w-full max-w-lg bg-[#F8F7FB] rounded-3xl shadow-2xl border border-white/60 overflow-hidden flex flex-col max-h-[90vh] animate-scaleUp pc:max-w-[640px] pc:max-h-[85vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Top Header */}
