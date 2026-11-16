@@ -290,7 +290,7 @@ function handleReservationInquiry(replyToken, userId, text) {
     if (data.length <= 1) {
       replyToLine(replyToken, [{
         type: 'text',
-        text: '現在ご予約データが見つかりません。神埼鉄道アプリよりご予約をお願いいたします。'
+        text: '現在ご予約データが見つかりません。神埼線アプリよりご予約をお願いいたします。'
       }]);
       return;
     }
@@ -327,7 +327,7 @@ function handleReservationInquiry(replyToken, userId, text) {
     if (matched.length === 0) {
       replyToLine(replyToken, [{
         type: 'text',
-        text: 'お客様のLINEアカウントに紐づく有効なご予約が見つかりませんでした。\n神埼鉄道アプリで、神埼IDにログインした状態でご予約ください。'
+        text: 'お客様のLINEアカウントに紐づく有効なご予約が見つかりませんでした。\n神埼線アプリで、神埼IDにログインした状態でご予約ください。'
       }]);
       return;
     }
@@ -1472,7 +1472,7 @@ function handleLineResetMessage(replyToken, userId, token) {
   replyToLine(replyToken, [{
     type: 'text',
     text:
-      '🚆神埼鉄道グループ NIZAKI\n\n' +
+      '🚆神埼線アプリ\n\n' +
       'パスワード再設定の認証コードです。\n\n' +
       '認証コード: ' + code + '\n\n' +
       'アプリの画面に入力してください。\n' +
@@ -1553,7 +1553,7 @@ function handleLineVerificationMessage(replyToken, userId, token) {
   replyToLine(replyToken, [{
     type: 'text',
     text:
-      '🚆神埼鉄道グループ NIZAKI\n\n' +
+      '🚆神埼線アプリ\n\n' +
       '神埼ID新規登録の認証コードです。\n\n' +
       '認証コード: ' + code + '\n\n' +
       'アプリの画面に入力して登録を完了してください。\n' +
