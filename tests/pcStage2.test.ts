@@ -13,7 +13,7 @@ const lgTokens = (s: string) => [...new Set(s.match(/pc:[^\s"'`}]+/g) ?? [])].so
 describe('PC 用のクラスは、pc: つきだけ(足してよいクラスの一覧と、ぴったり同じ)', () => {
   it('時刻表', () => {
     expect(lgTokens(read('TimetableTab'))).toEqual(
-      ['pc:col-span-2', 'pc:col-start-1', 'pc:col-start-2', 'pc:gap-x-3.5', 'pc:gap-y-3', 'pc:grid', 'pc:grid-cols-2', 'pc:hidden', 'pc:justify-end', 'pc:justify-self-start', 'pc:max-w-[960px]', 'pc:row-span-2', 'pc:row-start-1', 'pc:row-start-2', 'pc:self-end', 'pc:space-y-0'].sort()
+      ['pc:col-span-2', 'pc:col-start-1', 'pc:col-start-2', 'pc:gap-x-3.5', 'pc:gap-y-3', 'pc:grid', 'pc:grid-cols-2', 'pc:hidden', 'pc:justify-end', 'pc:justify-self-start', 'pc:max-w-[640px]', 'pc:max-w-[960px]', 'pc:mx-auto', 'pc:row-span-2', 'pc:row-start-1', 'pc:row-start-2', 'pc:self-end', 'pc:space-y-0'].sort()
     );
   });
   it('列車位置・列車の詳細', () => {
@@ -26,6 +26,15 @@ describe('PC 用のクラスは、pc: つきだけ(足してよいクラスの�
     for (const f of ['TimetableTab', 'TrainLocationTab', 'TrainDetailV2', 'TimetableLegend']) {
       expect(read(f), f).not.toMatch(/\b(sm|md|lg|xl|2xl):(col-|grid|hidden|static|sticky|max-h-\[calc|overflow-y-visible)/);
     }
+  });
+});
+
+describe('経路検索: PC の幅だけ、中身を中央の 640px に(切り替え・ヘッダー・フッターは、そのまま)', () => {
+  it('経路検索の中身(RouteSearch)だけを、pc:max-w-[640px] pc:mx-auto の箱に入れる。切り替えは、その外', () => {
+    const s = read('TimetableTab');
+    expect(s).toContain('{modeToggle}\n        {/* PC の幅だけ: 経路検索の中身は、中央の 640px に寄せる(切り替えとヘッダー・フッターは、そのまま) */}\n        <div className="pc:max-w-[640px] pc:mx-auto">\n          <RouteSearch onReserve={onReserve} />\n        </div>');
+    // 駅時刻表(左右2列・960px)は、そのまま
+    expect(s).toContain('max-w-md pc:max-w-[960px] mx-auto px-4 py-4 pb-28 space-y-3 pc:space-y-0 pc:grid pc:grid-cols-2');
   });
 });
 
