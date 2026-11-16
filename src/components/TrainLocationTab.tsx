@@ -17,6 +17,8 @@ import { THROUGH_STYLE, throughLineAt, trainThrough } from '../utils/throughLine
 import { bundleHeight, pinHeight, TrainPin, TrainPinBundle } from './TrainPin';
 
 import { useBackClose } from '../utils/backClose';
+import { matchesQuery } from '../utils/useMediaQuery';
+import { usePcLayout } from '../utils/usePcLayout';
 export interface StationNode {
   id: string;
   code?: string;
@@ -249,6 +251,30 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
   // 駅・列車のシートが開いているあいだ、「戻る」で閉じる(束ねた札のシートも)
   useBackClose(selectedTrain !== null || selectedGroup !== null, clearTrainSelection);
   useBackClose(selectedStation !== null, () => setSelectedStation(null));
+
+  // PC の幅: 何も選んでいないときは、図を中央に。選ぶと、図が左へ動き、右に詳細が出る。閉じるときは、詳細が右へ消えるまで(0.3秒)、中身を残す
+  const detailOpen = selectedTrain !== null || selectedGroup !== null || selectedStation !== null;
+  const isPc = usePcLayout(); // PC 表示が出ていて、かつ PC の幅(CSS の pc: と同じ条件)
+  const lastDetail = useRef<{ train: LiveTrainPos | null; group: LiveTrainPos[] | null; station: LocationStationInfo | null } | null>(null);
+  useEffect(() => {
+    if (detailOpen) lastDetail.current = { train: selectedTrain, group: selectedGroup, station: selectedStation };
+  }, [detailOpen, selectedTrain, selectedGroup, selectedStation]);
+  const [wasOpen, setWasOpen] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  if (detailOpen !== wasOpen) {
+    setWasOpen(detailOpen);
+    // 動きを減らす設定のときは、残さず、すぐ消す
+    setLeaving(!detailOpen && isPc && !matchesQuery('(prefers-reduced-motion: reduce)'));
+  }
+  useEffect(() => {
+    if (!leaving) return;
+    const t = setTimeout(() => setLeaving(false), 300);
+    return () => clearTimeout(t);
+  }, [leaving]);
+  const keep = leaving && !detailOpen ? lastDetail.current : null;
+  const shownTrain = selectedTrain ?? keep?.train ?? null;
+  const shownGroup = selectedGroup ?? keep?.group ?? null;
+  const shownStation = selectedStation ?? keep?.station ?? null;
 
   // 列車詳細プルダウン（アコーディオン）状態
   const [isAccordionOpen, setIsAccordionOpen] = useState<boolean>(true);
@@ -557,7 +583,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
 
   return (
     <div
-      className="min-h-screen bg-[#F9F8FD] text-[#221C35] pb-24 max-w-md pc:max-w-[960px] mx-auto relative font-sans"
+      className="min-h-screen bg-[#F9F8FD] text-[#221C35] pb-24 max-w-md pc:max-w-[960px] mx-auto relative font-sans pc:flex pc:items-start pc:overflow-x-clip pc:bg-transparent"
       onClick={(e) => {
         // 何もないところをタップしたら、選んだ列車(枠と赤い三角)を外す。列車・札・ボタンと、下の詳細のシートは、そのまま
         const t = e.target as HTMLElement;
@@ -566,8 +592,10 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
         clearTrainSelection();
       }}
     >
+      {/* 左の列(PC の幅): 路線のタブ+図 */}
+      <div className={`pc:w-[432px] pc:bg-[#F9F8FD] pc:shrink-0 pc:transition-transform pc:duration-300 pc:ease-out motion-reduce:transition-none ${detailOpen ? 'pc:translate-x-0' : 'pc:translate-x-[264px]'}`}>
       {/* Top Header Bar */}
-      <div className="sticky top-0 z-30 bg-white border-b border-[#E6E2EE] shadow-2xs">
+      <div className="sticky top-0 z-30 bg-white border-b border-[#E6E2EE] shadow-2xs pc:static">
         <div className="p-3 pb-2 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <h2 className="text-base font-bold text-[#221C35]">列車走行位置</h2>
@@ -819,50 +847,75 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
         </div>
       </div>
 
+      </div>
+      {/* 右の列(PC の幅): 詳細(選んだ列車・重なった列車・駅)。スマホでは、これまでどおり、下から出るシート */}
+      <div className={`pc:w-[480px] pc:ml-6 pc:shrink-0 pc:sticky pc:top-16 pc:pt-4 pc:space-y-3 pc:transition-all pc:duration-300 pc:ease-out motion-reduce:transition-none ${detailOpen ? 'pc:translate-x-0 pc:opacity-100' : 'pc:translate-x-full pc:opacity-0 pc:pointer-events-none'}`}>
       {/* Station Transfer Guide Sheet (駅の乗り換え情報カード - 列車詳細と同等のボトムシート表示) */}
-      {selectedStation && (
+      {shownStation && (
         <div
           ref={(el) => {
             detailCardRef.current = el;
             stationSheetDrag.contentRef(el);
           }}
           style={stationSheetDrag.style}
-          className="fixed bottom-14 left-0 right-0 max-w-md mx-auto z-40 bg-white border-t border-[#E6E2EE] rounded-t-2xl shadow-xl p-3 space-y-2 animate-slideUp max-h-[45vh] overflow-y-auto overscroll-contain"
+          className="fixed bottom-14 left-0 right-0 max-w-md mx-auto z-40 bg-white border-t border-[#E6E2EE] rounded-t-2xl shadow-xl p-3 space-y-2 animate-slideUp max-h-[45vh] overflow-y-auto overscroll-contain pc:animate-none pc:static pc:max-w-none pc:mx-0 pc:border pc:rounded-2xl pc:max-h-[calc(100vh-11rem)]"
         >
           {/* つまみ: 下に引く(または押す)と閉じる */}
           <div
             {...stationSheetDrag.handleProps}
-            className="w-full py-3 -my-1 flex items-center justify-center cursor-grab active:cursor-grabbing group rounded-t-xl select-none"
+            className="w-full py-3 -my-1 flex items-center justify-center cursor-grab active:cursor-grabbing group rounded-t-xl select-none pc:hidden"
             role="button"
             aria-label="閉じる"
           >
             <div className="w-12 h-1.5 bg-[#D1C9E3] group-hover:bg-[#5B21B6] rounded-full transition-colors" />
           </div>
 
+          {/* 閉じる(PC の幅だけ。つまみの代わり) */}
+          <div className="hidden pc:flex justify-end -mb-2">
+            <button
+              type="button"
+              onClick={() => setSelectedStation(null)}
+              className="p-1.5 rounded-lg text-[#6B6380] hover:bg-[#F4F3F8] cursor-pointer"
+              aria-label="閉じる"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
           <LocationStationDetailCard
-            stationInfo={selectedStation}
+            stationInfo={shownStation}
           />
         </div>
       )}
 
       {/* 束ねた札を押したとき: 重なっている列車すべての詳細を、列車ごとのカードで縦に並べる(長いときは、シートの中だけスクロール) */}
-      {selectedGroup && isLaunched() && (
+      {shownGroup && isLaunched() && (
         <div
           ref={detailCardRef}
           style={trainSheetDrag.style}
-          className="fixed bottom-14 left-0 right-0 max-w-md mx-auto z-40 bg-white border-t border-[#E6E2EE] rounded-t-2xl shadow-lg p-4 space-y-3 animate-slideUp"
+          className="fixed bottom-14 left-0 right-0 max-w-md mx-auto z-40 bg-white border-t border-[#E6E2EE] rounded-t-2xl shadow-lg p-4 space-y-3 animate-slideUp pc:animate-none pc:static pc:max-w-none pc:mx-0 pc:border pc:rounded-2xl"
         >
           {/* つまみ: 下に引く(または押す)と閉じる */}
           <div
             {...trainSheetDrag.handleProps}
-            className="w-full py-3 -mt-3 flex items-center justify-center cursor-grab active:cursor-grabbing group rounded-t-xl select-none"
+            className="w-full py-3 -mt-3 flex items-center justify-center cursor-grab active:cursor-grabbing group rounded-t-xl select-none pc:hidden"
             role="button"
             aria-label="閉じる"
           >
             <div className="w-12 h-1.5 bg-[#D1C9E3] group-hover:bg-[#5B21B6] rounded-full transition-colors" />
           </div>
-          <div ref={trainSheetDrag.contentRef} className="max-h-[62vh] overflow-y-auto overscroll-contain -mx-1 px-1 space-y-5">
-            {selectedGroup.map((t, i) => (
+          {/* 閉じる(PC の幅だけ。つまみの代わり) */}
+          <div className="hidden pc:flex justify-end -mb-2">
+            <button
+              type="button"
+              onClick={clearTrainSelection}
+              className="p-1.5 rounded-lg text-[#6B6380] hover:bg-[#F4F3F8] cursor-pointer"
+              aria-label="閉じる"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <div ref={trainSheetDrag.contentRef} className="max-h-[62vh] pc:max-h-[calc(100vh-13rem)] overflow-y-auto overscroll-contain -mx-1 px-1 space-y-5">
+            {shownGroup.map((t, i) => (
               <TrainDetailV2
                 key={t.id}
                 train={t}
@@ -879,29 +932,40 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
       )}
 
       {/* Bottom Sheet / Active Selected Train Details Panel */}
-      {selectedTrain && (
+      {shownTrain && (
         <div
           ref={detailCardRef}
           style={trainSheetDrag.style}
-          className="fixed bottom-14 left-0 right-0 max-w-md mx-auto z-40 bg-white border-t border-[#E6E2EE] rounded-t-2xl shadow-lg p-4 space-y-3 animate-slideUp"
+          className="fixed bottom-14 left-0 right-0 max-w-md mx-auto z-40 bg-white border-t border-[#E6E2EE] rounded-t-2xl shadow-lg p-4 space-y-3 animate-slideUp pc:animate-none pc:static pc:max-w-none pc:mx-0 pc:border pc:rounded-2xl"
         >
           {/* つまみ: 下に引く(または押す)と閉じる */}
           <div
             {...trainSheetDrag.handleProps}
-            className="w-full py-3 -mt-3 flex items-center justify-center cursor-grab active:cursor-grabbing group rounded-t-xl select-none"
+            className="w-full py-3 -mt-3 flex items-center justify-center cursor-grab active:cursor-grabbing group rounded-t-xl select-none pc:hidden"
             role="button"
             aria-label="閉じる"
           >
             <div className="w-12 h-1.5 bg-[#D1C9E3] group-hover:bg-[#5B21B6] rounded-full transition-colors" />
           </div>
 
+          {/* 閉じる(PC の幅だけ。つまみの代わり) */}
+          <div className="hidden pc:flex justify-end -mb-2">
+            <button
+              type="button"
+              onClick={clearTrainSelection}
+              className="p-1.5 rounded-lg text-[#6B6380] hover:bg-[#F4F3F8] cursor-pointer"
+              aria-label="閉じる"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
           {isLaunched() ? (
             <TrainDetailV2
-              train={selectedTrain}
+              train={shownTrain}
               lineName={activeLine.name}
               onOpenLine={switchLine}
               contentRef={trainSheetDrag.contentRef}
-              onOpenReservation={reservationOf(selectedTrain)}
+              onOpenReservation={reservationOf(shownTrain)}
             />
           ) : (
           <>
@@ -909,41 +973,41 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
           <div className="flex items-center justify-between pt-0.5">
             <div className="flex items-center gap-2">
               {(() => {
-                const badgeBg = `${typeStyleOf(selectedTrain.trainType).solid} text-white`;
+                const badgeBg = `${typeStyleOf(shownTrain.trainType).solid} text-white`;
                 return (
                   <span className={`text-xs font-bold px-2.5 py-0.5 rounded-md ${badgeBg}`}>
-                    {selectedTrain.trainType}
+                    {shownTrain.trainType}
                   </span>
                 );
               })()}
               <span className="text-base font-bold text-[#221C35]">
-                {selectedTrain.destination} 行き
+                {shownTrain.destination} 行き
               </span>
-              {selectedTrain.timetable.length > 0 && (
+              {shownTrain.timetable.length > 0 && (
                 <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-purple-50 text-purple-900 border border-purple-200 shrink-0">
-                  始発: {selectedTrain.timetable[0].stationName}
+                  始発: {shownTrain.timetable[0].stationName}
                 </span>
               )}
             </div>
 
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold bg-[#F4F3F8] text-[#221C35] px-2.5 py-1 rounded-xl border border-[#E6E2EE]">
-                {selectedTrain.carCount}両
+                {shownTrain.carCount}両
               </span>
             </div>
           </div>
 
           {/* いまの混雑(公開後だけ) */}
-          {selectedTrain.crowdNow && crowdInfo(selectedTrain.crowdNow) && (
+          {shownTrain.crowdNow && crowdInfo(shownTrain.crowdNow) && (
             <div className="flex items-center gap-2 text-xs">
               <span className="font-bold text-[#6B6380]">いまの混雑</span>
               <span
                 className="text-[11px] font-black px-2.5 py-1 rounded-lg border border-black/10 whitespace-nowrap"
-                style={{ background: crowdInfo(selectedTrain.crowdNow)!.color, color: crowdInfo(selectedTrain.crowdNow)!.text }}
+                style={{ background: crowdInfo(shownTrain.crowdNow)!.color, color: crowdInfo(shownTrain.crowdNow)!.text }}
               >
-                {crowdInfo(selectedTrain.crowdNow)!.label}
+                {crowdInfo(shownTrain.crowdNow)!.label}
               </span>
-              <span className="text-[10px] text-[#857D99]">(乗車率の目安 {crowdInfo(selectedTrain.crowdNow)!.range})</span>
+              <span className="text-[10px] text-[#857D99]">(乗車率の目安 {crowdInfo(shownTrain.crowdNow)!.range})</span>
             </div>
           )}
 
@@ -970,12 +1034,12 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
               <div className="p-3 space-y-2 animate-fadeIn">
                 {(() => {
                   // 現在位置より過去（過ぎた駅）を除外し、今後の停車駅のみフィルタリング
-                  const currentStationIdx = displayStations.findIndex((s) => s.id === selectedTrain.stationId);
+                  const currentStationIdx = displayStations.findIndex((s) => s.id === shownTrain.stationId);
                   
-                  const futureTimetable = selectedTrain.timetable.filter((item) => {
+                  const futureTimetable = shownTrain.timetable.filter((item) => {
                     const itemStIdx = displayStations.findIndex((s) => s.name === item.stationName);
                     if (currentStationIdx === -1 || itemStIdx === -1) return true;
-                    if (selectedTrain.direction === 1) {
+                    if (shownTrain.direction === 1) {
                       return itemStIdx >= currentStationIdx;
                     } else {
                       return itemStIdx <= currentStationIdx;
@@ -1036,6 +1100,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
           )}
         </div>
       )}
+      </div>
     </div>
   );
 };

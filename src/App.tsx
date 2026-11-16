@@ -899,7 +899,7 @@ export default function App() {
       )}
 
       {/* Main Responsive View Container */}
-      <main className="flex-1 w-full bg-[#F4F3F8] text-[#221C35] overflow-y-auto">
+      <main className="flex-1 w-full bg-[#F4F3F8] text-[#221C35] overflow-y-auto pc:overflow-y-visible">
         {activeTab === 'home' && (
           <div className="max-w-md mx-auto px-4 py-4 pb-24 space-y-3.5 animate-fadeIn">
             {/* 1. Top Operation Status Area (運行情報) */}

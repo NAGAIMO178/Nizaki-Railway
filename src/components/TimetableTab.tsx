@@ -139,9 +139,11 @@ export const TimetableTab: React.FC<{ onReserve?: (preset: Omit<ReservationPrese
   // これから最初に発車する列車(時刻表で目立たせる)
   const nextSec = direction?.departures.find((d) => d.sec >= nowSec)?.sec;
 
-  const nextRef = useRef<HTMLDivElement | null>(null);
+  // 「次の列車」の枠(スマホ用の1列と、PC 用の左右2列の、2か所に出る)。画面に出ているほうへスクロールする
+  const nextEls = useRef<HTMLDivElement[]>([]);
+  nextEls.current = [];
   useEffect(() => {
-    nextRef.current?.scrollIntoView({ block: 'center' });
+    nextEls.current.find((el) => el.offsetParent !== null)?.scrollIntoView({ block: 'center' });
   }, [timetable, dirIdx]);
 
   const currentLine = lines?.find((l) => l.code === lineCode);
@@ -168,29 +170,65 @@ export const TimetableTab: React.FC<{ onReserve?: (preset: Omit<ReservationPrese
     </div>
   ) : null;
 
+  // 1時間ぶんの行(スマホの1列と、PC の左右2列で、同じ見た目)
+  const hourRow = (hour: number, deps: TimetableDeparture[]) => (
+    <div key={hour} className="flex items-start border-t border-[#EFEDF5]">
+      <div className="w-10 shrink-0 text-center py-2.5 text-sm font-black text-[#221C35] bg-[#F9F8FD] self-stretch border-r border-[#EFEDF5]">
+        {hour}
+      </div>
+      <div className="flex flex-wrap gap-x-3 gap-y-1.5 px-3 py-2">
+        {deps.map((d, i) => {
+          const isNext = d.sec === nextSec;
+          const m = formatDiaTime(d.sec).slice(3);
+          return (
+            <div
+              key={`${d.sec}-${i}`}
+              ref={
+                isNext
+                  ? (el) => {
+                      if (el) nextEls.current.push(el);
+                    }
+                  : undefined
+              }
+              className={`flex flex-col items-center leading-tight rounded-md px-1 ${
+                isNext ? 'bg-[#5B21B6] text-white' : 'text-[#221C35]'
+              }`}
+            >
+              <span className={`text-[9px] font-bold ${isNext ? 'text-white/90' : d.paid ? 'text-amber-600' : 'text-[#857D99]'}`}>
+                {d.typeAbbr}
+                {d.dest !== direction?.mainDest ? ` ${labels.get(d.dest) ?? d.dest}` : ''}
+              </span>
+              <span className="text-sm font-mono font-black">{m}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+
   // 駅の時刻表
   if (stationIdx !== null) {
     return (
-      <div className="max-w-md pc:max-w-[960px] mx-auto px-4 py-4 pb-28 space-y-3 animate-fadeIn">
+      <div className="max-w-md pc:max-w-[960px] mx-auto px-4 py-4 pb-28 space-y-3 pc:space-y-0 pc:grid pc:grid-cols-2 pc:gap-x-3.5 pc:gap-y-3 animate-fadeIn">
         <button
           type="button"
           onClick={() => setStationIdx(null)}
-          className="flex items-center gap-1 text-xs font-bold text-[#5B21B6] cursor-pointer"
+          className="flex items-center gap-1 text-xs font-bold text-[#5B21B6] cursor-pointer pc:col-start-1 pc:row-start-1 pc:justify-self-start"
         >
           <ChevronLeft className="w-4 h-4" />
           <span>{currentLine?.name ?? '駅'}の駅一覧</span>
         </button>
 
-        <div className="bg-white border border-[#E6E2EE] rounded-2xl p-3.5 flex items-center gap-3 shadow-xs">
+        <div className="bg-white border border-[#E6E2EE] rounded-2xl p-3.5 flex items-center gap-3 shadow-xs pc:col-start-1 pc:row-start-2">
           <StationBadge lineCode={lineCode} idx={stationIdx} />
           <div className="min-w-0">
             <div className="text-base font-black text-[#221C35] truncate">{currentLine?.stations[stationIdx]}</div>
-            <div className="text-[11px] text-[#857D99]">{currentLine?.name} 時刻表</div>
+            <div className="text-[11px] text-[#857D99] pc:hidden">{currentLine?.name} 時刻表</div>
           </div>
         </div>
 
         {ttError && (
-          <div className="bg-white border border-[#E6E2EE] rounded-2xl p-4 text-center space-y-2">
+          <div className="bg-white border border-[#E6E2EE] rounded-2xl p-4 text-center space-y-2 pc:col-span-2">
             <p className="text-xs text-[#6B6380]">時刻表を読み込めませんでした。</p>
             <button
               type="button"
@@ -203,11 +241,11 @@ export const TimetableTab: React.FC<{ onReserve?: (preset: Omit<ReservationPrese
           </div>
         )}
 
-        {!ttError && !timetable && <div className="text-center text-xs text-[#857D99] py-10">読み込み中…</div>}
+        {!ttError && !timetable && <div className="text-center text-xs text-[#857D99] py-10 pc:col-span-2">読み込み中…</div>}
 
         {timetable && (
           <>
-            <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[#E6E2EE]" role="tablist" aria-label="方面">
+            <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[#E6E2EE] pc:col-start-2 pc:row-start-1 pc:row-span-2 pc:self-end" role="tablist" aria-label="方面">
               {timetable.directions.map((d, i) => (
                 <button
                   key={d.code}
@@ -225,49 +263,28 @@ export const TimetableTab: React.FC<{ onReserve?: (preset: Omit<ReservationPrese
             </div>
 
             {direction && direction.departures.length === 0 ? (
-              <div className="bg-white border border-[#E6E2EE] rounded-2xl p-5 text-center text-xs text-[#6B6380]">
+              <div className="bg-white border border-[#E6E2EE] rounded-2xl p-5 text-center text-xs text-[#6B6380] pc:col-span-2">
                 この方向に発車する列車はありません。
                 <br />
                 （終着駅です。反対の方向をご覧ください）
               </div>
             ) : (
-              <div className="bg-white border border-[#E6E2EE] rounded-2xl overflow-hidden shadow-xs">
-                <div className="px-3 py-2 bg-[#EFE8FA] text-[10px] text-[#6B6380] font-bold flex justify-between gap-2">
-                  <span>おもな行き先: {direction?.mainDest}行</span>
+              <div className="bg-white border border-[#E6E2EE] rounded-2xl overflow-hidden shadow-xs pc:col-span-2">
+                <div className="px-3 py-2 bg-[#EFE8FA] text-[10px] text-[#6B6380] font-bold flex justify-between pc:justify-end gap-2">
+                  <span className="pc:hidden">おもな行き先: {direction?.mainDest}行</span>
                   <span>全日共通のダイヤ</span>
                 </div>
-                {rows.map(([hour, deps]) => (
-                  <div key={hour} className="flex items-start border-t border-[#EFEDF5]">
-                    <div className="w-10 shrink-0 text-center py-2.5 text-sm font-black text-[#221C35] bg-[#F9F8FD] self-stretch border-r border-[#EFEDF5]">
-                      {hour}
-                    </div>
-                    <div className="flex flex-wrap gap-x-3 gap-y-1.5 px-3 py-2">
-                      {deps.map((d, i) => {
-                        const isNext = d.sec === nextSec;
-                        const m = formatDiaTime(d.sec).slice(3);
-                        return (
-                          <div
-                            key={`${d.sec}-${i}`}
-                            ref={isNext ? nextRef : undefined}
-                            className={`flex flex-col items-center leading-tight rounded-md px-1 ${
-                              isNext ? 'bg-[#5B21B6] text-white' : 'text-[#221C35]'
-                            }`}
-                          >
-                            <span className={`text-[9px] font-bold ${isNext ? 'text-white/90' : d.paid ? 'text-amber-600' : 'text-[#857D99]'}`}>
-                              {d.typeAbbr}
-                              {d.dest !== direction?.mainDest ? ` ${labels.get(d.dest) ?? d.dest}` : ''}
-                            </span>
-                            <span className="text-sm font-mono font-black">{m}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
+                {/* スマホ: 1列 */}
+                <div className="pc:hidden">{rows.map(([hour, deps]) => hourRow(hour, deps))}</div>
+                {/* PC: 左が 15 時台まで、右が 16 時台から */}
+                <div className="hidden pc:grid pc:grid-cols-2">
+                  <div>{rows.filter(([hour]) => hour < 16).map(([hour, deps]) => hourRow(hour, deps))}</div>
+                  <div className="border-l border-[#EFEDF5]">{rows.filter(([hour]) => hour >= 16).map(([hour, deps]) => hourRow(hour, deps))}</div>
+                </div>
               </div>
             )}
 
-            <TimetableLegend rows={legendRows} />
+            <TimetableLegend rows={legendRows} className="pc:col-span-2" />
           </>
         )}
       </div>

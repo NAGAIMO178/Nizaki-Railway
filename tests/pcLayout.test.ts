@@ -141,3 +141,22 @@ describe('CSS(pc: )と、つなぎ', () => {
     expect(main.indexOf('startPcLayout();')).toBeLessThan(main.indexOf('createRoot('));
   });
 });
+
+describe('JavaScript で見た目を切り替えている所(列車位置の詳細)', () => {
+  it('幅だけでなく、PC 表示が出ているかも見る(隠れているあいだは、スマホと同じ動き)', () => {
+    const hook = read('src', 'utils', 'usePcLayout.ts');
+    expect(hook).toContain('return marked && wide;');
+    expect(hook).toContain('PC_MIN_WIDTH_PX');
+    const loc = read('src', 'components', 'TrainLocationTab.tsx');
+    expect(loc).toContain('const isPc = usePcLayout();');
+    expect(loc).not.toContain("useMediaQuery('(min-width: 1024px)')");
+  });
+  it('PC 用の指定(max-w の 960 など)は、lg: では書かない(PC 表示を日時まで隠すため、pc: だけ)', () => {
+    for (const f of ['TimetableTab', 'TrainLocationTab', 'TrainDetailV2', 'TimetableLegend', 'Header', 'FooterNav', 'EquipTab', 'ReservationTab', 'SettingsTab']) {
+      expect(read('src', 'components', `${f}.tsx`), f).not.toMatch(/\blg:/);
+    }
+    expect(read('src', 'App.tsx')).not.toMatch(/lg:overflow-y-visible|lg:max-w-\[960px\]/);
+    // イベントには、もとから PC と関係のない lg: がある(触らない)。足したのは pc:max-w-[960px] だけ
+    expect(read('src', 'components', 'EventsTab.tsx')).not.toMatch(/lg:max-w-\[960px\]/);
+  });
+});
