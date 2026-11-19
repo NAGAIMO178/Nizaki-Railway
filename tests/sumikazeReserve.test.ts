@@ -236,6 +236,9 @@ const loadGas = (): Gas => {
   };
   vm.createContext(ctx);
   vm.runInContext(source, ctx);
+  // このファイルは、すみかぜの予約・QR乗車券を調べる。同じ会員が、同じ席・列車で、何件も予約を作るので、重複を断る判定は止める(その判定は、gasReservationRules.test.ts で調べる)
+  ctx.ENFORCE_ONE_ACTIVE = false;
+  ctx.ENFORCE_SEAT_CONFLICT = false;
   return ctx;
 };
 beforeAll(() => {

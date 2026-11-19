@@ -32,6 +32,10 @@ const loadGas = (): Gas => {
   };
   vm.createContext(ctx);
   vm.runInContext(source, ctx);
+  // このファイルは、ポイント・上限・料金など、ほかの決まりを調べる。同じ会員が、同じ席・列車で、何件も予約を作るので、
+  // 「未終了の予約は1件まで」「同じ席の重なる予約は断る」の判定は止める(その判定は、gasReservationRules.test.ts で調べる)
+  ctx.ENFORCE_ONE_ACTIVE = false;
+  ctx.ENFORCE_SEAT_CONFLICT = false;
   // Google のサービスに触る部分を、作りものに差し替える(中の計算は、本物のまま)
   ctx.createJsonResponse = (d: unknown) => d;
   ctx.getOrCreateSheetWithHeaders = () => sheet;

@@ -614,7 +614,8 @@ function logCouponIssue(userId, course) {
 // 予約台帳の列(この順で作成。既存の台帳には不足している列だけ後ろへ追加する)
 const RESERVATION_HEADERS = [
   '予約日時', '予約番号', 'LINE_USER_ID', '列車名', '号車', '座席番号', '席種',
-  '乗車駅', '降車駅', '合計金額', 'ステータス', '会員ID', '予約日', '出発時刻', '到着時刻', '乗車日時', '初回登録日時', '初回の内容'
+  '乗車駅', '降車駅', '合計金額', 'ステータス', '会員ID', '予約日', '出発時刻', '到着時刻', '乗車日時', '初回登録日時', '初回の内容',
+  '乗車駅番号', '降車駅番号' // 座席の重なりの判定に使う、列車の停車駅の並びの番号(アプリが送ったときだけ)
 ];
 
 function getOrCreateReservationsSheet() {
@@ -730,6 +731,74 @@ function sheetSafe(value) {
   return /^[=+\-@\t\r]/.test(value) ? "'" + value : value;
 }
 
+// 予約台帳の1行が、まだ終わっていない予約か(取消でない・予約日と到着時刻が、まだ先)。
+// 到着時刻が無い行は、予約日の終わり(翌日の0時)まで有効。予約日も無い行は、予約日時から24時間
+function isReservationRowActive(headers, row) {
+  const statusIdx = headers.indexOf('ステータス');
+  if (statusIdx !== -1 && String(row[statusIdx]) === 'キャンセル') return false;
+  const dateIdx = headers.indexOf('予約日');
+  const arrIdx = headers.indexOf('到着時刻');
+  const date = dateIdx === -1 ? '' : cellText(row[dateIdx], 'yyyy-MM-dd');
+  const arrival = arrIdx === -1 ? '' : cellText(row[arrIdx], 'HH:mm');
+  if (/^\d{4}-\d{2}-\d{2}$/.test(date) && /^\d{1,2}:\d{2}$/.test(arrival)) return !isReservationRowExpired(headers, row);
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(date)) return Date.now() < new Date(date + 'T00:00:00+09:00').getTime() + DAY_MS;
+  const madeIdx = headers.indexOf('予約日時');
+  const made = madeIdx === -1 ? '' : cellText(row[madeIdx], 'yyyy/MM/dd HH:mm:ss');
+  const m = /^(\d{4})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2}):(\d{2})$/.exec(made);
+  if (m) return Date.now() < new Date(m[1] + '-' + m[2] + '-' + m[3] + 'T' + m[4] + ':' + m[5] + ':' + m[6] + '+09:00').getTime() + DAY_MS;
+  return true; // 日時が何も読めない行は、終わったとは言えない
+}
+
+// 停車駅の並びの番号(0以上の整数)。読めなければ null
+function parseStopIndex(v) {
+  if (v === undefined || v === null || v === '') return null;
+  if (typeof v !== 'number' && !/^\d{1,3}$/.test(String(v))) return null;
+  const n = Number(v);
+  return isFinite(n) && Math.floor(n) === n && n >= 0 && n <= 300 ? n : null;
+}
+
+// 乗車駅・降車駅の番号から、区間(半開区間 [乗車, 降車))を作る。どちらかが読めない・順番が逆のときは、全区間
+function seatRange(boardIdx, destIdx) {
+  const b = parseStopIndex(boardIdx);
+  const d = parseStopIndex(destIdx);
+  if (b === null || d === null || b >= d) return { from: -Infinity, to: Infinity };
+  return { from: b, to: d };
+}
+
+// 区間が重なるか(降車駅 = 次の人の乗車駅 は、重ならない)
+function seatRangesOverlap(a, b) {
+  return a.from < b.to && b.from < a.to;
+}
+
+// 座席の並び(カンマ区切り)。自由席は、空(対象外)
+function seatList(seatNo) {
+  const text = normalizeSeatNo(seatNo);
+  if (!text || FREE_SEAT_PATTERN.test(text)) return [];
+  return text.split(',').map(function (v) { return v.trim(); }).filter(function (v) { return v !== ''; });
+}
+
+// 同じ日・同じ列車・同じ号車・同じ席で、区間が重なる、ほかの予約(取消でないもの。自分の予約番号は除く)があるか。呼ぶ側が、ロックを持っていること
+function hasSeatConflict(headers, data, orderId, values, range) {
+  const seats = seatList(values['座席番号']);
+  if (seats.length === 0 || !values['予約日'] || !values['列車名'] || !values['号車']) return false;
+  const col = {};
+  headers.forEach(function (h, i) { col[h] = i; });
+  for (let i = 1; i < data.length; i++) {
+    const r = data[i];
+    if (String(r[col['予約番号']]) === orderId) continue;
+    if (String(r[col['ステータス']]) === 'キャンセル') continue;
+    if (cellText(r[col['予約日']], 'yyyy-MM-dd') !== values['予約日']) continue;
+    if (String(r[col['列車名']]) !== values['列車名']) continue;
+    if (Number(r[col['号車']]) !== Number(values['号車'])) continue;
+    const other = seatList(r[col['座席番号']]);
+    if (!seats.some(function (x) { return other.indexOf(x) !== -1; })) continue;
+    const otherRange = seatRange(col['乗車駅番号'] === undefined ? '' : r[col['乗車駅番号']], col['降車駅番号'] === undefined ? '' : r[col['降車駅番号']]);
+    if (seatRangesOverlap(range, otherRange)) return true;
+  }
+  return false;
+}
+
 /**
  * 予約の登録・更新(予約番号が同じ行があれば更新する)
  */
@@ -781,8 +850,16 @@ function handleCreateReservation(sessionToken, order, awardPoints) {
       '会員ID': memberId,
       '予約日': limitText(order.reservedDate, 10),
       '出発時刻': limitText(order.departureTime, 5),
-      '到着時刻': limitText(order.arrivalTime, 5)
+      '到着時刻': limitText(order.arrivalTime, 5),
+      '乗車駅番号': '',
+      '降車駅番号': ''
     };
+    // 座席の重なりの判定に使う、乗る駅・降りる駅の番号(アプリが送ったときだけ。順番が正しいときだけ保存する)
+    const stopRange = seatRange(order.boardIdx, order.destIdx);
+    if (isFinite(stopRange.from) && isFinite(stopRange.to)) {
+      values['乗車駅番号'] = stopRange.from;
+      values['降車駅番号'] = stopRange.to;
+    }
 
     let firstRegisteredAt = nowText(); // 最初に登録された日時(更新では、変えない。イベントのごほうびの判定が、予約の時刻に使う)
     // 最初に登録された、列車・区間・日付・発車時刻(更新では、変えない)。イベントのごほうびの判定は、現在の列ではなく、これだけを見る
@@ -810,6 +887,22 @@ function handleCreateReservation(sessionToken, order, awardPoints) {
         firstRegisteredAt = col['初回登録日時'] !== undefined ? cellText(data[i][col['初回登録日時']]) : '';
         firstContent = col['初回の内容'] !== undefined ? cellText(data[i][col['初回の内容']]) : '';
         break;
+      }
+    }
+
+    // 公開後のアプリ: 同じ席の、重なる区間の予約は断る(ほかの会員も含む。自分の予約番号の更新は、自分の行を除いて調べる)
+    if (awardPoints && ENFORCE_SEAT_CONFLICT && hasSeatConflict(headers, data, values['予約番号'], values, stopRange)) {
+      return createJsonResponse({ status: 'error', code: 'seat_taken', message: 'その座席は、すでに予約されています。' });
+    }
+    // 公開後のアプリ: 新しい予約は、同じ会員の未終了の予約が、すでにあれば断る(同じ予約番号の更新は、通す)
+    if (awardPoints && ENFORCE_ONE_ACTIVE && targetRow === -1) {
+      let activeNow = 0;
+      for (let i = 1; i < data.length; i++) {
+        if (String(data[i][col['会員ID']]) !== memberId) continue;
+        if (isReservationRowActive(headers, data[i])) activeNow++;
+      }
+      if (activeNow >= MAX_ACTIVE_PER_MEMBER) {
+        return createJsonResponse({ status: 'error', code: 'active_exists', message: 'いま、ほかの予約があります。その予約が終わってから、ご予約ください。' });
       }
     }
 
@@ -2753,6 +2846,10 @@ const RESERVATION_POINT_MIN = 50;
 const POINT_BASIS_CAP = 100000;          // 1つの予約で、ポイントを計算する合計金額の上限
 const DAILY_RESERVATION_POINT_CAP = 10000; // 1会員が、予約で付くポイントを、1日(日本時間)に受け取れる上限
 const MAX_ACTIVE_RESERVATIONS = 20;       // 1会員の、まだ乗っていない(取消でない)予約の上限
+const MAX_ACTIVE_PER_MEMBER = 1;           // 1会員の、未終了(取消でない・到着時刻がまだ先)の予約の数。新しい予約は、これを超えるときは受けない
+// 再デプロイのあとに、止めたいときの保険(false にすると、その判定をしない)。公開後のアプリ(awardPoints: true)の予約だけが対象
+var ENFORCE_ONE_ACTIVE = true;           // 同じ会員の未終了の予約は、MAX_ACTIVE_PER_MEMBER 件まで
+var ENFORCE_SEAT_CONFLICT = true;        // 同じ日・同じ列車・同じ号車・同じ席で、区間が重なる予約は、ほかの会員も含めて断る
 // 1回の注文(予約・デリバリーの追加)の上限。超える申告は、予約の保存ごと断る(画面にも同じ上限を置く)
 const MAX_ORDER_TOTAL = 100000; // 合計金額(N-POINTで払った分を含む)
 const MAX_SEATS = 6;            // 1つの予約の座席の数(人数)
