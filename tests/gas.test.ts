@@ -391,17 +391,17 @@ describe('ポイントの水増しを防ぐ(予約の登録・取消)', () => {
     expect(rows.length).toBe(2);
   });
 
-  it('1日に予約で付くポイントは、3000ptまで(予約をくり返しても、それ以上は付かない)', () => {
-    for (let i = 0; i < 5; i++) create(`EQ-${i + 1}`, 50000); // 1回1500pt
-    expect(balance()).toBe(3000);
+  it('1日に予約で付くポイントは、10000ptまで(予約をくり返しても、それ以上は付かない)', () => {
+    for (let i = 0; i < 9; i++) create(`EQ-${i + 1}`, 50000); // 1回1500pt。7回目で10000に届き、そのあとは付かない
+    expect(balance()).toBe(10000);
   });
 
   it('日が変われば、また付く', () => {
-    for (let i = 0; i < 3; i++) create(`EQ-${i + 1}`, 50000);
-    expect(balance()).toBe(3000);
+    for (let i = 0; i < 7; i++) create(`EQ-${i + 1}`, 50000);
+    expect(balance()).toBe(10000);
     rows.forEach((r, i) => i > 0 && (r[0] = '2026/11/01 12:00:00')); // きのうの分にする
     create('EQ-9', 50000);
-    expect(balance()).toBe(4500);
+    expect(balance()).toBe(11500);
   });
 
   it('取り消した予約は、同じ予約番号で出し直せない(取消のあとの出し直しで、ポイントを残せない)', () => {
@@ -978,7 +978,7 @@ describe('公開記念イベントのごほうび(claimEventTare)', () => {
   });
 
   it('ポイントの付与の1日の上限は、このイベントに効かない', () => {
-    for (let i = 0; i < 3; i++) put('reservation', `reservation:X${i}`, 1500); // きょうの上限(3000pt)を使い切った状態
+    for (let i = 0; i < 7; i++) put('reservation', `reservation:X${i}`, 1500); // きょうの上限(10000pt)を使い切った状態
     expect(claim()).toMatchObject({ status: 'success', added: true, points: 350 });
   });
 

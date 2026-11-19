@@ -2311,7 +2311,7 @@ const RESERVATION_POINT_RATE = 0.03;
 const RESERVATION_POINT_MIN = 50;
 // 申告の金額を信じすぎないための上限(ポイントの決まりは変えない。ふつうの予約は、ここに届かない)
 const POINT_BASIS_CAP = 100000;          // 1つの予約で、ポイントを計算する合計金額の上限
-const DAILY_RESERVATION_POINT_CAP = 3000; // 1会員が、予約で付くポイントを、1日(日本時間)に受け取れる上限
+const DAILY_RESERVATION_POINT_CAP = 10000; // 1会員が、予約で付くポイントを、1日(日本時間)に受け取れる上限
 const MAX_ACTIVE_RESERVATIONS = 20;       // 1会員の、まだ乗っていない(取消でない)予約の上限
 // 1回の注文(予約・デリバリーの追加)の上限。超える申告は、予約の保存ごと断る(画面にも同じ上限を置く)
 const MAX_ORDER_TOTAL = 100000; // 合計金額(N-POINTで払った分を含む)
