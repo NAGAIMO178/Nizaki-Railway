@@ -146,6 +146,12 @@ function doPost(e) {
     if (json.action === 'adminDeleteNotice') {
       return handleAdminDeleteNotice(json.adminToken, json.id);
     }
+    if (json.action === 'adminUploadNoticeImage') {
+      return handleAdminUploadNoticeImage(json.adminToken, json.fileName, json.mimeType, json.dataBase64);
+    }
+    if (json.action === 'adminDeleteNoticeImage') {
+      return handleAdminDeleteNoticeImage(json.adminToken, json.id);
+    }
 
     // ①.07 予約をサーバーから取り直す(自分の未終了の予約はログイン証が要る。予約済みの席は、公開用で、会員の情報は返さない)
     if (json.action === 'getMyReservations') {
@@ -2833,6 +2839,141 @@ function handleAdminSetFeedbackStatus(adminToken, id, status) {
     return createJsonResponse({ status: 'success' });
   } catch (err) {
     return internalErrorResponse('adminSetFeedbackStatus', err);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ==============================================================================
+// 通知の画像(管理者コンソールから送った画像を、Google ドライブに保存して、アドレスを返す)
+//  - adminUploadNoticeImage: 管理トークンを、サーバー側で必ず確かめる。中身は1.5MBまで。JPEG・PNG・WebP だけ
+//    (申告の mimeType だけでなく、先頭のバイト(マジックナンバー)も確かめる)。1時間に20回まで
+//  - 保存先: ドライブのフォルダ「神埼線アプリ_通知画像」(なければ作り、IDをスクリプトプロパティ NOTICE_IMAGE_FOLDER_ID に覚える)
+//  - ファイル名は、サーバーが決める(ユーザーのファイル名は使わない)。共有は「リンクを知っている全員が、見られる」(閲覧のみ)
+//  - 返すアドレス: https://lh3.googleusercontent.com/d/<ID>(通知の画像アドレスの検査 isHttpsNoticeUrl を通る形)
+//  - adminDeleteNoticeImage: 上のフォルダにあるファイルだけ、ゴミ箱に入れる
+// ==============================================================================
+const NOTICE_IMAGE_FOLDER_NAME = '神埼線アプリ_通知画像';
+const NOTICE_IMAGE_FOLDER_PROPERTY = 'NOTICE_IMAGE_FOLDER_ID';
+const NOTICE_IMAGE_MAX_BYTES = 1572864; // 1.5MB
+const NOTICE_IMAGE_RATE_MAX = 20;
+const NOTICE_IMAGE_RATE_SECONDS = 3600;
+const NOTICE_IMAGE_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+
+function noticeImageUrl(fileId) {
+  return 'https://lh3.googleusercontent.com/d/' + fileId;
+}
+
+// 先頭のバイトから、画像の種類を見分ける('image/jpeg' など)。画像でなければ ''
+function detectImageMime(bytes) {
+  const b = function (i) { return (bytes[i] === undefined ? -1 : bytes[i] & 0xFF); };
+  if (b(0) === 0xFF && b(1) === 0xD8 && b(2) === 0xFF) return 'image/jpeg';
+  if (b(0) === 0x89 && b(1) === 0x50 && b(2) === 0x4E && b(3) === 0x47 && b(4) === 0x0D && b(5) === 0x0A && b(6) === 0x1A && b(7) === 0x0A) return 'image/png';
+  if (b(0) === 0x52 && b(1) === 0x49 && b(2) === 0x46 && b(3) === 0x46 && b(8) === 0x57 && b(9) === 0x45 && b(10) === 0x42 && b(11) === 0x50) return 'image/webp';
+  return '';
+}
+
+// 通知の画像を入れるフォルダ(なければ作る)。呼ぶ側が、ロックを持っていること
+function getOrCreateNoticeImageFolder() {
+  const props = PropertiesService.getScriptProperties();
+  const savedId = props.getProperty(NOTICE_IMAGE_FOLDER_PROPERTY);
+  if (savedId) {
+    try {
+      return DriveApp.getFolderById(savedId);
+    } catch (err) {
+      // 消された・見つからないときは、名前で探し直す
+    }
+  }
+  const found = DriveApp.getFoldersByName(NOTICE_IMAGE_FOLDER_NAME);
+  const folder = found.hasNext() ? found.next() : DriveApp.createFolder(NOTICE_IMAGE_FOLDER_NAME);
+  props.setProperty(NOTICE_IMAGE_FOLDER_PROPERTY, folder.getId());
+  return folder;
+}
+
+function handleAdminUploadNoticeImage(adminToken, fileName, mimeType, dataBase64) {
+  const denied = adminTokenErrorResponse(checkAdminToken(adminToken));
+  if (denied) return denied;
+  const invalid = function (message) { return createJsonResponse({ status: 'error', code: 'invalid', message: message }); };
+
+  const gate = reserveCounter('notice_image_upload', NOTICE_IMAGE_RATE_MAX, NOTICE_IMAGE_RATE_SECONDS);
+  if (gate === 'locked') {
+    return createJsonResponse({ status: 'error', code: 'rate_limited', message: '画像の送信が続いたため、しばらくしてからお試しください(1時間に' + NOTICE_IMAGE_RATE_MAX + '回まで)。' });
+  }
+  if (gate === 'busy') return createJsonResponse({ status: 'error', code: 'busy', message: '混み合っています。しばらくしてからもう一度お試しください。' });
+
+  const mime = String(mimeType === undefined || mimeType === null ? '' : mimeType);
+  const ext = Object.prototype.hasOwnProperty.call(NOTICE_IMAGE_TYPES, mime) ? NOTICE_IMAGE_TYPES[mime] : '';
+  if (!ext) return invalid('画像は、JPEG・PNG・WebP だけです。');
+  if (typeof dataBase64 !== 'string' || dataBase64 === '') return invalid('画像の中身がありません。');
+  const tooLarge = createJsonResponse({ status: 'error', code: 'too_large', message: '画像は 1.5MB までです。' });
+  // 文字の長さから、先に大きさを見積もる(巨大な文字を、読み解かずに断る)
+  if (dataBase64.length > Math.ceil(NOTICE_IMAGE_MAX_BYTES / 3) * 4 + 16) return tooLarge;
+  const clean = dataBase64.replace(/\s+/g, '');
+  if (!/^[A-Za-z0-9+\/]+={0,2}$/.test(clean)) return invalid('画像の中身が、正しくありません。');
+  let bytes;
+  try {
+    bytes = Utilities.base64Decode(clean);
+  } catch (err) {
+    return invalid('画像の中身が、正しくありません。');
+  }
+  if (!bytes || bytes.length === 0) return invalid('画像の中身がありません。');
+  if (bytes.length > NOTICE_IMAGE_MAX_BYTES) return tooLarge;
+  // 先頭のバイトが、申告どおりの画像であること(名前や申告だけを、信じない)
+  if (detectImageMime(bytes) !== mime) return invalid('画像の中身が、' + ext.toUpperCase() + ' ではありません。');
+
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+  } catch (err) {
+    return createJsonResponse({ status: 'error', code: 'busy', message: '混み合っています。しばらくしてからもう一度お試しください。' });
+  }
+  try {
+    const folder = getOrCreateNoticeImageFolder();
+    // ファイル名は、サーバーが決める(元のファイル名は、使わない)
+    const name = 'n' + Date.now() + '_' + Utilities.getUuid().replace(/-/g, '').slice(0, 10) + '.' + ext;
+    const file = folder.createFile(Utilities.newBlob(bytes, mime, name));
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    const id = String(file.getId());
+    return createJsonResponse({ status: 'success', url: noticeImageUrl(id), id: id });
+  } catch (err) {
+    return internalErrorResponse('adminUploadNoticeImage', err);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// 通知の画像を、ゴミ箱に入れる。上のフォルダの中のファイルだけ(ほかのファイルは、触れない)
+function handleAdminDeleteNoticeImage(adminToken, id) {
+  const denied = adminTokenErrorResponse(checkAdminToken(adminToken));
+  if (denied) return denied;
+  const fileId = String(id === undefined || id === null ? '' : id);
+  if (!/^[A-Za-z0-9_-]{10,100}$/.test(fileId)) return createJsonResponse({ status: 'error', code: 'invalid', message: '画像のIDが正しくありません。' });
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+  } catch (err) {
+    return createJsonResponse({ status: 'error', code: 'busy', message: '混み合っています。しばらくしてからもう一度お試しください。' });
+  }
+  try {
+    const folderId = PropertiesService.getScriptProperties().getProperty(NOTICE_IMAGE_FOLDER_PROPERTY);
+    const notFound = createJsonResponse({ status: 'error', code: 'not_found', message: '画像が見つかりません。' });
+    if (!folderId) return notFound;
+    let file;
+    try {
+      file = DriveApp.getFileById(fileId);
+    } catch (err) {
+      return notFound;
+    }
+    let inFolder = false;
+    const parents = file.getParents();
+    while (parents.hasNext()) {
+      if (String(parents.next().getId()) === String(folderId)) inFolder = true;
+    }
+    if (!inFolder) return notFound;
+    file.setTrashed(true);
+    return createJsonResponse({ status: 'success' });
+  } catch (err) {
+    return internalErrorResponse('adminDeleteNoticeImage', err);
   } finally {
     lock.releaseLock();
   }
