@@ -147,6 +147,20 @@ function doPost(e) {
       return handleAdminDeleteNotice(json.adminToken, json.id);
     }
 
+    // ①.66 ご意見・不具合(アプリのフォーム)。送るのは、ログインなしでできる。管理用は、サーバー側で、管理トークンを確かめる
+    if (json.action === 'submitFeedback') {
+      return handleSubmitFeedback(json.feedback, json.sessionToken);
+    }
+    if (json.action === 'adminListFeedback') {
+      return handleAdminListFeedback(json.adminToken);
+    }
+    if (json.action === 'adminReplyFeedback') {
+      return handleAdminReplyFeedback(json.adminToken, json.id, json.text);
+    }
+    if (json.action === 'adminSetFeedbackStatus') {
+      return handleAdminSetFeedbackStatus(json.adminToken, json.id, json.status);
+    }
+
     // ② LINE Messaging APIからのWebhookイベント
     if (json.events && Array.isArray(json.events)) {
       // GAS は、リクエストの見出し(X-Line-Signature)を読めず、署名を検証できない。代わりに、Webhook の URL に付けた秘密の文字で確かめる
@@ -258,6 +272,13 @@ function handleLineMessage(event) {
   // 0.5 パスワード再設定用の合言葉判定
   if (normalizedToken.length === 6 && CacheService.getScriptCache().get('line_reset_pending_' + normalizedToken)) {
     handleLineResetMessage(replyToken, userId, normalizedToken);
+    return;
+  }
+
+  // 0.7 ご意見の、返信希望の受付コード(待ち中のコードと一致したときだけ、返事をする。ふつうの言葉には、何も返さない)
+  // (全角・小文字・空白・記号は、無視してそろえる。上の合言葉の判定は、半角の英数字だけを残すが、ここは全角も、半角に直す)
+  const feedbackCode = normalizeFeedbackCode(text);
+  if (feedbackCode.length === 6 && handleLineFeedbackCode(replyToken, userId, feedbackCode)) {
     return;
   }
 
@@ -2180,6 +2201,425 @@ function handleAdminDeleteNotice(adminToken, id) {
     return createJsonResponse({ status: 'success' });
   } catch (err) {
     return internalErrorResponse('adminDeleteNotice', err);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ==============================================================================
+// ご意見・不具合(アプリのフォーム / Googleフォーム)
+//  - シート「ご意見」(なければ自動で作る)。1行が1件。返信がほしい人は、受付コード(6文字)を、公式LINEに送ってもらい、LINEで返信する
+//  - 公開用(submitFeedback): ログインなしで送れる。返信希望のときだけ、会員ID(ログイン証があれば)を保存し、受付コードを返す。連投は、同じ端末の印で、1時間に5回まで
+//  - 受付コード: 英数字6文字(大文字小文字は同じ。O/0・I/1/l は使わない。英字を1文字以上)。有効は10分間・使い捨て。待ち中のほかの合言葉と、重ならない
+//  - LINE(handleLineFeedbackCode): 待ち中のコードと一致したときだけ、返信先(LINE_USER_ID)を結びつけて返事をする。順番が逆(LINEが先)でも、10分以内なら結びつく
+//  - 管理用(adminListFeedback / adminReplyFeedback / adminSetFeedbackStatus): 管理トークンを、必ず、サーバー側で確かめる。LINE_USER_ID は返さない
+// ==============================================================================
+const SHEET_FEEDBACK = 'ご意見';
+const FEEDBACK_HEADERS = ['受付ID', '受付日時', '入口', '対象の画面', '種類', '内容', '返信希望', '受付コード', 'コードの状態', 'コードの期限(ms)', 'LINE_USER_ID', '会員ID', '利用環境', '状態', '返信日時'];
+const FB_COL = { id: 1, time: 2, entry: 3, screen: 4, kind: 5, message: 6, wantReply: 7, code: 8, codeState: 9, codeExpiry: 10, lineUser: 11, memberId: 12, env: 13, status: 14, repliedAt: 15 };
+const FEEDBACK_SCREEN_MAX = 60;
+const FEEDBACK_KIND_MAX = 40;
+const FEEDBACK_MESSAGE_MAX = 1000;
+const FEEDBACK_ENV_MAX = 1500;
+const FEEDBACK_REPLY_MAX = 1000;
+const FEEDBACK_ADMIN_LIMIT = 200;
+const FEEDBACK_STATUSES = ['未対応', '対応済'];
+const FEEDBACK_CODE_TTL_SECONDS = 600; // 受付コードの有効(10分)
+const FEEDBACK_RATE_MAX = 5; // 同じ端末の印で、1時間に
+const FEEDBACK_RATE_SECONDS = 3600;
+const FEEDBACK_LINE_TRY_MAX = 10; // 同じ LINE ユーザーIDで、10分に
+const FEEDBACK_LINE_TRY_SECONDS = 600;
+const FEEDBACK_CODE_ACCEPTED_TEXT = 'ご意見を、受け付けました。内容を確認して、お返事します。';
+
+function getOrCreateFeedbackSheet() {
+  return getOrCreateSheetWithHeaders(SHEET_FEEDBACK, FEEDBACK_HEADERS, [2, 8, 9, 10, 15]);
+}
+
+// 受付コードにするために、文字をそろえる(全角→半角・大文字・英数字だけ)
+function normalizeFeedbackCode(raw) {
+  const half = String(raw === undefined || raw === null ? '' : raw).replace(/[！-～]/g, function (c) {
+    return String.fromCharCode(c.charCodeAt(0) - 0xFEE0);
+  });
+  return half.toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+function isFeedbackCodeShape(code) {
+  return /^[A-Z0-9]{6}$/.test(code);
+}
+
+// いま待ち中の合言葉(登録・パスワード再設定・ご意見の受付コード)と、重ならないか
+function isFeedbackCodeFree(code) {
+  const cache = CacheService.getScriptCache();
+  return !cache.get('line_pending_' + code) && !cache.get('line_reset_pending_' + code) && !cache.get('fb_code_' + code) && !cache.get('fb_line_' + code);
+}
+
+// 受付コードを作る(英字を1文字以上・待ち中のほかの合言葉と重ならない)。作れなければ ''
+function makeFeedbackCode() {
+  for (let i = 0; i < 20; i++) {
+    const code = secureToken(6); // 英数字のうち、O/0・I/1 は使わない並び
+    if (/[A-Z]/.test(code) && isFeedbackCodeFree(code)) return code;
+  }
+  return '';
+}
+
+function readFeedbackRows() {
+  const sheet = getOrCreateFeedbackSheet();
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return { sheet: sheet, rows: [] };
+  const values = sheet.getRange(2, 1, lastRow - 1, FEEDBACK_HEADERS.length).getValues();
+  return { sheet: sheet, rows: values };
+}
+
+function findFeedbackRow(sheet, id) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return -1;
+  const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  for (let i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]) === id) return i + 2;
+  }
+  return -1;
+}
+
+function newFeedbackId() {
+  return 'f' + Utilities.getUuid().replace(/-/g, '').slice(0, 12);
+}
+
+// 1件を書く。codeInfo = { code, expiry } があれば、受付コードも書く。呼ぶ側が、ロックを持っていること
+function appendFeedbackRow(entry, f, memberId, codeInfo, lineUserId) {
+  const sheet = getOrCreateFeedbackSheet();
+  const id = newFeedbackId();
+  sheet.appendRow([
+    id,
+    nowText(),
+    entry,
+    sheetSafe(f.screen),
+    sheetSafe(f.kind),
+    sheetSafe(f.message),
+    f.wantReply ? 1 : 0,
+    codeInfo ? codeInfo.code : '',
+    codeInfo ? (lineUserId ? 'matched' : 'waiting') : '',
+    codeInfo ? (lineUserId ? '' : codeInfo.expiry) : '',
+    sheetSafe(lineUserId || ''),
+    memberId ? sheetSafe(memberId) : '',
+    sheetSafe(f.env),
+    FEEDBACK_STATUSES[0],
+    ''
+  ]);
+  return id;
+}
+
+function cleanFeedbackText(value, max) {
+  return String(value === undefined || value === null ? '' : value).trim().slice(0, max);
+}
+
+// 公開用: ご意見を受け付ける(ログイン不要)
+function handleSubmitFeedback(feedback, sessionToken) {
+  if (!feedback || typeof feedback !== 'object') {
+    return createJsonResponse({ status: 'error', code: 'invalid', message: 'ご意見の内容がありません。' });
+  }
+  const message = cleanFeedbackText(feedback.message, FEEDBACK_MESSAGE_MAX + 1);
+  if (!message) return createJsonResponse({ status: 'error', code: 'invalid', message: 'ご意見の内容を入れてください。' });
+  if (message.length > FEEDBACK_MESSAGE_MAX) {
+    return createJsonResponse({ status: 'error', code: 'invalid', message: 'ご意見は ' + FEEDBACK_MESSAGE_MAX + ' 文字までです。' });
+  }
+  const deviceId = cleanFeedbackText(feedback.deviceId, 80);
+  if (!/^[A-Za-z0-9_-]{8,80}$/.test(deviceId)) {
+    return createJsonResponse({ status: 'error', code: 'invalid', message: '送れませんでした。アプリを開き直して、もう一度お試しください。' });
+  }
+  const f = {
+    screen: cleanFeedbackText(feedback.screen, FEEDBACK_SCREEN_MAX),
+    kind: cleanFeedbackText(feedback.kind, FEEDBACK_KIND_MAX),
+    message: message,
+    env: cleanFeedbackText(feedback.env, FEEDBACK_ENV_MAX),
+    wantReply: feedback.wantReply === true
+  };
+
+  const gate = reserveCounter('fb_rate_' + deviceId, FEEDBACK_RATE_MAX, FEEDBACK_RATE_SECONDS);
+  if (gate === 'locked') {
+    return createJsonResponse({ status: 'error', code: 'rate_limited', message: '短い時間に、たくさん送られたため、しばらくしてからお試しください。' });
+  }
+  if (gate === 'busy') return createJsonResponse({ status: 'error', code: 'busy', message: '混み合っています。しばらくしてからもう一度お試しください。' });
+
+  // 会員ID: 返信希望で、ログインの証が本物のときだけ保存する(返信希望でなければ、匿名)
+  const memberId = f.wantReply && sessionToken ? verifySessionToken(sessionToken) || '' : '';
+
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+  } catch (err) {
+    return createJsonResponse({ status: 'error', code: 'busy', message: '混み合っています。しばらくしてからもう一度お試しください。' });
+  }
+  try {
+    if (!f.wantReply) {
+      appendFeedbackRow('app', f, '', null, '');
+      return createJsonResponse({ status: 'success' });
+    }
+    const code = makeFeedbackCode();
+    if (!code) return createJsonResponse({ status: 'error', code: 'busy', message: '混み合っています。しばらくしてからもう一度お試しください。' });
+    const expiry = Date.now() + FEEDBACK_CODE_TTL_SECONDS * 1000;
+    const id = appendFeedbackRow('app', f, memberId, { code: code, expiry: expiry }, '');
+    CacheService.getScriptCache().put('fb_code_' + code, id, FEEDBACK_CODE_TTL_SECONDS);
+    return createJsonResponse({ status: 'success', replyCode: code, expiresAt: expiry });
+  } catch (err) {
+    return internalErrorResponse('submitFeedback', err);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// LINE にコードが届いたとき(handleLineMessage から)。返事をしたとき(コードが一致したとき)だけ true。それ以外は、何も返さない
+function handleLineFeedbackCode(replyToken, userId, code) {
+  if (!isFeedbackCodeShape(code) || !userId || userId === 'unknown') return false;
+  const cache = CacheService.getScriptCache();
+  // 同じ LINE ユーザーIDからの試行の制限(超えたら、何も返さない)
+  const gate = reserveCounter('fb_line_try_' + userId, FEEDBACK_LINE_TRY_MAX, FEEDBACK_LINE_TRY_SECONDS);
+  if (gate !== 'ok') return false;
+
+  const id = cache.get('fb_code_' + code);
+  if (!id) {
+    // 待ち中のコードが、まだ無い(LINEが先に届いた): 10分だけ覚えておき、あとから同じコードの意見が来たら結びつける
+    cache.put('fb_line_' + code, userId, FEEDBACK_CODE_TTL_SECONDS);
+    return false;
+  }
+  if (!matchFeedbackCode(id, code, userId)) return false;
+  replyToLine(replyToken, [{ type: 'text', text: FEEDBACK_CODE_ACCEPTED_TEXT }]);
+  return true;
+}
+
+// 待ち中のコード(意見ID)に、LINE の返信先を結びつける。結びつけたら true。期限切れ・すでに使用ずみは false
+function matchFeedbackCode(id, code, userId) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+  } catch (err) {
+    return false;
+  }
+  try {
+    const sheet = getOrCreateFeedbackSheet();
+    const row = findFeedbackRow(sheet, id);
+    if (row < 0) return false;
+    const v = sheet.getRange(row, 1, 1, FEEDBACK_HEADERS.length).getValues()[0];
+    const expiry = Number(v[FB_COL.codeExpiry - 1]);
+    if (String(v[FB_COL.codeState - 1]) !== 'waiting' || String(v[FB_COL.code - 1]).toUpperCase() !== code || !isFinite(expiry) || Date.now() > expiry) {
+      sheet.getRange(row, FB_COL.codeState, 1, 1).setValues([['expired']]);
+      CacheService.getScriptCache().remove('fb_code_' + code);
+      return false;
+    }
+    // 結びつける。コードは消す(使い捨て)
+    sheet.getRange(row, FB_COL.code, 1, 3).setValues([['', 'matched', '']]);
+    sheet.getRange(row, FB_COL.lineUser, 1, 1).setValues([[sheetSafe(userId)]]);
+    CacheService.getScriptCache().remove('fb_code_' + code);
+    return true;
+  } catch (err) {
+    logInternalError('matchFeedbackCode', err);
+    return false;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// Googleフォームの、質問の見出し(前方一致)
+const FEEDBACK_FORM_TITLES = { screen: '対象の画面', kind: '種類', message: '内容', wantReply: '返信の希望', env: '利用環境', code: 'LINEで利用する合言葉' };
+
+function feedbackFormAnswers(response) {
+  const out = {};
+  const items = response.getItemResponses();
+  for (let i = 0; i < items.length; i++) {
+    const title = String(items[i].getItem().getTitle());
+    const answer = items[i].getResponse();
+    Object.keys(FEEDBACK_FORM_TITLES).forEach(function (key) {
+      if (title.indexOf(FEEDBACK_FORM_TITLES[key]) === 0 && out[key] === undefined) {
+        out[key] = Array.isArray(answer) ? answer.join(', ') : answer;
+      }
+    });
+  }
+  return out;
+}
+
+// Googleフォームの、送信時のトリガーから呼ばれる(e.response が、フォームの回答)
+function onFeedbackFormSubmit(e) {
+  try {
+    if (!e || !e.response) return;
+    const a = feedbackFormAnswers(e.response);
+    const message = cleanFeedbackText(a.message, FEEDBACK_MESSAGE_MAX);
+    if (!message) return;
+    const wantReply = String(a.wantReply === undefined ? '' : a.wantReply).indexOf('する') === 0;
+    const f = {
+      screen: cleanFeedbackText(a.screen, FEEDBACK_SCREEN_MAX),
+      kind: cleanFeedbackText(a.kind, FEEDBACK_KIND_MAX),
+      message: message,
+      env: cleanFeedbackText(a.env, FEEDBACK_ENV_MAX),
+      wantReply: wantReply
+    };
+    const code = normalizeFeedbackCode(a.code);
+    const lock = LockService.getScriptLock();
+    lock.waitLock(10000);
+    try {
+      if (!wantReply || !isFeedbackCodeShape(code)) {
+        appendFeedbackRow('form', f, '', null, '');
+        return;
+      }
+      const cache = CacheService.getScriptCache();
+      // 待ち中のほかの合言葉と重なるコードは、受け付けない(意見だけ残す)
+      const clash = cache.get('line_pending_' + code) || cache.get('line_reset_pending_' + code) || cache.get('fb_code_' + code);
+      if (clash) {
+        const id0 = appendFeedbackRow('form', f, '', { code: '', expiry: '' }, '');
+        const sheet0 = getOrCreateFeedbackSheet();
+        const row0 = findFeedbackRow(sheet0, id0);
+        if (row0 > 0) sheet0.getRange(row0, FB_COL.codeState, 1, 1).setValues([['expired']]);
+        return;
+      }
+      const stash = cache.get('fb_line_' + code); // LINE が先に届いていた
+      const expiry = Date.now() + FEEDBACK_CODE_TTL_SECONDS * 1000;
+      const id = appendFeedbackRow('form', f, '', { code: stash ? '' : code, expiry: expiry }, stash || '');
+      if (stash) {
+        cache.remove('fb_line_' + code);
+        // 結びつけたことを、LINE に知らせる(返信用のトークンは無いので、プッシュ)
+        pushToLine(stash, [{ type: 'text', text: FEEDBACK_CODE_ACCEPTED_TEXT }]);
+      } else {
+        cache.put('fb_code_' + code, id, FEEDBACK_CODE_TTL_SECONDS);
+      }
+    } finally {
+      lock.releaseLock();
+    }
+  } catch (err) {
+    logInternalError('onFeedbackFormSubmit', err);
+  }
+}
+
+// ユーザーが、1回だけ実行する: フォームの、送信時のトリガーを作る(前に作ったものは、先に消す)
+function setupFeedbackFormTrigger(formId) {
+  const form = FormApp.openById(String(formId));
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'onFeedbackFormSubmit') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('onFeedbackFormSubmit').forForm(form).onFormSubmit().create();
+}
+
+// LINE にプッシュで送る(返信用のトークンが無いとき・管理者からの返信)。送れたら true
+function pushToLine(userId, messages) {
+  const token = CONFIG.ACCESS_TOKEN;
+  if (!token || token.includes('★') || !userId) return false;
+  try {
+    const res = UrlFetchApp.fetch(CONFIG.LINE_PUSH_URL, {
+      method: 'post',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      payload: JSON.stringify({ to: userId, messages: messages }),
+      muteHttpExceptions: true
+    });
+    if (res.getResponseCode() !== 200) {
+      console.error('[LINEプッシュ失敗] status=' + res.getResponseCode() + ' ' + String(res.getContentText()).slice(0, 300));
+      return false;
+    }
+    return true;
+  } catch (err) {
+    logInternalError('[LINEプッシュ失敗]', err);
+    return false;
+  }
+}
+
+function handleAdminListFeedback(adminToken) {
+  const denied = adminTokenErrorResponse(checkAdminToken(adminToken));
+  if (denied) return denied;
+  try {
+    const rows = readFeedbackRows().rows;
+    const out = [];
+    for (let i = rows.length - 1; i >= 0 && out.length < FEEDBACK_ADMIN_LIMIT; i--) {
+      const v = rows[i];
+      if (!v[0]) continue;
+      out.push({
+        id: String(v[FB_COL.id - 1]),
+        receivedAt: cellText(v[FB_COL.time - 1]),
+        entry: String(v[FB_COL.entry - 1]),
+        screen: String(v[FB_COL.screen - 1]),
+        kind: String(v[FB_COL.kind - 1]),
+        message: String(v[FB_COL.message - 1]),
+        wantReply: String(v[FB_COL.wantReply - 1]) === '1',
+        codeState: String(v[FB_COL.codeState - 1]),
+        canReply: !!String(v[FB_COL.lineUser - 1]), // 返信先(LINE)がある印だけ。LINE_USER_ID は返さない
+        env: String(v[FB_COL.env - 1]),
+        status: String(v[FB_COL.status - 1]),
+        repliedAt: cellText(v[FB_COL.repliedAt - 1])
+      });
+    }
+    return createJsonResponse({ status: 'success', feedback: out });
+  } catch (err) {
+    return internalErrorResponse('adminListFeedback', err);
+  }
+}
+
+function handleAdminReplyFeedback(adminToken, id, text) {
+  const denied = adminTokenErrorResponse(checkAdminToken(adminToken));
+  if (denied) return denied;
+  const feedbackId = String(id || '');
+  if (!/^f[0-9a-f]{12}$/.test(feedbackId)) return createJsonResponse({ status: 'error', code: 'invalid', message: 'ご意見のIDが正しくありません。' });
+  const reply = String(text === undefined || text === null ? '' : text).trim();
+  if (!reply) return createJsonResponse({ status: 'error', code: 'invalid', message: '返信の文を入れてください。' });
+  if (reply.length > FEEDBACK_REPLY_MAX) return createJsonResponse({ status: 'error', code: 'invalid', message: '返信は ' + FEEDBACK_REPLY_MAX + ' 文字までです。' });
+
+  // 返信先を読む(短いロックの中で)。LINE への送信は、ロックの外で行う
+  let lineUserId = '';
+  let row = -1;
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+  } catch (err) {
+    return createJsonResponse({ status: 'error', code: 'busy', message: '混み合っています。しばらくしてからもう一度お試しください。' });
+  }
+  try {
+    const sheet = getOrCreateFeedbackSheet();
+    row = findFeedbackRow(sheet, feedbackId);
+    if (row < 0) return createJsonResponse({ status: 'error', code: 'not_found', message: 'ご意見が見つかりません。' });
+    lineUserId = String(sheet.getRange(row, FB_COL.lineUser, 1, 1).getValues()[0][0] || '');
+  } catch (err) {
+    return internalErrorResponse('adminReplyFeedback', err);
+  } finally {
+    lock.releaseLock();
+  }
+  if (!lineUserId) return createJsonResponse({ status: 'error', code: 'no_line', message: '返信先(LINE)が、まだ結びついていません。' });
+  if (!pushToLine(lineUserId, [{ type: 'text', text: reply }])) {
+    return createJsonResponse({ status: 'error', code: 'push_failed', message: 'LINE に送れませんでした。しばらくしてから、もう一度お試しください。' });
+  }
+  try {
+    lock.waitLock(5000);
+    try {
+      const sheet = getOrCreateFeedbackSheet();
+      const r = findFeedbackRow(sheet, feedbackId);
+      if (r > 0) {
+        sheet.getRange(r, FB_COL.status, 1, 1).setValues([[FEEDBACK_STATUSES[1]]]);
+        sheet.getRange(r, FB_COL.repliedAt, 1, 1).setValues([[nowText()]]);
+      }
+    } finally {
+      lock.releaseLock();
+    }
+  } catch (err) {
+    // LINE には送れている。記録の更新だけ失敗した
+    logInternalError('adminReplyFeedback(記録)', err);
+  }
+  return createJsonResponse({ status: 'success' });
+}
+
+function handleAdminSetFeedbackStatus(adminToken, id, status) {
+  const denied = adminTokenErrorResponse(checkAdminToken(adminToken));
+  if (denied) return denied;
+  const feedbackId = String(id || '');
+  if (!/^f[0-9a-f]{12}$/.test(feedbackId)) return createJsonResponse({ status: 'error', code: 'invalid', message: 'ご意見のIDが正しくありません。' });
+  const next = String(status || '');
+  if (FEEDBACK_STATUSES.indexOf(next) < 0) return createJsonResponse({ status: 'error', code: 'invalid', message: '状態が正しくありません。' });
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+  } catch (err) {
+    return createJsonResponse({ status: 'error', code: 'busy', message: '混み合っています。しばらくしてからもう一度お試しください。' });
+  }
+  try {
+    const sheet = getOrCreateFeedbackSheet();
+    const row = findFeedbackRow(sheet, feedbackId);
+    if (row < 0) return createJsonResponse({ status: 'error', code: 'not_found', message: 'ご意見が見つかりません。' });
+    sheet.getRange(row, FB_COL.status, 1, 1).setValues([[next]]);
+    return createJsonResponse({ status: 'success' });
+  } catch (err) {
+    return internalErrorResponse('adminSetFeedbackStatus', err);
   } finally {
     lock.releaseLock();
   }
