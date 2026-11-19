@@ -9,6 +9,8 @@ import { FooterNav } from './components/FooterNav';
 import type { ReservationPreset } from './components/ReservationTab';
 import { MenuDrawer } from './components/MenuDrawer';
 import { NoticeSheet } from './components/NoticeSheet';
+import { FeedbackSheet } from './components/FeedbackSheet';
+import { screenOfTab } from './utils/feedback';
 import { useNotices } from './utils/useNotices';
 import { LazyOnOpen } from './components/LazyOnOpen';
 import { LazyBoundary } from './components/LazyBoundary';
@@ -123,6 +125,7 @@ export default function App() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   // 通知(メニューの中)。読むのは、アプリを開いたときと、メニューを開いたときだけ
   const [isNoticeOpen, setIsNoticeOpen] = useState(false);
+  const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
   const notice = useNotices();
   // 下のタブを、もう一度タップした回数(列車位置・時刻表が、自分の最初の表示に戻るために見る)
   const [reselect, setReselect] = useState<{ tab: TabType; n: number }>({ tab: 'home', n: 0 });
@@ -828,6 +831,7 @@ export default function App() {
   const goHome = () => {
     setIsMenuOpen(false);
     setIsNoticeOpen(false);
+    setIsFeedbackOpen(false);
     setIsLoginModalOpen(false);
     setPendingAction(null);
     setIsEDeliveryModalOpen(false);
@@ -1138,8 +1142,17 @@ export default function App() {
           notice.markRead(); // 開くと、すべて既読
         }}
         hasNewNotice={notice.hasNew}
+        onOpenFeedback={() => setIsFeedbackOpen(true)}
       />
       <NoticeSheet isOpen={isNoticeOpen} notices={notice.notices} onClose={() => setIsNoticeOpen(false)} />
+      <FeedbackSheet
+        isOpen={isFeedbackOpen}
+        onClose={() => setIsFeedbackOpen(false)}
+        defaultScreen={screenOfTab(activeTab)}
+        currentScreenLabel={screenOfTab(activeTab)}
+        sessionToken={currentUser?.sessionToken}
+        loggedIn={isLoggedIn}
+      />
 
       {/* 公開記念イベント(公開後だけ) */}
       {isLaunched() && (

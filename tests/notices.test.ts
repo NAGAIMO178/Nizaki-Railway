@@ -186,13 +186,13 @@ describe('通知の一覧(NoticeSheet)', () => {
     expect(ok).toContain('rel="noopener noreferrer"');
     const bad = sheet([n({ imageUrl: 'http://example.test/a.png', linkUrl: 'javascript:alert(1)' })]);
     expect(bad).not.toContain('<img');
-    expect(bad).not.toContain('<a ');
+    expect(bad.match(/<a /g)).toHaveLength(1); // 一番下の「公式LINE」だけ
     expect(bad).not.toContain('javascript:');
   });
   it('画像・リンクが無ければ、出さない。通知が0件なら、「通知はありません」', () => {
     const html = sheet([n()]);
     expect(html).not.toContain('<img');
-    expect(html).not.toContain('<a ');
+    expect(html.match(/<a /g)).toHaveLength(1); // 一番下の「公式LINE」だけ
     expect(sheet([])).toContain('通知はありません');
   });
   it('順番は、渡された順(新しい順に整えたものを、そのまま)', () => {
