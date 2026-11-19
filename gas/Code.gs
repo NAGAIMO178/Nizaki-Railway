@@ -147,6 +147,28 @@ function doPost(e) {
       return handleAdminDeleteNotice(json.adminToken, json.id);
     }
 
+    // ①.07 予約をサーバーから取り直す(自分の未終了の予約はログイン証が要る。予約済みの席は、公開用で、会員の情報は返さない)
+    if (json.action === 'getMyReservations') {
+      return handleGetMyReservations(json.sessionToken);
+    }
+    if (json.action === 'getOccupiedSeats') {
+      return handleGetOccupiedSeats(json.date, json.trainName, json.carNo);
+    }
+
+    // ①.66 ご意見・不具合(アプリのフォーム)。送るのは、ログインなしでできる。管理用は、サーバー側で、管理トークンを確かめる
+    if (json.action === 'submitFeedback') {
+      return handleSubmitFeedback(json.feedback, json.sessionToken);
+    }
+    if (json.action === 'adminListFeedback') {
+      return handleAdminListFeedback(json.adminToken);
+    }
+    if (json.action === 'adminReplyFeedback') {
+      return handleAdminReplyFeedback(json.adminToken, json.id, json.text);
+    }
+    if (json.action === 'adminSetFeedbackStatus') {
+      return handleAdminSetFeedbackStatus(json.adminToken, json.id, json.status);
+    }
+
     // ② LINE Messaging APIからのWebhookイベント
     if (json.events && Array.isArray(json.events)) {
       // GAS は、リクエストの見出し(X-Line-Signature)を読めず、署名を検証できない。代わりに、Webhook の URL に付けた秘密の文字で確かめる
@@ -258,6 +280,13 @@ function handleLineMessage(event) {
   // 0.5 パスワード再設定用の合言葉判定
   if (normalizedToken.length === 6 && CacheService.getScriptCache().get('line_reset_pending_' + normalizedToken)) {
     handleLineResetMessage(replyToken, userId, normalizedToken);
+    return;
+  }
+
+  // 0.7 ご意見の、返信希望の受付コード(待ち中のコードと一致したときだけ、返事をする。ふつうの言葉には、何も返さない)
+  // (全角・小文字・空白・記号は、無視してそろえる。上の合言葉の判定は、半角の英数字だけを残すが、ここは全角も、半角に直す)
+  const feedbackCode = normalizeFeedbackCode(text);
+  if (feedbackCode.length === 6 && handleLineFeedbackCode(replyToken, userId, feedbackCode)) {
     return;
   }
 
@@ -593,7 +622,8 @@ function logCouponIssue(userId, course) {
 // 予約台帳の列(この順で作成。既存の台帳には不足している列だけ後ろへ追加する)
 const RESERVATION_HEADERS = [
   '予約日時', '予約番号', 'LINE_USER_ID', '列車名', '号車', '座席番号', '席種',
-  '乗車駅', '降車駅', '合計金額', 'ステータス', '会員ID', '予約日', '出発時刻', '到着時刻', '乗車日時', '初回登録日時', '初回の内容'
+  '乗車駅', '降車駅', '合計金額', 'ステータス', '会員ID', '予約日', '出発時刻', '到着時刻', '乗車日時', '初回登録日時', '初回の内容',
+  '乗車駅番号', '降車駅番号' // 座席の重なりの判定に使う、列車の停車駅の並びの番号(アプリが送ったときだけ)
 ];
 
 function getOrCreateReservationsSheet() {
@@ -709,6 +739,186 @@ function sheetSafe(value) {
   return /^[=+\-@\t\r]/.test(value) ? "'" + value : value;
 }
 
+// 予約台帳の1行が、まだ終わっていない予約か(取消でない・予約日と到着時刻が、まだ先)。
+// 到着時刻が無い行は、予約日の終わり(翌日の0時)まで有効。予約日も無い行は、予約日時から24時間
+function isReservationRowActive(headers, row) {
+  const statusIdx = headers.indexOf('ステータス');
+  if (statusIdx !== -1 && String(row[statusIdx]) === 'キャンセル') return false;
+  const dateIdx = headers.indexOf('予約日');
+  const arrIdx = headers.indexOf('到着時刻');
+  const date = dateIdx === -1 ? '' : cellText(row[dateIdx], 'yyyy-MM-dd');
+  const arrival = arrIdx === -1 ? '' : cellText(row[arrIdx], 'HH:mm');
+  if (/^\d{4}-\d{2}-\d{2}$/.test(date) && /^\d{1,2}:\d{2}$/.test(arrival)) return !isReservationRowExpired(headers, row);
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(date)) return Date.now() < new Date(date + 'T00:00:00+09:00').getTime() + DAY_MS;
+  const madeIdx = headers.indexOf('予約日時');
+  const made = madeIdx === -1 ? '' : cellText(row[madeIdx], 'yyyy/MM/dd HH:mm:ss');
+  const m = /^(\d{4})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2}):(\d{2})$/.exec(made);
+  if (m) return Date.now() < new Date(m[1] + '-' + m[2] + '-' + m[3] + 'T' + m[4] + ':' + m[5] + ':' + m[6] + '+09:00').getTime() + DAY_MS;
+  return true; // 日時が何も読めない行は、終わったとは言えない
+}
+
+// 停車駅の並びの番号(0以上の整数)。読めなければ null
+function parseStopIndex(v) {
+  if (v === undefined || v === null || v === '') return null;
+  if (typeof v !== 'number' && !/^\d{1,3}$/.test(String(v))) return null;
+  const n = Number(v);
+  return isFinite(n) && Math.floor(n) === n && n >= 0 && n <= 300 ? n : null;
+}
+
+// 乗車駅・降車駅の番号から、区間(半開区間 [乗車, 降車))を作る。どちらかが読めない・順番が逆のときは、全区間
+function seatRange(boardIdx, destIdx) {
+  const b = parseStopIndex(boardIdx);
+  const d = parseStopIndex(destIdx);
+  if (b === null || d === null || b >= d) return { from: -Infinity, to: Infinity };
+  return { from: b, to: d };
+}
+
+// 区間が重なるか(降車駅 = 次の人の乗車駅 は、重ならない)
+function seatRangesOverlap(a, b) {
+  return a.from < b.to && b.from < a.to;
+}
+
+// 座席の並び(カンマ区切り)。自由席は、空(対象外)
+function seatList(seatNo) {
+  const text = normalizeSeatNo(seatNo);
+  if (!text || FREE_SEAT_PATTERN.test(text)) return [];
+  return text.split(',').map(function (v) { return v.trim(); }).filter(function (v) { return v !== ''; });
+}
+
+// 同じ日・同じ列車・同じ号車・同じ席で、区間が重なる、ほかの予約(取消でないもの。自分の予約番号は除く)があるか。呼ぶ側が、ロックを持っていること
+function hasSeatConflict(headers, data, orderId, values, range) {
+  const seats = seatList(values['座席番号']);
+  if (seats.length === 0 || !values['予約日'] || !values['列車名'] || !values['号車']) return false;
+  const col = {};
+  headers.forEach(function (h, i) { col[h] = i; });
+  for (let i = 1; i < data.length; i++) {
+    const r = data[i];
+    if (String(r[col['予約番号']]) === orderId) continue;
+    if (String(r[col['ステータス']]) === 'キャンセル') continue;
+    if (cellText(r[col['予約日']], 'yyyy-MM-dd') !== values['予約日']) continue;
+    if (String(r[col['列車名']]) !== values['列車名']) continue;
+    if (Number(r[col['号車']]) !== Number(values['号車'])) continue;
+    const other = seatList(r[col['座席番号']]);
+    if (!seats.some(function (x) { return other.indexOf(x) !== -1; })) continue;
+    const otherRange = seatRange(col['乗車駅番号'] === undefined ? '' : r[col['乗車駅番号']], col['降車駅番号'] === undefined ? '' : r[col['降車駅番号']]);
+    if (seatRangesOverlap(range, otherRange)) return true;
+  }
+  return false;
+}
+
+// 台帳の1行の、明細(デリバリーの商品・割引・N-POINT払い)。読めなければ、空
+function readReservationDetail(headers, row) {
+  const idx = headers.indexOf('明細');
+  if (idx === -1 || !row[idx]) return { items: [], itemDiscount: 0, pointsUsed: 0 };
+  try {
+    const d = JSON.parse(String(row[idx]));
+    return {
+      items: Array.isArray(d.items) ? d.items : [],
+      itemDiscount: Math.max(0, Math.floor(Number(d.itemDiscount)) || 0),
+      pointsUsed: Math.max(0, Math.floor(Number(d.pointsUsed)) || 0)
+    };
+  } catch (err) {
+    return { items: [], itemDiscount: 0, pointsUsed: 0 };
+  }
+}
+
+/**
+ * 自分の、未終了の予約(取消でない・到着時刻がまだ先)を返す。アプリが、画面を作り直すのに必要な項目だけ。ログイン証が要る。
+ * LINE_USER_ID は返さない
+ */
+function handleGetMyReservations(sessionToken) {
+  const a = authMember(sessionToken);
+  if (a.error) return a.error;
+  try {
+    const sheet = getDataSpreadsheet().getSheetByName(SHEET_RESERVATIONS);
+    if (!sheet || sheet.getLastRow() < 2) return createJsonResponse({ status: 'success', reservations: [] });
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const col = {};
+    headers.forEach(function (h, i) { col[h] = i; });
+    const text = function (row, name, pattern) { return col[name] === undefined ? '' : cellText(row[col[name]], pattern); };
+    const out = [];
+    for (let i = data.length - 1; i >= 1 && out.length < MAX_ACTIVE_RESERVATIONS; i--) {
+      const row = data[i];
+      if (String(row[col['会員ID']]) !== a.memberId) continue;
+      if (!isReservationRowActive(headers, row)) continue;
+      const detail = readReservationDetail(headers, row);
+      out.push({
+        orderId: String(row[col['予約番号']]),
+        trainName: text(row, '列車名'),
+        carNo: Number(row[col['号車']]) || 0,
+        seatNo: text(row, '座席番号'),
+        seatType: text(row, '席種'),
+        boardingStation: text(row, '乗車駅'),
+        destinationStation: text(row, '降車駅'),
+        departureTime: text(row, '出発時刻', 'HH:mm'),
+        arrivalTime: text(row, '到着時刻', 'HH:mm'),
+        reservedDate: text(row, '予約日', 'yyyy-MM-dd'),
+        totalPrice: Number(row[col['合計金額']]) || 0,
+        boardIdx: parseStopIndex(col['乗車駅番号'] === undefined ? '' : row[col['乗車駅番号']]),
+        destIdx: parseStopIndex(col['降車駅番号'] === undefined ? '' : row[col['降車駅番号']]),
+        items: detail.items,
+        itemDiscount: detail.itemDiscount,
+        pointsUsed: detail.pointsUsed,
+        boarded: text(row, '乗車日時') !== ''
+      });
+    }
+    return createJsonResponse({ status: 'success', reservations: out });
+  } catch (err) {
+    return internalErrorResponse('getMyReservations', err);
+  }
+}
+
+const OCCUPIED_CACHE_SECONDS = 30;
+
+/**
+ * 公開用: 指定の日・列車・号車の、予約済みの席と、区間の番号だけを返す(取消でない予約。自由席は含めない)。会員の情報は、一切、返さない。30秒だけ覚える
+ */
+function handleGetOccupiedSeats(date, trainName, carNo) {
+  const d = String(date === undefined || date === null ? '' : date);
+  const train = limitText(trainName, 60).trim();
+  const car = Number(carNo);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || !train || !isFinite(car) || Math.floor(car) !== car || car < 1 || car > 30) {
+    return createJsonResponse({ status: 'error', code: 'invalid', message: '日付・列車・号車を、確かめてください。' });
+  }
+  try {
+    const cache = CacheService.getScriptCache();
+    const key = 'occupied_' + d + '|' + train + '|' + car;
+    const cached = cache.get(key);
+    if (cached) return createJsonResponse({ status: 'success', seats: JSON.parse(cached) });
+    const sheet = getDataSpreadsheet().getSheetByName(SHEET_RESERVATIONS);
+    const seats = [];
+    if (sheet && sheet.getLastRow() >= 2) {
+      const data = sheet.getDataRange().getValues();
+      const headers = data[0];
+      const col = {};
+      headers.forEach(function (h, i) { col[h] = i; });
+      for (let i = 1; i < data.length; i++) {
+        const r = data[i];
+        if (String(r[col['ステータス']]) === 'キャンセル') continue;
+        if (cellText(r[col['予約日']], 'yyyy-MM-dd') !== d) continue;
+        if (String(r[col['列車名']]) !== train) continue;
+        if (Number(r[col['号車']]) !== car) continue;
+        const range = { from: parseStopIndex(col['乗車駅番号'] === undefined ? '' : r[col['乗車駅番号']]), to: parseStopIndex(col['降車駅番号'] === undefined ? '' : r[col['降車駅番号']]) };
+        // 区間が読めない・順番が逆の行は、全区間(from / to を null)
+        const full = range.from === null || range.to === null || range.from >= range.to;
+        seatList(r[col['座席番号']]).forEach(function (seat) {
+          seats.push({ seat: seat, from: full ? null : range.from, to: full ? null : range.to });
+        });
+      }
+    }
+    try {
+      cache.put(key, JSON.stringify(seats), OCCUPIED_CACHE_SECONDS);
+    } catch (ignored) {
+      // 覚えられなくても、返す
+    }
+    return createJsonResponse({ status: 'success', seats: seats });
+  } catch (err) {
+    return internalErrorResponse('getOccupiedSeats', err);
+  }
+}
+
 /**
  * 予約の登録・更新(予約番号が同じ行があれば更新する)
  */
@@ -760,8 +970,16 @@ function handleCreateReservation(sessionToken, order, awardPoints) {
       '会員ID': memberId,
       '予約日': limitText(order.reservedDate, 10),
       '出発時刻': limitText(order.departureTime, 5),
-      '到着時刻': limitText(order.arrivalTime, 5)
+      '到着時刻': limitText(order.arrivalTime, 5),
+      '乗車駅番号': '',
+      '降車駅番号': ''
     };
+    // 座席の重なりの判定に使う、乗る駅・降りる駅の番号(アプリが送ったときだけ。順番が正しいときだけ保存する)
+    const stopRange = seatRange(order.boardIdx, order.destIdx);
+    if (isFinite(stopRange.from) && isFinite(stopRange.to)) {
+      values['乗車駅番号'] = stopRange.from;
+      values['降車駅番号'] = stopRange.to;
+    }
 
     let firstRegisteredAt = nowText(); // 最初に登録された日時(更新では、変えない。イベントのごほうびの判定が、予約の時刻に使う)
     // 最初に登録された、列車・区間・日付・発車時刻(更新では、変えない)。イベントのごほうびの判定は、現在の列ではなく、これだけを見る
@@ -789,6 +1007,22 @@ function handleCreateReservation(sessionToken, order, awardPoints) {
         firstRegisteredAt = col['初回登録日時'] !== undefined ? cellText(data[i][col['初回登録日時']]) : '';
         firstContent = col['初回の内容'] !== undefined ? cellText(data[i][col['初回の内容']]) : '';
         break;
+      }
+    }
+
+    // 公開後のアプリ: 同じ席の、重なる区間の予約は断る(ほかの会員も含む。自分の予約番号の更新は、自分の行を除いて調べる)
+    if (awardPoints && ENFORCE_SEAT_CONFLICT && hasSeatConflict(headers, data, values['予約番号'], values, stopRange)) {
+      return createJsonResponse({ status: 'error', code: 'seat_taken', message: 'その座席は、すでに予約されています。' });
+    }
+    // 公開後のアプリ: 新しい予約は、同じ会員の未終了の予約が、すでにあれば断る(同じ予約番号の更新は、通す)
+    if (awardPoints && ENFORCE_ONE_ACTIVE && targetRow === -1) {
+      let activeNow = 0;
+      for (let i = 1; i < data.length; i++) {
+        if (String(data[i][col['会員ID']]) !== memberId) continue;
+        if (isReservationRowActive(headers, data[i])) activeNow++;
+      }
+      if (activeNow >= MAX_ACTIVE_PER_MEMBER) {
+        return createJsonResponse({ status: 'error', code: 'active_exists', message: 'いま、ほかの予約があります。その予約が終わってから、ご予約ください。' });
       }
     }
 
@@ -2185,6 +2419,425 @@ function handleAdminDeleteNotice(adminToken, id) {
   }
 }
 
+// ==============================================================================
+// ご意見・不具合(アプリのフォーム / Googleフォーム)
+//  - シート「ご意見」(なければ自動で作る)。1行が1件。返信がほしい人は、受付コード(6文字)を、公式LINEに送ってもらい、LINEで返信する
+//  - 公開用(submitFeedback): ログインなしで送れる。返信希望のときだけ、会員ID(ログイン証があれば)を保存し、受付コードを返す。連投は、同じ端末の印で、1時間に5回まで
+//  - 受付コード: 英数字6文字(大文字小文字は同じ。O/0・I/1/l は使わない。英字を1文字以上)。有効は10分間・使い捨て。待ち中のほかの合言葉と、重ならない
+//  - LINE(handleLineFeedbackCode): 待ち中のコードと一致したときだけ、返信先(LINE_USER_ID)を結びつけて返事をする。順番が逆(LINEが先)でも、10分以内なら結びつく
+//  - 管理用(adminListFeedback / adminReplyFeedback / adminSetFeedbackStatus): 管理トークンを、必ず、サーバー側で確かめる。LINE_USER_ID は返さない
+// ==============================================================================
+const SHEET_FEEDBACK = 'ご意見';
+const FEEDBACK_HEADERS = ['受付ID', '受付日時', '入口', '対象の画面', '種類', '内容', '返信希望', '受付コード', 'コードの状態', 'コードの期限(ms)', 'LINE_USER_ID', '会員ID', '利用環境', '状態', '返信日時'];
+const FB_COL = { id: 1, time: 2, entry: 3, screen: 4, kind: 5, message: 6, wantReply: 7, code: 8, codeState: 9, codeExpiry: 10, lineUser: 11, memberId: 12, env: 13, status: 14, repliedAt: 15 };
+const FEEDBACK_SCREEN_MAX = 60;
+const FEEDBACK_KIND_MAX = 40;
+const FEEDBACK_MESSAGE_MAX = 1000;
+const FEEDBACK_ENV_MAX = 1500;
+const FEEDBACK_REPLY_MAX = 1000;
+const FEEDBACK_ADMIN_LIMIT = 200;
+const FEEDBACK_STATUSES = ['未対応', '対応済'];
+const FEEDBACK_CODE_TTL_SECONDS = 600; // 受付コードの有効(10分)
+const FEEDBACK_RATE_MAX = 5; // 同じ端末の印で、1時間に
+const FEEDBACK_RATE_SECONDS = 3600;
+const FEEDBACK_LINE_TRY_MAX = 10; // 同じ LINE ユーザーIDで、10分に
+const FEEDBACK_LINE_TRY_SECONDS = 600;
+const FEEDBACK_CODE_ACCEPTED_TEXT = 'ご意見を、受け付けました。内容を確認して、お返事します。';
+
+function getOrCreateFeedbackSheet() {
+  return getOrCreateSheetWithHeaders(SHEET_FEEDBACK, FEEDBACK_HEADERS, [2, 8, 9, 10, 15]);
+}
+
+// 受付コードにするために、文字をそろえる(全角→半角・大文字・英数字だけ)
+function normalizeFeedbackCode(raw) {
+  const half = String(raw === undefined || raw === null ? '' : raw).replace(/[！-～]/g, function (c) {
+    return String.fromCharCode(c.charCodeAt(0) - 0xFEE0);
+  });
+  return half.toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+function isFeedbackCodeShape(code) {
+  return /^[A-Z0-9]{6}$/.test(code);
+}
+
+// いま待ち中の合言葉(登録・パスワード再設定・ご意見の受付コード)と、重ならないか
+function isFeedbackCodeFree(code) {
+  const cache = CacheService.getScriptCache();
+  return !cache.get('line_pending_' + code) && !cache.get('line_reset_pending_' + code) && !cache.get('fb_code_' + code) && !cache.get('fb_line_' + code);
+}
+
+// 受付コードを作る(英字を1文字以上・待ち中のほかの合言葉と重ならない)。作れなければ ''
+function makeFeedbackCode() {
+  for (let i = 0; i < 20; i++) {
+    const code = secureToken(6); // 英数字のうち、O/0・I/1 は使わない並び
+    if (/[A-Z]/.test(code) && isFeedbackCodeFree(code)) return code;
+  }
+  return '';
+}
+
+function readFeedbackRows() {
+  const sheet = getOrCreateFeedbackSheet();
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return { sheet: sheet, rows: [] };
+  const values = sheet.getRange(2, 1, lastRow - 1, FEEDBACK_HEADERS.length).getValues();
+  return { sheet: sheet, rows: values };
+}
+
+function findFeedbackRow(sheet, id) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return -1;
+  const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  for (let i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]) === id) return i + 2;
+  }
+  return -1;
+}
+
+function newFeedbackId() {
+  return 'f' + Utilities.getUuid().replace(/-/g, '').slice(0, 12);
+}
+
+// 1件を書く。codeInfo = { code, expiry } があれば、受付コードも書く。呼ぶ側が、ロックを持っていること
+function appendFeedbackRow(entry, f, memberId, codeInfo, lineUserId) {
+  const sheet = getOrCreateFeedbackSheet();
+  const id = newFeedbackId();
+  sheet.appendRow([
+    id,
+    nowText(),
+    entry,
+    sheetSafe(f.screen),
+    sheetSafe(f.kind),
+    sheetSafe(f.message),
+    f.wantReply ? 1 : 0,
+    codeInfo ? codeInfo.code : '',
+    codeInfo ? (lineUserId ? 'matched' : 'waiting') : '',
+    codeInfo ? (lineUserId ? '' : codeInfo.expiry) : '',
+    sheetSafe(lineUserId || ''),
+    memberId ? sheetSafe(memberId) : '',
+    sheetSafe(f.env),
+    FEEDBACK_STATUSES[0],
+    ''
+  ]);
+  return id;
+}
+
+function cleanFeedbackText(value, max) {
+  return String(value === undefined || value === null ? '' : value).trim().slice(0, max);
+}
+
+// 公開用: ご意見を受け付ける(ログイン不要)
+function handleSubmitFeedback(feedback, sessionToken) {
+  if (!feedback || typeof feedback !== 'object') {
+    return createJsonResponse({ status: 'error', code: 'invalid', message: 'ご意見の内容がありません。' });
+  }
+  const message = cleanFeedbackText(feedback.message, FEEDBACK_MESSAGE_MAX + 1);
+  if (!message) return createJsonResponse({ status: 'error', code: 'invalid', message: 'ご意見の内容を入れてください。' });
+  if (message.length > FEEDBACK_MESSAGE_MAX) {
+    return createJsonResponse({ status: 'error', code: 'invalid', message: 'ご意見は ' + FEEDBACK_MESSAGE_MAX + ' 文字までです。' });
+  }
+  const deviceId = cleanFeedbackText(feedback.deviceId, 80);
+  if (!/^[A-Za-z0-9_-]{8,80}$/.test(deviceId)) {
+    return createJsonResponse({ status: 'error', code: 'invalid', message: '送れませんでした。アプリを開き直して、もう一度お試しください。' });
+  }
+  const f = {
+    screen: cleanFeedbackText(feedback.screen, FEEDBACK_SCREEN_MAX),
+    kind: cleanFeedbackText(feedback.kind, FEEDBACK_KIND_MAX),
+    message: message,
+    env: cleanFeedbackText(feedback.env, FEEDBACK_ENV_MAX),
+    wantReply: feedback.wantReply === true
+  };
+
+  const gate = reserveCounter('fb_rate_' + deviceId, FEEDBACK_RATE_MAX, FEEDBACK_RATE_SECONDS);
+  if (gate === 'locked') {
+    return createJsonResponse({ status: 'error', code: 'rate_limited', message: '短い時間に、たくさん送られたため、しばらくしてからお試しください。' });
+  }
+  if (gate === 'busy') return createJsonResponse({ status: 'error', code: 'busy', message: '混み合っています。しばらくしてからもう一度お試しください。' });
+
+  // 会員ID: 返信希望で、ログインの証が本物のときだけ保存する(返信希望でなければ、匿名)
+  const memberId = f.wantReply && sessionToken ? verifySessionToken(sessionToken) || '' : '';
+
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+  } catch (err) {
+    return createJsonResponse({ status: 'error', code: 'busy', message: '混み合っています。しばらくしてからもう一度お試しください。' });
+  }
+  try {
+    if (!f.wantReply) {
+      appendFeedbackRow('app', f, '', null, '');
+      return createJsonResponse({ status: 'success' });
+    }
+    const code = makeFeedbackCode();
+    if (!code) return createJsonResponse({ status: 'error', code: 'busy', message: '混み合っています。しばらくしてからもう一度お試しください。' });
+    const expiry = Date.now() + FEEDBACK_CODE_TTL_SECONDS * 1000;
+    const id = appendFeedbackRow('app', f, memberId, { code: code, expiry: expiry }, '');
+    CacheService.getScriptCache().put('fb_code_' + code, id, FEEDBACK_CODE_TTL_SECONDS);
+    return createJsonResponse({ status: 'success', replyCode: code, expiresAt: expiry });
+  } catch (err) {
+    return internalErrorResponse('submitFeedback', err);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// LINE にコードが届いたとき(handleLineMessage から)。返事をしたとき(コードが一致したとき)だけ true。それ以外は、何も返さない
+function handleLineFeedbackCode(replyToken, userId, code) {
+  if (!isFeedbackCodeShape(code) || !userId || userId === 'unknown') return false;
+  const cache = CacheService.getScriptCache();
+  // 同じ LINE ユーザーIDからの試行の制限(超えたら、何も返さない)
+  const gate = reserveCounter('fb_line_try_' + userId, FEEDBACK_LINE_TRY_MAX, FEEDBACK_LINE_TRY_SECONDS);
+  if (gate !== 'ok') return false;
+
+  const id = cache.get('fb_code_' + code);
+  if (!id) {
+    // 待ち中のコードが、まだ無い(LINEが先に届いた): 10分だけ覚えておき、あとから同じコードの意見が来たら結びつける
+    cache.put('fb_line_' + code, userId, FEEDBACK_CODE_TTL_SECONDS);
+    return false;
+  }
+  if (!matchFeedbackCode(id, code, userId)) return false;
+  replyToLine(replyToken, [{ type: 'text', text: FEEDBACK_CODE_ACCEPTED_TEXT }]);
+  return true;
+}
+
+// 待ち中のコード(意見ID)に、LINE の返信先を結びつける。結びつけたら true。期限切れ・すでに使用ずみは false
+function matchFeedbackCode(id, code, userId) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+  } catch (err) {
+    return false;
+  }
+  try {
+    const sheet = getOrCreateFeedbackSheet();
+    const row = findFeedbackRow(sheet, id);
+    if (row < 0) return false;
+    const v = sheet.getRange(row, 1, 1, FEEDBACK_HEADERS.length).getValues()[0];
+    const expiry = Number(v[FB_COL.codeExpiry - 1]);
+    if (String(v[FB_COL.codeState - 1]) !== 'waiting' || String(v[FB_COL.code - 1]).toUpperCase() !== code || !isFinite(expiry) || Date.now() > expiry) {
+      sheet.getRange(row, FB_COL.codeState, 1, 1).setValues([['expired']]);
+      CacheService.getScriptCache().remove('fb_code_' + code);
+      return false;
+    }
+    // 結びつける。コードは消す(使い捨て)
+    sheet.getRange(row, FB_COL.code, 1, 3).setValues([['', 'matched', '']]);
+    sheet.getRange(row, FB_COL.lineUser, 1, 1).setValues([[sheetSafe(userId)]]);
+    CacheService.getScriptCache().remove('fb_code_' + code);
+    return true;
+  } catch (err) {
+    logInternalError('matchFeedbackCode', err);
+    return false;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// Googleフォームの、質問の見出し(前方一致)
+const FEEDBACK_FORM_TITLES = { screen: '対象の画面', kind: '種類', message: '内容', wantReply: '返信の希望', env: '利用環境', code: 'LINEで利用する合言葉' };
+
+function feedbackFormAnswers(response) {
+  const out = {};
+  const items = response.getItemResponses();
+  for (let i = 0; i < items.length; i++) {
+    const title = String(items[i].getItem().getTitle());
+    const answer = items[i].getResponse();
+    Object.keys(FEEDBACK_FORM_TITLES).forEach(function (key) {
+      if (title.indexOf(FEEDBACK_FORM_TITLES[key]) === 0 && out[key] === undefined) {
+        out[key] = Array.isArray(answer) ? answer.join(', ') : answer;
+      }
+    });
+  }
+  return out;
+}
+
+// Googleフォームの、送信時のトリガーから呼ばれる(e.response が、フォームの回答)
+function onFeedbackFormSubmit(e) {
+  try {
+    if (!e || !e.response) return;
+    const a = feedbackFormAnswers(e.response);
+    const message = cleanFeedbackText(a.message, FEEDBACK_MESSAGE_MAX);
+    if (!message) return;
+    const wantReply = String(a.wantReply === undefined ? '' : a.wantReply).indexOf('する') === 0;
+    const f = {
+      screen: cleanFeedbackText(a.screen, FEEDBACK_SCREEN_MAX),
+      kind: cleanFeedbackText(a.kind, FEEDBACK_KIND_MAX),
+      message: message,
+      env: cleanFeedbackText(a.env, FEEDBACK_ENV_MAX),
+      wantReply: wantReply
+    };
+    const code = normalizeFeedbackCode(a.code);
+    const lock = LockService.getScriptLock();
+    lock.waitLock(10000);
+    try {
+      if (!wantReply || !isFeedbackCodeShape(code)) {
+        appendFeedbackRow('form', f, '', null, '');
+        return;
+      }
+      const cache = CacheService.getScriptCache();
+      // 待ち中のほかの合言葉と重なるコードは、受け付けない(意見だけ残す)
+      const clash = cache.get('line_pending_' + code) || cache.get('line_reset_pending_' + code) || cache.get('fb_code_' + code);
+      if (clash) {
+        const id0 = appendFeedbackRow('form', f, '', { code: '', expiry: '' }, '');
+        const sheet0 = getOrCreateFeedbackSheet();
+        const row0 = findFeedbackRow(sheet0, id0);
+        if (row0 > 0) sheet0.getRange(row0, FB_COL.codeState, 1, 1).setValues([['expired']]);
+        return;
+      }
+      const stash = cache.get('fb_line_' + code); // LINE が先に届いていた
+      const expiry = Date.now() + FEEDBACK_CODE_TTL_SECONDS * 1000;
+      const id = appendFeedbackRow('form', f, '', { code: stash ? '' : code, expiry: expiry }, stash || '');
+      if (stash) {
+        cache.remove('fb_line_' + code);
+        // 結びつけたことを、LINE に知らせる(返信用のトークンは無いので、プッシュ)
+        pushToLine(stash, [{ type: 'text', text: FEEDBACK_CODE_ACCEPTED_TEXT }]);
+      } else {
+        cache.put('fb_code_' + code, id, FEEDBACK_CODE_TTL_SECONDS);
+      }
+    } finally {
+      lock.releaseLock();
+    }
+  } catch (err) {
+    logInternalError('onFeedbackFormSubmit', err);
+  }
+}
+
+// ユーザーが、1回だけ実行する: フォームの、送信時のトリガーを作る(前に作ったものは、先に消す)
+function setupFeedbackFormTrigger(formId) {
+  const form = FormApp.openById(String(formId));
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'onFeedbackFormSubmit') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('onFeedbackFormSubmit').forForm(form).onFormSubmit().create();
+}
+
+// LINE にプッシュで送る(返信用のトークンが無いとき・管理者からの返信)。送れたら true
+function pushToLine(userId, messages) {
+  const token = CONFIG.ACCESS_TOKEN;
+  if (!token || token.includes('★') || !userId) return false;
+  try {
+    const res = UrlFetchApp.fetch(CONFIG.LINE_PUSH_URL, {
+      method: 'post',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      payload: JSON.stringify({ to: userId, messages: messages }),
+      muteHttpExceptions: true
+    });
+    if (res.getResponseCode() !== 200) {
+      console.error('[LINEプッシュ失敗] status=' + res.getResponseCode() + ' ' + String(res.getContentText()).slice(0, 300));
+      return false;
+    }
+    return true;
+  } catch (err) {
+    logInternalError('[LINEプッシュ失敗]', err);
+    return false;
+  }
+}
+
+function handleAdminListFeedback(adminToken) {
+  const denied = adminTokenErrorResponse(checkAdminToken(adminToken));
+  if (denied) return denied;
+  try {
+    const rows = readFeedbackRows().rows;
+    const out = [];
+    for (let i = rows.length - 1; i >= 0 && out.length < FEEDBACK_ADMIN_LIMIT; i--) {
+      const v = rows[i];
+      if (!v[0]) continue;
+      out.push({
+        id: String(v[FB_COL.id - 1]),
+        receivedAt: cellText(v[FB_COL.time - 1]),
+        entry: String(v[FB_COL.entry - 1]),
+        screen: String(v[FB_COL.screen - 1]),
+        kind: String(v[FB_COL.kind - 1]),
+        message: String(v[FB_COL.message - 1]),
+        wantReply: String(v[FB_COL.wantReply - 1]) === '1',
+        codeState: String(v[FB_COL.codeState - 1]),
+        canReply: !!String(v[FB_COL.lineUser - 1]), // 返信先(LINE)がある印だけ。LINE_USER_ID は返さない
+        env: String(v[FB_COL.env - 1]),
+        status: String(v[FB_COL.status - 1]),
+        repliedAt: cellText(v[FB_COL.repliedAt - 1])
+      });
+    }
+    return createJsonResponse({ status: 'success', feedback: out });
+  } catch (err) {
+    return internalErrorResponse('adminListFeedback', err);
+  }
+}
+
+function handleAdminReplyFeedback(adminToken, id, text) {
+  const denied = adminTokenErrorResponse(checkAdminToken(adminToken));
+  if (denied) return denied;
+  const feedbackId = String(id || '');
+  if (!/^f[0-9a-f]{12}$/.test(feedbackId)) return createJsonResponse({ status: 'error', code: 'invalid', message: 'ご意見のIDが正しくありません。' });
+  const reply = String(text === undefined || text === null ? '' : text).trim();
+  if (!reply) return createJsonResponse({ status: 'error', code: 'invalid', message: '返信の文を入れてください。' });
+  if (reply.length > FEEDBACK_REPLY_MAX) return createJsonResponse({ status: 'error', code: 'invalid', message: '返信は ' + FEEDBACK_REPLY_MAX + ' 文字までです。' });
+
+  // 返信先を読む(短いロックの中で)。LINE への送信は、ロックの外で行う
+  let lineUserId = '';
+  let row = -1;
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+  } catch (err) {
+    return createJsonResponse({ status: 'error', code: 'busy', message: '混み合っています。しばらくしてからもう一度お試しください。' });
+  }
+  try {
+    const sheet = getOrCreateFeedbackSheet();
+    row = findFeedbackRow(sheet, feedbackId);
+    if (row < 0) return createJsonResponse({ status: 'error', code: 'not_found', message: 'ご意見が見つかりません。' });
+    lineUserId = String(sheet.getRange(row, FB_COL.lineUser, 1, 1).getValues()[0][0] || '');
+  } catch (err) {
+    return internalErrorResponse('adminReplyFeedback', err);
+  } finally {
+    lock.releaseLock();
+  }
+  if (!lineUserId) return createJsonResponse({ status: 'error', code: 'no_line', message: '返信先(LINE)が、まだ結びついていません。' });
+  if (!pushToLine(lineUserId, [{ type: 'text', text: reply }])) {
+    return createJsonResponse({ status: 'error', code: 'push_failed', message: 'LINE に送れませんでした。しばらくしてから、もう一度お試しください。' });
+  }
+  try {
+    lock.waitLock(5000);
+    try {
+      const sheet = getOrCreateFeedbackSheet();
+      const r = findFeedbackRow(sheet, feedbackId);
+      if (r > 0) {
+        sheet.getRange(r, FB_COL.status, 1, 1).setValues([[FEEDBACK_STATUSES[1]]]);
+        sheet.getRange(r, FB_COL.repliedAt, 1, 1).setValues([[nowText()]]);
+      }
+    } finally {
+      lock.releaseLock();
+    }
+  } catch (err) {
+    // LINE には送れている。記録の更新だけ失敗した
+    logInternalError('adminReplyFeedback(記録)', err);
+  }
+  return createJsonResponse({ status: 'success' });
+}
+
+function handleAdminSetFeedbackStatus(adminToken, id, status) {
+  const denied = adminTokenErrorResponse(checkAdminToken(adminToken));
+  if (denied) return denied;
+  const feedbackId = String(id || '');
+  if (!/^f[0-9a-f]{12}$/.test(feedbackId)) return createJsonResponse({ status: 'error', code: 'invalid', message: 'ご意見のIDが正しくありません。' });
+  const next = String(status || '');
+  if (FEEDBACK_STATUSES.indexOf(next) < 0) return createJsonResponse({ status: 'error', code: 'invalid', message: '状態が正しくありません。' });
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+  } catch (err) {
+    return createJsonResponse({ status: 'error', code: 'busy', message: '混み合っています。しばらくしてからもう一度お試しください。' });
+  }
+  try {
+    const sheet = getOrCreateFeedbackSheet();
+    const row = findFeedbackRow(sheet, feedbackId);
+    if (row < 0) return createJsonResponse({ status: 'error', code: 'not_found', message: 'ご意見が見つかりません。' });
+    sheet.getRange(row, FB_COL.status, 1, 1).setValues([[next]]);
+    return createJsonResponse({ status: 'success' });
+  } catch (err) {
+    return internalErrorResponse('adminSetFeedbackStatus', err);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 /**
  * パスワード規則のサーバー側チェック(クライアントと同じ条件)
  */
@@ -2311,8 +2964,12 @@ const RESERVATION_POINT_RATE = 0.03;
 const RESERVATION_POINT_MIN = 50;
 // 申告の金額を信じすぎないための上限(ポイントの決まりは変えない。ふつうの予約は、ここに届かない)
 const POINT_BASIS_CAP = 100000;          // 1つの予約で、ポイントを計算する合計金額の上限
-const DAILY_RESERVATION_POINT_CAP = 3000; // 1会員が、予約で付くポイントを、1日(日本時間)に受け取れる上限
+const DAILY_RESERVATION_POINT_CAP = 10000; // 1会員が、予約で付くポイントを、1日(日本時間)に受け取れる上限
 const MAX_ACTIVE_RESERVATIONS = 20;       // 1会員の、まだ乗っていない(取消でない)予約の上限
+const MAX_ACTIVE_PER_MEMBER = 1;           // 1会員の、未終了(取消でない・到着時刻がまだ先)の予約の数。新しい予約は、これを超えるときは受けない
+// 再デプロイのあとに、止めたいときの保険(false にすると、その判定をしない)。公開後のアプリ(awardPoints: true)の予約だけが対象
+var ENFORCE_ONE_ACTIVE = true;           // 同じ会員の未終了の予約は、MAX_ACTIVE_PER_MEMBER 件まで
+var ENFORCE_SEAT_CONFLICT = true;        // 同じ日・同じ列車・同じ号車・同じ席で、区間が重なる予約は、ほかの会員も含めて断る
 // 1回の注文(予約・デリバリーの追加)の上限。超える申告は、予約の保存ごと断る(画面にも同じ上限を置く)
 const MAX_ORDER_TOTAL = 100000; // 合計金額(N-POINTで払った分を含む)
 const MAX_SEATS = 6;            // 1つの予約の座席の数(人数)

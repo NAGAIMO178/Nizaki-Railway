@@ -32,6 +32,10 @@ const loadGas = (): Gas => {
   };
   vm.createContext(ctx);
   vm.runInContext(source, ctx);
+  // このファイルは、ポイント・上限・料金など、ほかの決まりを調べる。同じ会員が、同じ席・列車で、何件も予約を作るので、
+  // 「未終了の予約は1件まで」「同じ席の重なる予約は断る」の判定は止める(その判定は、gasReservationRules.test.ts で調べる)
+  ctx.ENFORCE_ONE_ACTIVE = false;
+  ctx.ENFORCE_SEAT_CONFLICT = false;
   // Google のサービスに触る部分を、作りものに差し替える(中の計算は、本物のまま)
   ctx.createJsonResponse = (d: unknown) => d;
   ctx.getOrCreateSheetWithHeaders = () => sheet;
@@ -391,17 +395,17 @@ describe('ポイントの水増しを防ぐ(予約の登録・取消)', () => {
     expect(rows.length).toBe(2);
   });
 
-  it('1日に予約で付くポイントは、3000ptまで(予約をくり返しても、それ以上は付かない)', () => {
-    for (let i = 0; i < 5; i++) create(`EQ-${i + 1}`, 50000); // 1回1500pt
-    expect(balance()).toBe(3000);
+  it('1日に予約で付くポイントは、10000ptまで(予約をくり返しても、それ以上は付かない)', () => {
+    for (let i = 0; i < 9; i++) create(`EQ-${i + 1}`, 50000); // 1回1500pt。7回目で10000に届き、そのあとは付かない
+    expect(balance()).toBe(10000);
   });
 
   it('日が変われば、また付く', () => {
-    for (let i = 0; i < 3; i++) create(`EQ-${i + 1}`, 50000);
-    expect(balance()).toBe(3000);
+    for (let i = 0; i < 7; i++) create(`EQ-${i + 1}`, 50000);
+    expect(balance()).toBe(10000);
     rows.forEach((r, i) => i > 0 && (r[0] = '2026/11/01 12:00:00')); // きのうの分にする
     create('EQ-9', 50000);
-    expect(balance()).toBe(4500);
+    expect(balance()).toBe(11500);
   });
 
   it('取り消した予約は、同じ予約番号で出し直せない(取消のあとの出し直しで、ポイントを残せない)', () => {
@@ -978,7 +982,7 @@ describe('公開記念イベントのごほうび(claimEventTare)', () => {
   });
 
   it('ポイントの付与の1日の上限は、このイベントに効かない', () => {
-    for (let i = 0; i < 3; i++) put('reservation', `reservation:X${i}`, 1500); // きょうの上限(3000pt)を使い切った状態
+    for (let i = 0; i < 7; i++) put('reservation', `reservation:X${i}`, 1500); // きょうの上限(10000pt)を使い切った状態
     expect(claim()).toMatchObject({ status: 'success', added: true, points: 350 });
   });
 
