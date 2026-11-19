@@ -41,7 +41,55 @@ export const lineOaMessageUrl = (code: string): string => `https://line.me/R/oaM
 export const FEEDBACK_FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSdWczFx3H_qkjhLI2XofaH9GLH0YHgI2WXw-9r_5uag6Er_aQ/viewform';
 // フォームの欄の番号(entry.数字)。番号が null の間は、事前入力を付けない(ただのリンク)
 export const FEEDBACK_FORM_ENTRY: Record<'screen' | 'kind' | 'message' | 'wantReply' | 'env' | 'code', string | null> = {
-  screen: null, kind: null, message: null, wantReply: null, env: null, code: null,
+  screen: 'entry.1400659191', // 対象の画面(ラジオ)
+  kind: 'entry.1413917765', // 種類(ラジオ)
+  message: 'entry.239824281', // 内容(長い文章)
+  wantReply: 'entry.1934312063', // 返信の希望(ラジオ: する / しない)
+  env: 'entry.1559613320', // 利用環境(動作状況)
+  code: 'entry.514912590', // 合言葉(英数字6文字)
+};
+
+// フォームの「対象の画面」の選択肢の文字(完全に一致させる。一致しないと、選ばれない状態で開く)
+export const FEEDBACK_FORM_SCREEN_CHOICES = [
+  'ホーム', '列車位置', '時刻表', '経路検索', '特急予約', 'デリバリー商品選択', 'イベント', 'メニュー', 'マイページ(及びその画面上のコンテンツ)', '会員証(及びその画面上のコンテンツ)',
+  'ログイン・アカウント新規登録画面', '通知', '路線図', 'NIZAKI 2.0紹介', '設定', 'その他',
+] as const;
+// アプリの表示 → フォームの文字(アプリとフォームで、一部、表示が違う)
+export const FEEDBACK_FORM_SCREEN_LABEL: Record<FeedbackScreen, string> = {
+  'ホーム': 'ホーム',
+  '列車位置': '列車位置',
+  '時刻表': '時刻表',
+  '経路検索': '経路検索',
+  '特急予約': '特急予約',
+  'デリバリー商品選択': 'デリバリー商品選択',
+  'イベント': 'イベント',
+  'メニュー': 'メニュー',
+  'マイページ': 'マイページ(及びその画面上のコンテンツ)',
+  '会員証': '会員証(及びその画面上のコンテンツ)',
+  'ログイン・アカウント新規登録': 'ログイン・アカウント新規登録画面',
+  '通知': '通知',
+  '路線図': '路線図',
+  'NIZAKI 2.0紹介': 'NIZAKI 2.0紹介',
+  '設定': '設定',
+  'その他': 'その他',
+};
+export const formScreenLabel = (screen: string): string => (FEEDBACK_FORM_SCREEN_LABEL as Record<string, string>)[screen] ?? '';
+
+// フォームの「返信の希望」の選択肢
+export const FORM_WANT_REPLY_YES = 'する';
+export const FORM_WANT_REPLY_NO = 'しない';
+
+// ---- 合言葉(Googleフォーム用): 英数字6文字・大文字・O/0・I/1/l を使わない・英字を1文字以上 ----
+const CODE_LETTERS = 'ABCDEFGHJKMNPQRSTUVWXYZ'; // I・L・O を除く23文字
+const CODE_ALPHABET = CODE_LETTERS + '23456789'; // 31文字(0・1 を除く)
+export const makeFormCode = (random: (n: number) => number[] = (n) => Array.from(crypto.getRandomValues(new Uint8Array(n)))): string => {
+  for (;;) {
+    let out = '';
+    for (const b of random(12)) {
+      if (b < 248 && out.length < 6) out += CODE_ALPHABET.charAt(b % 31); // 31 の倍数(248)未満だけ使う(偏りをなくす)
+    }
+    if (out.length === 6 && /[A-Z]/.test(out)) return out;
+  }
 };
 const FORM_ENV_MAX = 800; // アドレスの長さの制限があるので、動作状況は 800 文字まで
 
@@ -60,12 +108,12 @@ export const buildFeedbackFormUrl = (values: FeedbackFormValues = {}, entries = 
     const id = entries[key];
     if (id && value) params.push(`${encodeURIComponent(id)}=${encodeURIComponent(value)}`);
   };
-  add('screen', values.screen);
+  add('screen', values.screen ? formScreenLabel(values.screen) : undefined);
   add('kind', values.kind);
   add('message', values.message ? values.message.slice(0, FEEDBACK_MESSAGE_MAX) : values.message);
-  add('wantReply', values.wantReply === undefined ? undefined : values.wantReply ? 'する' : 'しない');
+  add('wantReply', values.wantReply === undefined ? undefined : values.wantReply ? FORM_WANT_REPLY_YES : FORM_WANT_REPLY_NO);
   add('env', values.env ? values.env.slice(0, FORM_ENV_MAX) : values.env);
-  add('code', values.code);
+  add('code', values.wantReply ? values.code : undefined); // 返信を希望しないときは、合言葉を付けない
   return params.length === 0 ? FEEDBACK_FORM_URL : `${FEEDBACK_FORM_URL}?usp=pp_url&${params.join('&')}`;
 };
 
@@ -132,6 +180,15 @@ const jstText = (d: Date): string => {
 };
 
 const oneLine = (s: string, max: number): string => s.replace(/\s+/g, ' ').trim().slice(0, max);
+
+// Googleフォームの事前入力用: 800文字以内。長いときは、UA を短くして収める
+export const buildEnvTextForForm = (i: EnvInput, max: number = FORM_ENV_MAX): string => {
+  const full = buildEnvText(i);
+  if (full.length <= max) return full;
+  const ua = i.userAgent.replace(/\s+/g, ' ').trim().slice(0, FEEDBACK_UA_MAX);
+  const shortUa = ua.slice(0, Math.max(0, ua.length - (full.length - max)));
+  return buildEnvText({ ...i, userAgent: shortUa }).slice(0, max);
+};
 
 export const buildEnvText = (i: EnvInput): string => {
   const errors = i.errors.slice(0, 3).map((e) => oneLine(e, FEEDBACK_ERROR_MAX));
