@@ -147,6 +147,14 @@ function doPost(e) {
       return handleAdminDeleteNotice(json.adminToken, json.id);
     }
 
+    // ①.07 予約をサーバーから取り直す(自分の未終了の予約はログイン証が要る。予約済みの席は、公開用で、会員の情報は返さない)
+    if (json.action === 'getMyReservations') {
+      return handleGetMyReservations(json.sessionToken);
+    }
+    if (json.action === 'getOccupiedSeats') {
+      return handleGetOccupiedSeats(json.date, json.trainName, json.carNo);
+    }
+
     // ①.66 ご意見・不具合(アプリのフォーム)。送るのは、ログインなしでできる。管理用は、サーバー側で、管理トークンを確かめる
     if (json.action === 'submitFeedback') {
       return handleSubmitFeedback(json.feedback, json.sessionToken);
@@ -797,6 +805,118 @@ function hasSeatConflict(headers, data, orderId, values, range) {
     if (seatRangesOverlap(range, otherRange)) return true;
   }
   return false;
+}
+
+// 台帳の1行の、明細(デリバリーの商品・割引・N-POINT払い)。読めなければ、空
+function readReservationDetail(headers, row) {
+  const idx = headers.indexOf('明細');
+  if (idx === -1 || !row[idx]) return { items: [], itemDiscount: 0, pointsUsed: 0 };
+  try {
+    const d = JSON.parse(String(row[idx]));
+    return {
+      items: Array.isArray(d.items) ? d.items : [],
+      itemDiscount: Math.max(0, Math.floor(Number(d.itemDiscount)) || 0),
+      pointsUsed: Math.max(0, Math.floor(Number(d.pointsUsed)) || 0)
+    };
+  } catch (err) {
+    return { items: [], itemDiscount: 0, pointsUsed: 0 };
+  }
+}
+
+/**
+ * 自分の、未終了の予約(取消でない・到着時刻がまだ先)を返す。アプリが、画面を作り直すのに必要な項目だけ。ログイン証が要る。
+ * LINE_USER_ID は返さない
+ */
+function handleGetMyReservations(sessionToken) {
+  const a = authMember(sessionToken);
+  if (a.error) return a.error;
+  try {
+    const sheet = getDataSpreadsheet().getSheetByName(SHEET_RESERVATIONS);
+    if (!sheet || sheet.getLastRow() < 2) return createJsonResponse({ status: 'success', reservations: [] });
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const col = {};
+    headers.forEach(function (h, i) { col[h] = i; });
+    const text = function (row, name, pattern) { return col[name] === undefined ? '' : cellText(row[col[name]], pattern); };
+    const out = [];
+    for (let i = data.length - 1; i >= 1 && out.length < MAX_ACTIVE_RESERVATIONS; i--) {
+      const row = data[i];
+      if (String(row[col['会員ID']]) !== a.memberId) continue;
+      if (!isReservationRowActive(headers, row)) continue;
+      const detail = readReservationDetail(headers, row);
+      out.push({
+        orderId: String(row[col['予約番号']]),
+        trainName: text(row, '列車名'),
+        carNo: Number(row[col['号車']]) || 0,
+        seatNo: text(row, '座席番号'),
+        seatType: text(row, '席種'),
+        boardingStation: text(row, '乗車駅'),
+        destinationStation: text(row, '降車駅'),
+        departureTime: text(row, '出発時刻', 'HH:mm'),
+        arrivalTime: text(row, '到着時刻', 'HH:mm'),
+        reservedDate: text(row, '予約日', 'yyyy-MM-dd'),
+        totalPrice: Number(row[col['合計金額']]) || 0,
+        boardIdx: parseStopIndex(col['乗車駅番号'] === undefined ? '' : row[col['乗車駅番号']]),
+        destIdx: parseStopIndex(col['降車駅番号'] === undefined ? '' : row[col['降車駅番号']]),
+        items: detail.items,
+        itemDiscount: detail.itemDiscount,
+        pointsUsed: detail.pointsUsed,
+        boarded: text(row, '乗車日時') !== ''
+      });
+    }
+    return createJsonResponse({ status: 'success', reservations: out });
+  } catch (err) {
+    return internalErrorResponse('getMyReservations', err);
+  }
+}
+
+const OCCUPIED_CACHE_SECONDS = 30;
+
+/**
+ * 公開用: 指定の日・列車・号車の、予約済みの席と、区間の番号だけを返す(取消でない予約。自由席は含めない)。会員の情報は、一切、返さない。30秒だけ覚える
+ */
+function handleGetOccupiedSeats(date, trainName, carNo) {
+  const d = String(date === undefined || date === null ? '' : date);
+  const train = limitText(trainName, 60).trim();
+  const car = Number(carNo);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || !train || !isFinite(car) || Math.floor(car) !== car || car < 1 || car > 30) {
+    return createJsonResponse({ status: 'error', code: 'invalid', message: '日付・列車・号車を、確かめてください。' });
+  }
+  try {
+    const cache = CacheService.getScriptCache();
+    const key = 'occupied_' + d + '|' + train + '|' + car;
+    const cached = cache.get(key);
+    if (cached) return createJsonResponse({ status: 'success', seats: JSON.parse(cached) });
+    const sheet = getDataSpreadsheet().getSheetByName(SHEET_RESERVATIONS);
+    const seats = [];
+    if (sheet && sheet.getLastRow() >= 2) {
+      const data = sheet.getDataRange().getValues();
+      const headers = data[0];
+      const col = {};
+      headers.forEach(function (h, i) { col[h] = i; });
+      for (let i = 1; i < data.length; i++) {
+        const r = data[i];
+        if (String(r[col['ステータス']]) === 'キャンセル') continue;
+        if (cellText(r[col['予約日']], 'yyyy-MM-dd') !== d) continue;
+        if (String(r[col['列車名']]) !== train) continue;
+        if (Number(r[col['号車']]) !== car) continue;
+        const range = { from: parseStopIndex(col['乗車駅番号'] === undefined ? '' : r[col['乗車駅番号']]), to: parseStopIndex(col['降車駅番号'] === undefined ? '' : r[col['降車駅番号']]) };
+        // 区間が読めない・順番が逆の行は、全区間(from / to を null)
+        const full = range.from === null || range.to === null || range.from >= range.to;
+        seatList(r[col['座席番号']]).forEach(function (seat) {
+          seats.push({ seat: seat, from: full ? null : range.from, to: full ? null : range.to });
+        });
+      }
+    }
+    try {
+      cache.put(key, JSON.stringify(seats), OCCUPIED_CACHE_SECONDS);
+    } catch (ignored) {
+      // 覚えられなくても、返す
+    }
+    return createJsonResponse({ status: 'success', seats: seats });
+  } catch (err) {
+    return internalErrorResponse('getOccupiedSeats', err);
+  }
 }
 
 /**
