@@ -1,7 +1,7 @@
 // 予約の重複を断る決まり(サーバー gas/Code.gs の handleCreateReservation の、ロックの中):
 //  ① 同じ会員の、未終了の予約は、1件まで(同じ予約番号の更新は、通す)
 //  ② 同じ日・同じ列車・同じ号車・同じ席で、区間が重なる予約は、ほかの会員も含めて断る(降車駅 = 次の人の乗車駅 は、重ならない。区間の番号が無ければ、全区間)
-// どちらも、公開後のアプリ(awardPoints: true)の予約だけが対象。切り替えの変数(ENFORCE_*)で、止められる。
+// どちらも、公開後のアプリ(awardPoints: true)の予約だけが対象。スクリプトプロパティ(ENFORCE_*)が、文字の 'true' のときだけ、働く(初めは、オフ)。
 import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
@@ -12,6 +12,7 @@ type Gas = Record<string, any>;
 const source = fs.readFileSync(path.resolve(__dirname, '..', 'gas', 'Code.gs'), 'utf-8');
 
 let gas: Gas;
+let props: Record<string, string>;
 let nowMs = 0; // サーバーの「いま」(vm の中の Date は、テストの時計と別なので、作りものの Date を渡す)
 let grid: unknown[][];
 let H: string[];
@@ -34,13 +35,14 @@ const cancel = (orderId: string) => void (rowOf(orderId)[col('ステータス')]
 
 beforeEach(() => {
   setNow('2026-11-20T09:00:00+09:00');
+  props = { ENFORCE_ONE_ACTIVE: 'true', ENFORCE_SEAT_CONFLICT: 'true' }; // この中の試験は、判定を入れた状態で調べる(切り替えの試験は、プロパティを変える)
   const ctx: Gas = {
     Logger: { log: () => undefined },
     console: { log: () => undefined, error: () => undefined },
     LockService: { getScriptLock: () => ({ waitLock: () => undefined, releaseLock: () => undefined }) },
     Utilities: { formatDate: () => '2026/11/20 09:00:00', getUuid: () => 'uuid' },
     ContentService: {},
-    PropertiesService: { getScriptProperties: () => ({ getProperty: () => '' }) },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k: string) => props[k] ?? null }) },
     Date: class extends Date {
       constructor(...a: unknown[]) {
         if (a.length === 0) super(nowMs);
@@ -75,12 +77,39 @@ beforeEach(() => {
   gas.getOrCreateSheetWithHeaders = () => ({ getDataRange: () => ({ getValues: () => [['日時', '会員ID', '種別', '名札', 'ポイント', 'タイトル']] }), appendRow: () => undefined });
 });
 
-describe('切り替えの変数と定数', () => {
-  it('どちらも、初めは、入っている。未終了の予約は、1件まで(上限の20件は、そのまま)', () => {
-    expect(gas.ENFORCE_ONE_ACTIVE).toBe(true);
-    expect(gas.ENFORCE_SEAT_CONFLICT).toBe(true);
+describe('切り替え(スクリプトプロパティ)と定数', () => {
+  it('未終了の予約は、1件まで(上限の20件は、そのまま)', () => {
     expect(vm.runInContext('MAX_ACTIVE_PER_MEMBER', gas)).toBe(1);
     expect(vm.runInContext('MAX_ACTIVE_RESERVATIONS', gas)).toBe(20);
+  });
+
+  it('値が、文字の \'true\' のときだけ、入る。プロパティが無い・ほかの値(false・TRUE・1・空)は、切れている(初めは、オフ)', () => {
+    for (const name of ['ENFORCE_ONE_ACTIVE', 'ENFORCE_SEAT_CONFLICT']) {
+      const on = () => (name === 'ENFORCE_ONE_ACTIVE' ? gas.isOneActiveEnforced() : gas.isSeatConflictEnforced());
+      expect(on(), `${name}=true`).toBe(true);
+      delete props[name];
+      expect(on(), `${name} なし`).toBe(false);
+      for (const v of ['false', 'TRUE', 'True', '1', '', ' true', 'yes']) {
+        props[name] = v;
+        expect(on(), `${name}=${v}`).toBe(false);
+      }
+      props[name] = 'true';
+      expect(on()).toBe(true);
+    }
+  });
+
+  it('判定のたびに読む(起動のあとにプロパティを変えると、すぐ効く)', () => {
+    send('EQ-1');
+    expect(send('EQ-2', { seatNo: '6A' }).code).toBe('active_exists');
+    props.ENFORCE_ONE_ACTIVE = 'false';
+    expect(send('EQ-2', { seatNo: '6A' }).status).toBe('success');
+  });
+
+  it('プロパティが無いときは、2つとも、断らない(初めの状態)', () => {
+    props = {};
+    expect(send('EQ-1').status).toBe('success');
+    expect(send('EQ-2', { seatNo: '6A' }).status).toBe('success'); // 1人1件でも断らない
+    expect(send('EQ-3', { seatNo: '5A' }, 'tB').status).toBe('success'); // 同じ席でも断らない
   });
 });
 
@@ -134,10 +163,10 @@ describe('① 同じ会員の未終了の予約は、1件まで', () => {
     expect(send('EQ-2', { seatNo: '6A', reservedDate: '2026-11-22' }).status).toBe('success');
   });
 
-  it('切り替え(ENFORCE_ONE_ACTIVE)を止めると、断らない。公開前のアプリ(awardPoints なし)も、断らない', () => {
+  it('公開前のアプリ(awardPoints なし)は、断らない。プロパティを切ると、断らない', () => {
     send('EQ-1');
     expect(send('EQ-2', { seatNo: '6A' }, 'tA', false).status).toBe('success');
-    gas.ENFORCE_ONE_ACTIVE = false;
+    delete props.ENFORCE_ONE_ACTIVE;
     expect(send('EQ-3', { seatNo: '7A' }).status).toBe('success');
   });
 });
@@ -233,11 +262,11 @@ describe('② 同じ席の、重なる区間の予約を断る', () => {
     expect(rowOf('EQ-1')[col('座席番号')]).toBe('5A'); // 台帳は、変わっていない
   });
 
-  it('切り替え(ENFORCE_SEAT_CONFLICT)を止めると、断らない。公開前のアプリ(awardPoints なし)も、断らない', () => {
+  it('公開前のアプリ(awardPoints なし)は、断らない。プロパティを切ると、断らない', () => {
     taken();
     expect(send('EQ-1', { boardIdx: 0, destIdx: 3 }, 'tA', false).status).toBe('success');
     cancel('EQ-1');
-    gas.ENFORCE_SEAT_CONFLICT = false;
+    delete props.ENFORCE_SEAT_CONFLICT;
     expect(send('EQ-2', { boardIdx: 0, destIdx: 3 }).status).toBe('success');
   });
 

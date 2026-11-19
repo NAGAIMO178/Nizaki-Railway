@@ -1011,11 +1011,11 @@ function handleCreateReservation(sessionToken, order, awardPoints) {
     }
 
     // 公開後のアプリ: 同じ席の、重なる区間の予約は断る(ほかの会員も含む。自分の予約番号の更新は、自分の行を除いて調べる)
-    if (awardPoints && ENFORCE_SEAT_CONFLICT && hasSeatConflict(headers, data, values['予約番号'], values, stopRange)) {
+    if (awardPoints && isSeatConflictEnforced() && hasSeatConflict(headers, data, values['予約番号'], values, stopRange)) {
       return createJsonResponse({ status: 'error', code: 'seat_taken', message: 'その座席は、すでに予約されています。' });
     }
     // 公開後のアプリ: 新しい予約は、同じ会員の未終了の予約が、すでにあれば断る(同じ予約番号の更新は、通す)
-    if (awardPoints && ENFORCE_ONE_ACTIVE && targetRow === -1) {
+    if (awardPoints && isOneActiveEnforced() && targetRow === -1) {
       let activeNow = 0;
       for (let i = 1; i < data.length; i++) {
         if (String(data[i][col['会員ID']]) !== memberId) continue;
@@ -2967,9 +2967,15 @@ const POINT_BASIS_CAP = 100000;          // 1つの予約で、ポイントを�
 const DAILY_RESERVATION_POINT_CAP = 10000; // 1会員が、予約で付くポイントを、1日(日本時間)に受け取れる上限
 const MAX_ACTIVE_RESERVATIONS = 20;       // 1会員の、まだ乗っていない(取消でない)予約の上限
 const MAX_ACTIVE_PER_MEMBER = 1;           // 1会員の、未終了(取消でない・到着時刻がまだ先)の予約の数。新しい予約は、これを超えるときは受けない
-// 再デプロイのあとに、止めたいときの保険(false にすると、その判定をしない)。公開後のアプリ(awardPoints: true)の予約だけが対象
-var ENFORCE_ONE_ACTIVE = true;           // 同じ会員の未終了の予約は、MAX_ACTIVE_PER_MEMBER 件まで
-var ENFORCE_SEAT_CONFLICT = true;        // 同じ日・同じ列車・同じ号車・同じ席で、区間が重なる予約は、ほかの会員も含めて断る
+// 予約の重複を断る2つの判定の、入り・切り(スクリプトプロパティで切り替える。コードの貼り直しは要らない)。
+// プロパティ ENFORCE_ONE_ACTIVE・ENFORCE_SEAT_CONFLICT の値が、文字の 'true' のときだけ、その判定が働く
+// (プロパティが無い・ほかの値のときは、働かない。初めは、オフ)。公開後のアプリ(awardPoints: true)の予約だけが対象。
+// 起動時の値を固定せず、判定のたびに読む(プロパティを変えると、すぐ効く)
+function isScriptPropertyOn(name) {
+  return PropertiesService.getScriptProperties().getProperty(name) === 'true';
+}
+function isOneActiveEnforced() { return isScriptPropertyOn('ENFORCE_ONE_ACTIVE'); }       // 同じ会員の未終了の予約は、MAX_ACTIVE_PER_MEMBER 件まで
+function isSeatConflictEnforced() { return isScriptPropertyOn('ENFORCE_SEAT_CONFLICT'); } // 同じ日・同じ列車・同じ号車・同じ席で、区間が重なる予約は、ほかの会員も含めて断る
 // 1回の注文(予約・デリバリーの追加)の上限。超える申告は、予約の保存ごと断る(画面にも同じ上限を置く)
 const MAX_ORDER_TOTAL = 100000; // 合計金額(N-POINTで払った分を含む)
 const MAX_SEATS = 6;            // 1つの予約の座席の数(人数)
