@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { callGas } from '../utils/accountApi';
 import { getAdminToken } from '../utils/disruptionManager';
+import { uploadNoticeImage, UploadCall } from '../utils/noticeImage';
 import { Notice, NOTICE_BODY_MAX, NOTICE_KIND_LABEL, NOTICE_KINDS, NOTICE_TITLE_MAX, NOTICE_URL_MAX, NoticeKind, safeHttpsUrl } from '../utils/notices';
 
 // 管理者コンソールの「通知」: 書く・直す・消す。サーバー(GAS)が、管理トークンを確かめる(アプリ側の確認だけに頼らない)
@@ -29,6 +30,7 @@ export const validateNoticeForm = (f: { title: string; body: string; imageUrl: s
 const inputClass = 'w-full bg-slate-900 border border-slate-700 rounded-md px-2.5 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-amber-400';
 
 export const AdminNoticeEditor: React.FC<{ call?: Call }> = ({ call = (a, p) => callGas(a, p) as Promise<GasLike> }) => {
+  const [uploading, setUploading] = useState(false);
   const [list, setList] = useState<Notice[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -125,6 +127,19 @@ export const AdminNoticeEditor: React.FC<{ call?: Call }> = ({ call = (a, p) => 
     setMessage(null);
   };
 
+  // 画像を選ぶ: 画面の中で縮めて、サーバーに送る。返ってきたアドレスを、欄に入れる
+  const pickImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setUploading(true);
+    setMessage(null);
+    const res = await uploadNoticeImage(file, { call: call as UploadCall });
+    setUploading(false);
+    if (res.ok) setImageUrl(res.url);
+    else setMessage((res as { message: string }).message);
+  };
+
   const now = Date.now();
 
   return (
@@ -153,6 +168,13 @@ export const AdminNoticeEditor: React.FC<{ call?: Call }> = ({ call = (a, p) => 
           <span className="text-[11px] text-slate-400">画像のアドレス(https:// から。なくてもよい)</span>
           <input value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} maxLength={NOTICE_URL_MAX} inputMode="url" className={inputClass} />
         </label>
+        <div className="flex items-center gap-2">
+          <label className={`px-3 py-1.5 rounded-md bg-slate-700 hover:bg-slate-600 text-slate-100 text-xs font-bold cursor-pointer ${uploading ? 'opacity-50' : ''}`}>
+            {uploading ? '送っています…' : '画像を選ぶ'}
+            <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" disabled={uploading} onChange={pickImage} />
+          </label>
+          {safeHttpsUrl(imageUrl) && <img src={safeHttpsUrl(imageUrl) as string} alt="" referrerPolicy="no-referrer" className="h-12 w-auto max-w-[96px] rounded border border-slate-700 object-cover" />}
+        </div>
         <label className="block space-y-1">
           <span className="text-[11px] text-slate-400">リンクのアドレス(https:// から。なくてもよい)</span>
           <input value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} maxLength={NOTICE_URL_MAX} inputMode="url" className={inputClass} />
