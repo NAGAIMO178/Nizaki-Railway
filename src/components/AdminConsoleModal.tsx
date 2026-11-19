@@ -34,8 +34,10 @@ import {
   Sparkles,
   Info,
   Bell,
+  MessageSquare,
 } from 'lucide-react';
 import { AdminNoticeEditor } from './AdminNoticeEditor';
+import { AdminFeedbackPanel } from './AdminFeedbackPanel';
 import { systemLogger, SystemLogEntry, SystemMetrics } from '../utils/systemLogger';
 import { checkStoredAdminKey, submitAdminKey, type AdminAccess } from '../utils/adminAccess';
 import { useBackClose } from '../utils/backClose';
@@ -135,7 +137,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
   const [verifying, setVerifying] = useState(false);
   const isAuthenticated = access === 'ok';
   // Tabs: 'disruption' | 'forecast' | 'diagnostics' | 'errors' | 'storage' | 'settings'
-  const [activeTab, setActiveTab] = useState<'disruption' | 'forecast' | 'diagnostics' | 'errors' | 'storage' | 'settings' | 'notices'>('disruption');
+  const [activeTab, setActiveTab] = useState<'disruption' | 'forecast' | 'diagnostics' | 'errors' | 'storage' | 'settings' | 'notices' | 'feedback'>('disruption');
 
   // Disruption Dispatcher State
   const [selectedLineId, setSelectedLineId] = useState<string>('kanzaki');
@@ -905,6 +907,18 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
               >
                 <Bell className="w-3.5 h-3.5" />
                 <span>通知</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('feedback')}
+                className={`px-3 py-2 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 border-b-2 ${
+                  activeTab === 'feedback'
+                    ? 'text-emerald-400 border-emerald-400'
+                    : 'text-slate-400 hover:text-slate-200 border-transparent'
+                }`}
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                <span>ご意見</span>
               </button>
 
               <button
@@ -2450,6 +2464,8 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                   TAB 4: 管理者設定 (管理トークン)
                   ======================================================== */}
               {activeTab === 'notices' && <AdminNoticeEditor />}
+
+              {activeTab === 'feedback' && <AdminFeedbackPanel />}
 
               {activeTab === 'settings' && (
                 <div className="space-y-3">
