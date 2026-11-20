@@ -26,6 +26,7 @@ import { getSeatClassLabel, getSeatClassRibbon, canUseDelivery, MAX_SEATS, freeS
 import { DeliverySeatList, SeatList } from './SeatList';
 import { MOCK_EQUIP_ITEMS } from '../data/mockData';
 import { SeatSelectionModal } from './SeatSelectionModal';
+import type { RuleRefusal } from '../utils/reservationRules';
 import { NPointPayRow } from './NPointPayRow';
 import { getLocalDateString } from '../utils/orderExpiry';
 import {
@@ -75,6 +76,11 @@ interface ReservationTabProps {
   onOpenQRCode?: () => void;
   // QR乗車券の状態(公開後。全席が利用済み、または一部だけ利用済みのときに、予約カードに札を出す)
   ticketSummary?: TicketSummary | null;
+  // 予約の規則(1人1件・同じ席の重なり)を、サーバーで確かめる(公開後のクラウドの会員だけ。渡されなければ、いままでどおり)。断られたら、その中身を返す
+  bookingGate?: {
+    precheck: () => Promise<RuleRefusal | null>;
+    submit: (order: ActiveOrder) => Promise<RuleRefusal | null>;
+  };
 }
 
 export const ReservationTab: React.FC<ReservationTabProps> = ({
@@ -90,6 +96,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
   onSpendPoints,
   onOpenQRCode,
   ticketSummary,
+  bookingGate,
 }) => {
   const [copiedCode, setCopiedCode] = useState(false);
   // N-POINT で払うか / ポイントを引いているあいだ / うまくいかなかったときの理由
@@ -97,6 +104,9 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
   const [pointsAmount, setPointsAmount] = useState(0); // 使うポイント(1pt=1円)
   const [spending, setSpending] = useState(false);
   const [spendError, setSpendError] = useState<string | null>(null);
+  // サーバーに断られたとき(席が埋まっていた・ほかの予約がある)。席が埋まっていたときは、その席(号車ごと)を、選べなくする
+  const [refusal, setRefusal] = useState<RuleRefusal | null>(null);
+  const [takenSeats, setTakenSeats] = useState<Record<number, string[]>>({});
   const canUsePoints = !!onSpendPoints && (pointBalance ?? 0) > 0;
   // Express Train Selection in E-Quick Service
   const [expressType, setExpressType] = useState<ExpressKey>('ayami');
@@ -460,50 +470,75 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
     const finalTotalPrice = prices.total + (isSpecialCar ? specialCarFee : 0);
     const orderId = newOrderId(); // 他の予約と重ならない番号(以前の EQ-5桁 の番号も、そのまま使える)
 
-    // N-POINT で払うときは、予約を確定する前に、サーバーでポイントを引く(引けなければ、予約しない)
+    // サーバーが規則を見る会員は、ポイントを引く前に、ほかの予約がないか確かめる(あれば、ポイントを引かずに、断る)
     const pointsUsed = usePoints && canUsePoints && onSpendPoints ? Math.min(pointsAmount, pointBalance ?? 0, finalTotalPrice) : 0;
-    if (pointsUsed > 0 && onSpendPoints) {
-      setSpending(true);
-      setSpendError(null);
-      const r = await onSpendPoints(orderId, pointsUsed, `${trainName} 特急券・座席のお支払い`);
+    if (bookingGate || pointsUsed > 0) setSpending(true);
+    setSpendError(null);
+    try {
+      if (bookingGate) {
+        const refused = await bookingGate.precheck();
+        if (refused) {
+          setRefusal(refused);
+          return;
+        }
+      }
+
+      // N-POINT で払うときは、予約を確定する前に、サーバーでポイントを引く(引けなければ、予約しない)
+      if (pointsUsed > 0 && onSpendPoints) {
+        const r = await onSpendPoints(orderId, pointsUsed, `${trainName} 特急券・座席のお支払い`);
+        if (!r.ok) {
+          setSpendError(r.message || 'N-POINTを使えませんでした。もう一度お試しください。');
+          return;
+        }
+      }
+
+      const newOrder: ActiveOrder = {
+        orderId,
+        trainName,
+        carNo,
+        seatNo,
+        seatType,
+        boardingStation,
+        destinationStation,
+        departureTime: currentTrainInfo.depTime,
+        arrivalTime,
+        reservedDate: getLocalDateString(),
+        items,
+        totalPrice: finalTotalPrice - pointsUsed,
+        ...(pointsUsed > 0 ? { pointsUsed } : {}),
+        status: 'confirmed',
+        estimatedDeliveryTime: `${boardingStation.replace('駅', '')}駅発車後 5分頃`,
+        deliveryStation: boardingStation,
+      };
+
+      // 確定の前に、サーバーへ送る。席が埋まっていた・ほかの予約があるときは、断られる
+      if (bookingGate) {
+        const refused = await bookingGate.submit(newOrder);
+        if (refused) {
+          if (refused.code === 'seat_taken') {
+            setTakenSeats((prev) => ({ ...prev, [carNo]: [...new Set([...(prev[carNo] ?? []), ...seatNo.split(',').map((x) => x.trim())])] }));
+          }
+          setRefusal(refused);
+          return;
+        }
+      }
+
+      // クーポンが実際に割引として使われた場合のみ、端末で使用済みとして記録(割引がなければ消費しない)
+      if (appliedCoupon) {
+        if (prices.fareDiscount > 0 || prices.expressDiscount > 0) {
+          recordCouponUsage(appliedCoupon.code);
+        }
+        setAppliedCoupon(null);
+      }
+
+      setUsePoints(false);
+      setSeatCount(1);
+      setTakenSeats({});
+      onConfirmOrder(newOrder);
+      setShowBookingSuccessModal(true);
+    } finally {
       setSpending(false);
-      if (!r.ok) {
-        setSpendError(r.message || 'N-POINTを使えませんでした。もう一度お試しください。');
-        return;
-      }
     }
-
-    const newOrder: ActiveOrder = {
-      orderId,
-      trainName,
-      carNo,
-      seatNo,
-      seatType,
-      boardingStation,
-      destinationStation,
-      departureTime: currentTrainInfo.depTime,
-      arrivalTime,
-      reservedDate: getLocalDateString(),
-      items,
-      totalPrice: finalTotalPrice - pointsUsed,
-      ...(pointsUsed > 0 ? { pointsUsed } : {}),
-      status: 'confirmed',
-      estimatedDeliveryTime: `${boardingStation.replace('駅', '')}駅発車後 5分頃`,
-      deliveryStation: boardingStation,
-    };
-
-    // クーポンが実際に割引として使われた場合のみ、端末で使用済みとして記録(割引がなければ消費しない)
-    if (appliedCoupon) {
-      if (prices.fareDiscount > 0 || prices.expressDiscount > 0) {
-        recordCouponUsage(appliedCoupon.code);
-      }
-      setAppliedCoupon(null);
-    }
-
-    setUsePoints(false);
-    setSeatCount(1);
-    onConfirmOrder(newOrder);
-    setShowBookingSuccessModal(true);
   };
 
   // 公開後の予約カードの右上の札(席種の名前。利用済みのときは、利用の状態)
@@ -1249,7 +1284,36 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
         maxSeats={maxSeats}
         onSeatCountChange={changeSeatCount}
         onConfirmSeat={handleConfirmSeatSelection}
+        takenSeats={takenSeats}
       />
+
+      {/* サーバーに断られたとき(席が埋まっていた・ほかの予約がある) */}
+      {refusal && (
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-fadeIn"
+          onClick={() => setRefusal(null)}
+        >
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-4 shadow-2xl border border-[#E5E2EE] animate-scaleUp pc:max-w-[384px] pc:max-h-[85vh] pc:overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-sm font-bold text-[#221C35] leading-relaxed">{refusal.message}</p>
+            <button
+              type="button"
+              onClick={() => {
+                const reopen = refusal.code === 'seat_taken';
+                setRefusal(null);
+                if (reopen) setIsSeatSelectionModalOpen(true);
+              }}
+              className="w-full py-3 rounded-xl bg-[#5B21B6] text-white text-sm font-bold cursor-pointer"
+            >
+              {refusal.code === 'seat_taken' ? '席を選びなおす' : '予約を見る'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ─────────────────────────────────────────────────────────────
           3. 安全対策・キャンセル確認ダイアログ (Modal)

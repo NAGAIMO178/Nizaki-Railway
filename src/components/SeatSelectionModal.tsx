@@ -19,6 +19,7 @@ interface SeatSelectionModalProps {
   pointsUsed?: number; // N-POINT で払う額(あれば、お支払い額から引いて見せる)
   maxSeats?: number; // 1つの予約で選べる席の数(既定は1席。公開後は複数席)。basePrice は、選んだ席の数ぶんの合計
   onSeatCountChange?: (count: number) => void; // 選んだ席の数が変わったとき(予約画面の金額に反映する)
+  takenSeats?: Record<number, string[]>; // サーバーに「すでに予約されている」と断られた席(号車ごと)。選べなくする
   onConfirmSeat: (selection: {
     carNo: number;
     seatNo: string;
@@ -41,6 +42,7 @@ export const SeatSelectionModal: React.FC<SeatSelectionModalProps> = ({
   maxSeats = 1,
   onSeatCountChange,
   onConfirmSeat,
+  takenSeats,
 }) => {
   const isSpecialSeatType =
     initialSeatType === 'green' ||
@@ -79,19 +81,21 @@ export const SeatSelectionModal: React.FC<SeatSelectionModalProps> = ({
 
   // 当日・当該列車・号車の固定された予約済み座席リストを取得
   const currentOccupied = useMemo(() => {
-    return generateOccupiedSeats(
+    const generated = generateOccupiedSeats(
       todayStr,
       `${expressType}_${trainName}`,
       selectedCarNo,
       selectedCarNo === 1,
       expressType === 'sumikaze' ? rowsOfCar(selectedCarNo) : undefined
     );
-  }, [todayStr, expressType, trainName, selectedCarNo]);
+    const taken = takenSeats?.[selectedCarNo];
+    return taken && taken.length > 0 ? [...generated, ...taken] : generated;
+  }, [todayStr, expressType, trainName, selectedCarNo, takenSeats]);
 
   // 初期選択席: 既定席が埋まっていれば、その号車の最初の空席を選ぶ(満席なら選ばない)
   const defaultSeats = (carNo: number): string[] => {
     const rows = expressType === 'sumikaze' ? rowsOfCar(carNo) : undefined;
-    const seat = pickDefaultSeat(generateOccupiedSeats(todayStr, `${expressType}_${trainName}`, carNo, carNo === 1, rows), carNo === 1, rows);
+    const seat = pickDefaultSeat([...generateOccupiedSeats(todayStr, `${expressType}_${trainName}`, carNo, carNo === 1, rows), ...(takenSeats?.[carNo] ?? [])], carNo === 1, rows);
     return seat ? [seat] : [];
   };
 
