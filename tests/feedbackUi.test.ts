@@ -8,7 +8,7 @@ import { FeedbackDone, FeedbackSheet } from '../src/components/FeedbackSheet';
 import { MenuDrawer } from '../src/components/MenuDrawer';
 import { NoticeSheet } from '../src/components/NoticeSheet';
 import {
-  buildEnvText, buildEnvTextForForm, buildFeedbackFormUrl, EnvInput, FEEDBACK_FORM_ENTRY, FEEDBACK_FORM_SCREEN_CHOICES, FEEDBACK_FORM_SCREEN_LABEL, FEEDBACK_FORM_URL, makeFormCode, FEEDBACK_KINDS, FEEDBACK_SCREENS, getFeedbackDeviceId, lineOaMessageUrl, safeLocation, screenOfTab, submitFeedback, validateFeedback,
+  buildEnvText, buildEnvTextForForm, buildFeedbackFormUrl, EnvInput, FEEDBACK_FORM_ENTRY, openFeedbackForm, FEEDBACK_FORM_SCREEN_CHOICES, FEEDBACK_FORM_SCREEN_LABEL, FEEDBACK_FORM_URL, makeFormCode, FEEDBACK_KINDS, FEEDBACK_SCREENS, getFeedbackDeviceId, lineOaMessageUrl, safeLocation, screenOfTab, submitFeedback, validateFeedback,
 } from '../src/utils/feedback';
 
 const read = (f: string) => fs.readFileSync(path.resolve(__dirname, '..', f), 'utf-8');
@@ -212,16 +212,61 @@ describe('合言葉(Googleフォーム用)', () => {
     let m = 0;
     expect(makeFormCode(() => (m++ === 0 ? Array(12).fill(250) : [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]))).toBe('ABCDEF'); // 250 は使わない → 次の乱数
   });
-  it('返信を希望したときだけ、画面に、合言葉を大きく出す。「フォーム送信後、10分以内に、公式LINEへ、この6文字を、そのまま送ってください」・コードをコピー', () => {
+  it('送信の前は、コードを、画面に出さない(返信を希望しても、合言葉の枠・「フォーム送信後、10分以内に…」の説明は、無い)', () => {
     const src = read('src/components/FeedbackSheet.tsx');
-    expect(src).toContain('{wantReply && formCode && (');
-    expect(src).toContain('フォーム送信後、10分以内に、公式LINEへ、この6文字を、そのまま送ってください');
-    expect(src).toContain("setFormCode(wantReply ? (c) => c || makeFormCode() : '');");
-    expect(src).toContain("code: wantReply ? formCode : ''");
-    expect(src).toContain('formEnv'); // アドレスに入れる動作状況は、800文字以内のもの
+    expect(src).not.toContain('formCode');
+    expect(src).not.toContain('aria-label="合言葉"');
+    expect(src).not.toContain('フォーム送信後、10分以内に');
+    expect(src).not.toContain('makeFormCode'); // 作るのは、リンクを押した瞬間(utils/feedback.ts の openFeedbackForm)
+  });
+  it('送信後(模擬の成功)に、サーバーの受付コードだけが出る(コードは、1つ)', async () => {
+    const r = await submitFeedback({ screen: 'ホーム', kind: 'その他', message: 'x', wantReply: true, env: '' }, undefined, async () => ({ status: 'success', replyCode: 'JCXEVS', expiresAt: 1790000000000 }), 'fb-device-0001');
+    expect(r).toMatchObject({ ok: true, replyCode: 'JCXEVS' });
+    const html = renderToStaticMarkup(React.createElement(FeedbackDone, { replyCode: (r as { replyCode: string }).replyCode, copied: false, onCopy: () => undefined }));
+    expect(html.match(/aria-label="受付コード"/g)).toHaveLength(1);
+    expect(html).toContain('>JCXEVS<');
   });
   it('毎回、ちがうものが出る(2000回で、500種類以上)', () => {
     expect(new Set(Array.from({ length: 2000 }, () => makeFormCode())).size).toBeGreaterThan(500);
+  });
+});
+
+describe('Googleフォームで送る(openFeedbackForm): 押した瞬間に、合言葉を作る', () => {
+  const base = { screen: '時刻表', kind: 'バグ・不具合', message: '本文', env: '版: 4.7.0' };
+  it('返信を希望しているとき: 押した瞬間に、合言葉(英数字6文字)を作って、事前入力に入れ、新しいタブで開く', () => {
+    const opened: string[] = [];
+    const url = openFeedbackForm({ ...base, wantReply: true }, (u) => void opened.push(u));
+    expect(opened).toEqual([url]);
+    const code = /entry\.514912590=([^&]+)/.exec(url)?.[1] ?? '';
+    expect(code).toMatch(/^[A-Z2-9]{6}$/);
+    expect(code).toMatch(/[A-Z]/);
+    expect(code).not.toMatch(/[OIL01l]/);
+    expect(url).toContain(`entry.1934312063=${encodeURIComponent('する')}`);
+  });
+  it('押すたびに、新しい合言葉(前もって作っておかない)', () => {
+    let n = 0;
+    const make = () => ['AAAAA2', 'BBBBB3'][n++];
+    const u1 = openFeedbackForm({ ...base, wantReply: true }, () => undefined, make);
+    const u2 = openFeedbackForm({ ...base, wantReply: true }, () => undefined, make);
+    expect(u1).toContain('entry.514912590=AAAAA2');
+    expect(u2).toContain('entry.514912590=BBBBB3');
+    expect(n).toBe(2);
+  });
+  it('返信を希望しないとき: 返信の希望は「しない」。合言葉は、作らない・付けない', () => {
+    let made = 0;
+    const opened: string[] = [];
+    const url = openFeedbackForm({ ...base, wantReply: false }, (u) => void opened.push(u), () => { made++; return 'ZZZZZ9'; });
+    expect(made).toBe(0);
+    expect(url).toContain(`entry.1934312063=${encodeURIComponent('しない')}`);
+    expect(url).not.toContain('entry.514912590');
+    expect(opened).toEqual([url]);
+  });
+  it('リンクの押し方: 希望するときだけ、押した瞬間に処理する(希望しないときは、ふつうのリンクのまま)。アドレスの href には、合言葉が入っていない', () => {
+    const src = read('src/components/FeedbackSheet.tsx');
+    expect(src).toContain('if (!wantReply) return;');
+    expect(src).toContain('openFeedbackForm(formValues);');
+    expect(src).toContain('href={buildFeedbackFormUrl(formValues)}');
+    expect(buildFeedbackFormUrl({ ...base, wantReply: true })).not.toContain('entry.514912590');
   });
 });
 

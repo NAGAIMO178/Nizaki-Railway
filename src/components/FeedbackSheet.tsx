@@ -5,7 +5,7 @@ import { usePcLayout } from '../utils/usePcLayout';
 import { useBackClose } from '../utils/backClose';
 import { systemLogger } from '../utils/systemLogger';
 import {
-  buildEnvText, buildEnvTextForForm, buildFeedbackFormUrl, EnvInput, makeFormCode, FEEDBACK_KINDS, FEEDBACK_MESSAGE_MAX, FEEDBACK_SCREENS, LINE_OA_ADD_FRIEND_URL, lineOaMessageUrl, submitFeedback, validateFeedback,
+  buildEnvText, buildEnvTextForForm, buildFeedbackFormUrl, EnvInput, openFeedbackForm, FEEDBACK_KINDS, FEEDBACK_MESSAGE_MAX, FEEDBACK_SCREENS, LINE_OA_ADD_FRIEND_URL, lineOaMessageUrl, submitFeedback, validateFeedback,
 } from '../utils/feedback';
 import { LineIcon } from './LineIcon';
 
@@ -61,8 +61,6 @@ export const FeedbackSheet: React.FC<FeedbackSheetProps> = ({ isOpen, onClose, d
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<{ replyCode?: string } | null>(null);
   const [copied, setCopied] = useState(false);
-  const [formCode, setFormCode] = useState(''); // Googleフォーム用の合言葉(返信を希望したときだけ作る)
-  const [formCodeCopied, setFormCodeCopied] = useState(false);
 
   // 開くたびに、まっさらにする(いま開いていた画面を、選んでおく)
   useEffect(() => {
@@ -76,16 +74,7 @@ export const FeedbackSheet: React.FC<FeedbackSheetProps> = ({ isOpen, onClose, d
     setError(null);
     setDone(null);
     setCopied(false);
-    setFormCode('');
-    setFormCodeCopied(false);
   }, [isOpen, defaultScreen]);
-
-  // 返信を希望したとき: 合言葉(英数字6文字)を作る。希望をやめたら、消す
-  useEffect(() => {
-    if (!isOpen) return;
-    setFormCode(wantReply ? (c) => c || makeFormCode() : '');
-    setFormCodeCopied(false);
-  }, [isOpen, wantReply]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -136,6 +125,7 @@ export const FeedbackSheet: React.FC<FeedbackSheetProps> = ({ isOpen, onClose, d
   }, [isOpen, pcLayout, currentScreenLabel, loggedIn]);
   const env = envInput ? buildEnvText(envInput) : '';
   const formEnv = envInput ? buildEnvTextForForm(envInput) : ''; // Googleフォームのアドレスに入れる分(800文字以内)
+  const formValues = { screen, kind, message, wantReply, env: attachEnv ? formEnv : '' };
 
   if (!isOpen) return null;
 
@@ -250,30 +240,18 @@ export const FeedbackSheet: React.FC<FeedbackSheetProps> = ({ isOpen, onClose, d
                 {sending ? '送信中…' : '送信'}
               </button>
 
-              {wantReply && formCode && (
-                <div className="rounded-xl bg-[#F4F3F8] px-3 py-3 text-center space-y-2">
-                  <div className="font-mono text-3xl font-black tracking-[0.3em] text-[#5B21B6] pl-[0.3em]" aria-label="合言葉">{formCode}</div>
-                  <p className="text-[11px] font-bold text-[#221C35]">フォーム送信後、10分以内に、公式LINEへ、この6文字を、そのまま送ってください</p>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      try {
-                        await navigator.clipboard.writeText(formCode);
-                        setFormCodeCopied(true);
-                      } catch {
-                        setFormCodeCopied(false);
-                      }
-                    }}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-[#E6E2EE] bg-white px-3 py-1.5 text-xs font-bold text-[#221C35] cursor-pointer"
-                  >
-                    {formCodeCopied ? <Check className="w-4 h-4 text-[#059669]" /> : <Copy className="w-4 h-4" />}
-                    <span>{formCodeCopied ? 'コピーしました' : 'コードをコピー'}</span>
-                  </button>
-                </div>
-              )}
-
               <div className="text-center">
-                <a href={buildFeedbackFormUrl({ screen, kind, message, wantReply, env: attachEnv ? formEnv : '', code: wantReply ? formCode : '' })} target="_blank" rel="noopener noreferrer" className="text-[11px] font-bold text-[#6B6380] underline">
+                <a
+                  href={buildFeedbackFormUrl(formValues)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => {
+                    // 返信を希望するときだけ、押した瞬間に、合言葉を作って、事前入力に入れる(画面には出さない。フォームの合言葉の欄に入る)
+                    if (!wantReply) return;
+                    e.preventDefault();
+                    openFeedbackForm(formValues);
+                  }}
+                  className="text-[11px] font-bold text-[#6B6380] underline">
                   Googleフォームで送る
                 </a>
               </div>

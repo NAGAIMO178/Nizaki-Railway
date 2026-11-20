@@ -117,6 +117,14 @@ export const buildFeedbackFormUrl = (values: FeedbackFormValues = {}, entries = 
   return params.length === 0 ? FEEDBACK_FORM_URL : `${FEEDBACK_FORM_URL}?usp=pp_url&${params.join('&')}`;
 };
 
+// 「Googleフォームで送る」を押した瞬間: 返信を希望するときだけ、合言葉(英数字6文字)を作って、事前入力に入れて、フォームを新しいタブで開く。
+// 合言葉は、アプリの画面には出さない(フォームの合言葉の欄に入る)。希望しないときは、合言葉を付けない。作ったアドレスを返す
+export const openFeedbackForm = (values: FeedbackFormValues, open: (url: string) => void = (u) => void window.open(u, '_blank', 'noopener,noreferrer'), makeCode: () => string = makeFormCode): string => {
+  const url = buildFeedbackFormUrl(values.wantReply ? { ...values, code: makeCode() } : { ...values, code: undefined });
+  open(url);
+  return url;
+};
+
 // ---- 端末ごとの、ランダムな印(連投の制限に使う。氏名・メールなどとは、結びつかない) ----
 const DEVICE_KEY = 'nizaki_feedback_device';
 const randomChars = (n: number): string => {
