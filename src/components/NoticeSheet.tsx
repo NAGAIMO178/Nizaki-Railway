@@ -1,8 +1,9 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ExternalLink, X } from 'lucide-react';
 import { LINE_OA_ADD_FRIEND_URL } from '../utils/accountApi';
 import { LineIcon } from './LineIcon';
-import { Notice, NOTICE_KIND_LABEL, NoticeKind, safeHttpsUrl } from '../utils/notices';
+import { Notice, NOTICE_KIND_LABEL, NoticeKind, noticeImages, safeHttpsUrl } from '../utils/notices';
+import { NoticeImageViewer } from './NoticeImageViewer';
 import { useDragToDismiss } from '../utils/useDragToDismiss';
 import { usePcLayout } from '../utils/usePcLayout';
 import { useBackClose } from '../utils/backClose';
@@ -22,8 +23,8 @@ const KIND_BADGE: Record<NoticeKind, string> = {
 const dateText = (ms: number): string => new Date(ms).toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo', year: 'numeric', month: 'numeric', day: 'numeric' });
 
 // 題名・本文は、文字として、そのまま出す(HTML として解釈しない)。画像・リンクは、https:// のものだけ
-const NoticeItem: React.FC<{ n: Notice }> = ({ n }) => {
-  const image = safeHttpsUrl(n.imageUrl);
+const NoticeItem: React.FC<{ n: Notice; onOpenImage: (urls: string[], index: number) => void }> = ({ n, onOpenImage }) => {
+  const images = noticeImages(n);
   const link = safeHttpsUrl(n.linkUrl);
   const important = n.kind === 'important';
   return (
@@ -34,7 +35,15 @@ const NoticeItem: React.FC<{ n: Notice }> = ({ n }) => {
       </div>
       <h3 className={`text-sm font-black break-words ${important ? 'text-[#B91C1C]' : 'text-[#221C35]'}`}>{n.title}</h3>
       {n.body && <p className="text-xs leading-relaxed text-[#221C35] whitespace-pre-wrap break-words">{n.body}</p>}
-      {image && <img src={image} alt="" loading="lazy" referrerPolicy="no-referrer" className="w-full rounded-xl border border-[#E6E2EE] bg-[#F4F3F8]" />}
+      {images.length > 0 && (
+        <div className="space-y-2">
+          {images.map((src, i) => (
+            <button key={src} type="button" onClick={() => onOpenImage(images, i)} aria-label="画像を大きく見る" className="block w-full cursor-zoom-in">
+              <img src={src} alt="" loading="lazy" referrerPolicy="no-referrer" className="w-full rounded-xl border border-[#E6E2EE] bg-[#F4F3F8]" />
+            </button>
+          ))}
+        </div>
+      )}
       {link && (
         <a href={link} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-bold text-[#5B21B6] underline break-all">
           <span>詳しく見る</span>
@@ -49,6 +58,13 @@ const NoticeItem: React.FC<{ n: Notice }> = ({ n }) => {
 export const NoticeSheet: React.FC<NoticeSheetProps> = ({ isOpen, notices, onClose }) => {
   const pcLayout = usePcLayout(); // PC 表示のときは、中央の枠。下へ引いて閉じる動きは付けない
   const drag = useDragToDismiss(onClose, !pcLayout);
+  // 画像の全画面表示(開いているあいだは、Esc は、画像だけを閉じる)
+  const [viewer, setViewer] = useState<{ urls: string[]; index: number } | null>(null);
+  const viewerOpenRef = useRef(false);
+  viewerOpenRef.current = viewer !== null;
+  useEffect(() => {
+    if (!isOpen) setViewer(null);
+  }, [isOpen]);
 
   // シートを開いているあいだは、うしろの画面をスクロールさせない
   useEffect(() => {
@@ -67,7 +83,7 @@ export const NoticeSheet: React.FC<NoticeSheetProps> = ({ isOpen, notices, onClo
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape' && !viewerOpenRef.current) onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -95,7 +111,7 @@ export const NoticeSheet: React.FC<NoticeSheetProps> = ({ isOpen, notices, onClo
           ) : (
             <ul className="space-y-3">
               {notices.map((n) => (
-                <NoticeItem key={n.id} n={n} />
+                <NoticeItem key={n.id} n={n} onOpenImage={(urls, index) => setViewer({ urls, index })} />
               ))}
             </ul>
           )}
@@ -105,6 +121,7 @@ export const NoticeSheet: React.FC<NoticeSheetProps> = ({ isOpen, notices, onClo
           </a>
         </div>
       </div>
+      {viewer && <NoticeImageViewer urls={viewer.urls} startIndex={viewer.index} onClose={() => setViewer(null)} />}
     </div>
   );
 };

@@ -107,11 +107,12 @@ describe('送る(uploadNoticeImage): サーバーは、模擬', () => {
 });
 
 describe('つなぎ込み', () => {
-  it('「画像のアドレス」の欄は、そのまま。横に「画像を選ぶ」。返ってきた url を欄に入れ、小さなプレビューを出す', () => {
+  it('「画像のアドレス」の欄は、そのまま。「画像を選ぶ」で返ってきた url を、画像として足し、小さなプレビューを出す', () => {
     const s = fs.readFileSync(path.resolve(__dirname, '..', 'src/components/AdminNoticeEditor.tsx'), 'utf-8');
     expect(s).toContain('画像のアドレス(https:// から。なくてもよい)');
     expect(s).toContain('画像を選ぶ');
-    expect(s).toContain('if (res.ok) setImageUrl(res.url);');
-    expect(s).toContain('h-12 w-auto');
+    expect(s).toContain('if (res.ok) setImages(');
+    expect(s).toContain('{ url: res.url, id: res.id, fresh: true }');
+    expect(s).toContain('h-16 w-16');
   });
 });
