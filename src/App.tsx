@@ -30,6 +30,7 @@ import { useCloudAccount } from './utils/useCloudAccount';
 import { joinEventTare, rewardIdFromTitle } from './utils/cloudAccount';
 import { clearMemberDataFromDevice } from './utils/memberData';
 import { sendReservationWithRetry } from './utils/reservationSync';
+import { buildReservationOrder, orderSignature, refusalOf, RULE_MESSAGES, fetchMyReservations, pickReservationToImport, serverReservationToOrder, type RuleRefusal, type ServerReservation } from './utils/reservationRules';
 import { useDelayNotifyLines, useDelayNotifyMode } from './utils/delayNotifySettings';
 import { useDelayWatcher } from './utils/useDelayWatcher';
 import { useReservationWatcher } from './utils/useReservationWatcher';
@@ -577,6 +578,12 @@ export default function App() {
   const sessionToken = currentUser?.sessionToken;
   const currentOrderIdRef = React.useRef<string | undefined>(undefined);
   currentOrderIdRef.current = activeOrder?.orderId;
+  const activeOrderRef = React.useRef<ActiveOrder | null>(null);
+  activeOrderRef.current = activeOrder;
+  // サーバーが、この中身で、すでに持っている予約(予約番号 → 中身の印)。同じ中身は、もう一度送らない
+  const sentSignatureRef = React.useRef<Record<string, string>>({});
+  // この端末で取り消した予約番号(取り消しの直後に、サーバーから取った古い一覧で、よみがえらないように)
+  const cancelledIdsRef = React.useRef<Set<string>>(new Set());
   React.useEffect(() => {
     if (activeOrder) {
       try {
@@ -591,25 +598,12 @@ export default function App() {
       if (sessionToken && normEmail(activeOrder.ownerEmail) === normEmail(currentUser?.email) && !(cloudOn && !cloud.ready)) {
         const awardOnServer = cloudOn && !cloud.error; // サーバーがポイントを付ける(同期できなかったときは、付けずに予約だけ送る)
         // 画像などを含めず、台帳に必要な項目だけを送る
-        const { orderId, trainName, carNo, seatNo, seatType, boardingStation, destinationStation, departureTime, arrivalTime, reservedDate, totalPrice } = activeOrder;
-        const base = { orderId, trainName, carNo, seatNo, seatType, boardingStation, destinationStation, departureTime, arrivalTime, reservedDate, totalPrice };
-        const payload = awardOnServer
-          ? {
-              sessionToken,
-              order: {
-                ...base,
-                items: (activeOrder.items || []).map((ci) => {
-                  // 複数席の予約は、どの席に何個届けるか(指定のない分は先頭の席)も送る
-                  const seats = splitSeats(activeOrder.seatNo);
-                  const allocation = seats.length >= 2 ? effectiveAllocation(ci.quantity, seats, activeOrder.itemSeats?.[ci.item.id]) : null;
-                  return { id: ci.item.id, name: ci.item.name, quantity: ci.quantity, price: ci.item.price, ...(allocation ? { seats: allocation } : {}) };
-                }),
-                itemDiscount: activeOrder.itemDiscount || 0,
-                pointsUsed: activeOrder.pointsUsed || 0,
-              },
-              awardPoints: true,
-            }
-          : { sessionToken, order: base };
+        const { orderId } = activeOrder;
+        // サーバーから取ってきた予約や、確定の前に送って受け付けられた予約は、同じ中身のまま、もう一度は送らない
+        if (sentSignatureRef.current[orderId] === orderSignature(activeOrder)) return;
+        const full = buildReservationOrder(activeOrder);
+        const { items: _items, itemDiscount: _discount, pointsUsed: _used, ...base } = full;
+        const payload = awardOnServer ? { sessionToken, order: full, awardPoints: true } : { sessionToken, order: base };
         // 送れなかったときは、間をあけて、もう一度送る(やり直しても直らない失敗は、送り直さない)。待っているあいだに、その予約が無くなったら、やめる
         void sendReservationWithRetry(() => callGas('createReservation', payload), { shouldContinue: () => currentOrderIdRef.current === orderId }).then((r) => {
           if (!r.ok) {
@@ -623,6 +617,74 @@ export default function App() {
       }
     }
   }, [activeOrder, sessionToken, currentUser?.email, cloudOn, cloud.ready, cloud.error]);
+
+  // サーバーにある自分の予約を、端末の予約として出す(別の端末で予約した会員が、ここで見られるように)。端末に予約があれば、何もしない
+  // デモ会員(ログイン証が無い)は、サーバーに予約が無いので、対象外
+  const importServerReservation = (list: ServerReservation[] | null, forToken: string) => {
+    const user = currentUserRef.current;
+    if (!user?.sessionToken || user.sessionToken !== forToken) return;
+    const pick = pickReservationToImport(list, activeOrderRef.current, cancelledIdsRef.current);
+    if (!pick) return;
+    const order = serverReservationToOrder(pick, normEmail(user.email) || undefined, MOCK_EQUIP_ITEMS);
+    sentSignatureRef.current[order.orderId] = orderSignature(order); // サーバーから取ったものは、送り直さない
+    setActiveOrder((prev) => prev ?? order);
+  };
+  const onReservationTab = activeTab === 'reservation';
+  const importedForTokenRef = React.useRef<string | null>(null);
+  const lastImportAtRef = React.useRef(0);
+  React.useEffect(() => {
+    if (!isLaunched() || !sessionToken) return;
+    const first = importedForTokenRef.current !== sessionToken;
+    // ログインした直後と、予約のタブを開いたときに、1回ずつ取る
+    if (!first && (!onReservationTab || activeOrder)) return;
+    importedForTokenRef.current = sessionToken;
+    const now = Date.now();
+    if (now - lastImportAtRef.current < 15000) return;
+    lastImportAtRef.current = now;
+    let alive = true;
+    void fetchMyReservations((a, p) => callGas(a, p), sessionToken).then((list) => {
+      if (alive) importServerReservation(list, sessionToken);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [sessionToken, onReservationTab]);
+
+  // 予約を確定する前に、サーバーの規則(1人1件・同じ席の重なり)を確かめる。サーバーが規則を見る会員(公開後のクラウドの会員)だけ。
+  // 返事が取れなかったとき(通信の失敗など)は、断られたことにせず、いままでどおり確定する(サーバーの返事は、確定のあとの送信で受ける)
+  const rulesOnServer = isLaunched() && !!sessionToken && cloudOn && cloud.ready && !cloud.error;
+  const bookingGate = rulesOnServer && sessionToken
+    ? {
+        // ポイントを引く前に、ほかの予約があるか(あれば、端末にも出す)
+        precheck: async (): Promise<RuleRefusal | null> => {
+          const list = await fetchMyReservations((a, p) => callGas(a, p), sessionToken);
+          if (!list || list.length === 0) return null;
+          importServerReservation(list, sessionToken);
+          return { code: 'active_exists', message: RULE_MESSAGES.active_exists };
+        },
+        // 確定の前に、サーバーへ送る。受け付けられたら、同じ中身は、確定のあとに、送り直さない
+        submit: async (order: ActiveOrder): Promise<RuleRefusal | null> => {
+          let res;
+          try {
+            res = await callGas('createReservation', { sessionToken, order: buildReservationOrder(order), awardPoints: true });
+          } catch {
+            return null;
+          }
+          const refusal = refusalOf(res);
+          if (refusal) {
+            if (refusal.refunded) void cloud.refresh(); // 戻ったポイントを、画面に反映する
+            if (refusal.code === 'active_exists') void fetchMyReservations((a, p) => callGas(a, p), sessionToken).then((l) => importServerReservation(l, sessionToken));
+            return refusal;
+          }
+          if (res?.status === 'success') {
+            sentSignatureRef.current[order.orderId] = orderSignature(order);
+            void cloud.refresh(); // 付いたポイントを、画面に反映する
+            fetchAndCacheTicket(sessionToken, order.orderId).catch(() => {});
+          }
+          return null;
+        },
+      }
+    : undefined;
 
   // QR乗車券の状態(公開後。予約カードの「利用済み」「一部利用済み」の札に使う)。予約が変わったときに1回取る。QR の画面を開いたときに確かめた状態も、ここへ反映する。取れなければ、札は出さない
   const [ticketSummary, setTicketSummary] = useState<TicketSummary | null>(null);
@@ -727,6 +789,7 @@ export default function App() {
 
   const handleCancelOrder = () => {
     const cancelId = activeOrder?.orderId;
+    if (cancelId) cancelledIdsRef.current.add(cancelId);
     if (activeOrder) {
       archiveOrder(activeOrder, 'cancelled');
       // この予約でもらったポイントは、取り消す(予約と取消を繰り返してポイントが増えないように)
@@ -1033,6 +1096,7 @@ export default function App() {
                   onSpendPoints={cloudOn && cloud.ready && !cloud.error ? cloud.spendPoints : undefined}
                   onOpenQRCode={isLaunched() && sessionToken ? () => setIsQRCodeModalOpen(true) : undefined}
                   ticketSummary={ticketSummary}
+                  bookingGate={bookingGate}
                 />
               ) : (
                 <EquipTab
