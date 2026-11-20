@@ -1018,7 +1018,9 @@ function handleCreateReservation(sessionToken, order, awardPoints) {
 
     // 公開後のアプリ: 同じ席の、重なる区間の予約は断る(ほかの会員も含む。自分の予約番号の更新は、自分の行を除いて調べる)
     if (awardPoints && ENFORCE_SEAT_CONFLICT && hasSeatConflict(headers, data, values['予約番号'], values, stopRange)) {
-      return createJsonResponse({ status: 'error', code: 'seat_taken', message: 'その座席は、すでに予約されています。' });
+      // 新しい予約が断られたときは、その予約番号のために引いた N-POINT を戻す(すでにある予約の更新が断られたときは、予約が残っているので、戻さない)
+      const refunded = targetRow === -1 ? refundSpentPoints(memberId, values['予約番号']) : 0;
+      return createJsonResponse(refusalWithRefund({ status: 'error', code: 'seat_taken', message: 'その座席は、すでに予約されています。' }, refunded));
     }
     // 公開後のアプリ: 新しい予約は、同じ会員の未終了の予約が、すでにあれば断る(同じ予約番号の更新は、通す)
     if (awardPoints && ENFORCE_ONE_ACTIVE && targetRow === -1) {
@@ -1028,7 +1030,8 @@ function handleCreateReservation(sessionToken, order, awardPoints) {
         if (isReservationRowActive(headers, data[i])) activeNow++;
       }
       if (activeNow >= MAX_ACTIVE_PER_MEMBER) {
-        return createJsonResponse({ status: 'error', code: 'active_exists', message: 'いま、ほかの予約があります。その予約が終わってから、ご予約ください。' });
+        const refunded = refundSpentPoints(memberId, values['予約番号']);
+        return createJsonResponse(refusalWithRefund({ status: 'error', code: 'active_exists', message: 'いま、ほかの予約があります。その予約が終わってから、ご予約ください。' }, refunded));
       }
     }
 
@@ -3601,6 +3604,33 @@ function handleRedeemPointCode(sessionToken, rawCode) {
   });
 }
 
+// 予約が、規則(同じ席・1人1件)で断られたとき、その予約番号のために、同じ会員が引いた N-POINT(spendPoints)を、台帳に「戻し」として足す。
+//  - 1回だけ(同じ予約番号で、何度断られても、二重に戻さない)。会員が違えば、戻さない(会員ごとの台帳だけを見る)
+//  - 戻した点数を返す(戻すものが無い・すでに戻した・失敗したときは 0)。呼ぶ側が、ロックを持っていること(予約の保存の、ロックの中)
+//  - 戻しは、予約で付いたポイントではないので、1日の上限(pointsAwardedToday)には数えない
+//  - 取消(cancelReservation)で、使ったポイントが戻らない決まりは、変えない(ここは、予約が成立しなかったときだけ)
+function refundSpentPoints(memberId, orderId) {
+  try {
+    const ledger = readMemberPoints(memberId);
+    const spend = ledger.keys['use:' + orderId];
+    if (!spend || !(spend.points < 0)) return 0;
+    const refundKey = 'refund:' + orderId;
+    if (ledger.keys[refundKey]) return 0;
+    const points = -spend.points;
+    addPointEntry(ledger, memberId, 'refund', refundKey, points, '予約を受け付けられなかったため、N-POINTをお戻ししました');
+    return points;
+  } catch (err) {
+    logInternalError('refundSpentPoints', err);
+    return 0;
+  }
+}
+
+// 断りの返事に、戻した点数(refunded)を足す。戻していないときは、これまでと同じ形のまま
+function refusalWithRefund(response, refunded) {
+  if (refunded > 0) response.refunded = refunded;
+  return response;
+}
+
 // 予約の支払いに、N-POINT を使う(1pt=1円)。予約を確定する前に呼ぶ。同じ予約番号は1回だけ(二重に引かれない)。
 // 使ったポイントは、予約を取り消しても戻らない(取消で取り消すのは、予約で付いたポイントだけ)
 function handleSpendPoints(sessionToken, orderId, rawPoints, rawTitle) {
@@ -3618,6 +3648,10 @@ function handleSpendPoints(sessionToken, orderId, rawPoints, rawTitle) {
     const ledger = readMemberPoints(a.memberId);
     if (!ledger.keys['welcome'] && !ledger.keys['migration']) return notSyncedYetResponse();
     const key = 'use:' + id;
+    // 予約が断られて、戻したあとの、同じ予約番号では、引き直さない(「引いてある」と見なすと、払わずに予約できてしまう)
+    if (ledger.keys['refund:' + id]) {
+      return createJsonResponse({ status: 'error', code: 'refunded', message: 'この予約は、受け付けられませんでした。もう一度、はじめからお手続きください。' });
+    }
     if (ledger.keys[key]) {
       // 通信のやり直し。すでに引いてあるので、何もしない
       return createJsonResponse({ status: 'success', spent: -ledger.keys[key].points, balance: ledgerBalance(ledger), added: false });
