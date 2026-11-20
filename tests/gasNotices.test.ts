@@ -106,7 +106,7 @@ describe('② 公開用(getNotices): ログインなしで読める', () => {
   it('返す項目は、決まったものだけ(削除の印・更新日時・シートの行は、出ない)', () => {
     save(note({ kind: 'important', imageUrl: 'https://example.test/a.png', linkUrl: 'https://example.test/x' }));
     const n = pub()[0];
-    expect(Object.keys(n).sort()).toEqual(['body', 'id', 'imageUrl', 'kind', 'linkUrl', 'publishAt', 'title']);
+    expect(Object.keys(n).sort()).toEqual(['body', 'id', 'imageUrl', 'imageUrls', 'kind', 'linkUrl', 'publishAt', 'title']);
     expect(n.id).toMatch(/^n[0-9a-f]{12}$/);
   });
 

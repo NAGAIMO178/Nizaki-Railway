@@ -2269,6 +2269,12 @@ function formatNoticeTime(ms) {
   return Utilities.formatDate(new Date(ms), 'Asia/Tokyo', 'yyyy-MM-dd HH:mm');
 }
 
+// 通知の画像は、最大4枚。シートの「画像URL」の列に、アドレスを、改行区切りで入れる(1つだけの、いままでの通知も、そのまま読める)
+const NOTICE_IMAGE_MAX_COUNT = 4;
+function parseNoticeImageUrls(cell) {
+  return String(cell === undefined || cell === null ? '' : cell).split(/\r?\n/).map(function (u) { return u.trim(); }).filter(function (u) { return u !== ''; }).slice(0, NOTICE_IMAGE_MAX_COUNT);
+}
+
 // 消されていない通知を、すべて読む(新しい公開日時が先)
 function readNotices() {
   const sheet = getOrCreateNoticeSheet();
@@ -2286,7 +2292,8 @@ function readNotices() {
       kind: NOTICE_KINDS.indexOf(String(v[1])) >= 0 ? String(v[1]) : 'normal',
       title: String(v[2]),
       body: String(v[3]),
-      imageUrl: String(v[4]),
+      imageUrl: parseNoticeImageUrls(v[4])[0] || '', // 最初の1枚(古いアプリは、これだけを読む)
+      imageUrls: parseNoticeImageUrls(v[4]),
       linkUrl: String(v[5]),
       publishAt: publishAt
     });
@@ -2338,8 +2345,24 @@ function cleanNoticeInput(n) {
   if (title.length > NOTICE_TITLE_MAX) return { error: '題名は ' + NOTICE_TITLE_MAX + ' 文字までです。' };
   const body = String(n.body === undefined || n.body === null ? '' : n.body);
   if (body.length > NOTICE_BODY_MAX) return { error: '本文は ' + NOTICE_BODY_MAX + ' 文字までです。' };
-  const imageUrl = String(n.imageUrl === undefined || n.imageUrl === null ? '' : n.imageUrl).trim();
-  if (imageUrl && !isHttpsNoticeUrl(imageUrl)) return { error: '画像のアドレスは、https:// で始まる ' + NOTICE_URL_MAX + ' 文字までです。' };
+  // 画像: imageUrls(配列)を受ける。無ければ、imageUrl(1つ)を、配列1個として扱う。両方あれば、imageUrls を優先する
+  let rawImages;
+  if (n.imageUrls !== undefined && n.imageUrls !== null) {
+    if (!Array.isArray(n.imageUrls)) return { error: '画像の一覧が正しくありません。' };
+    rawImages = n.imageUrls;
+  } else {
+    rawImages = [n.imageUrl === undefined || n.imageUrl === null ? '' : n.imageUrl];
+  }
+  const imageUrls = [];
+  for (let i = 0; i < rawImages.length; i++) {
+    if (typeof rawImages[i] !== 'string' && !(rawImages.length === 1 && n.imageUrls === undefined)) return { error: '画像のアドレスが正しくありません。' };
+    const url = String(rawImages[i] === undefined || rawImages[i] === null ? '' : rawImages[i]).trim();
+    if (!url) continue;
+    if (!isHttpsNoticeUrl(url)) return { error: '画像のアドレスは、https:// で始まる ' + NOTICE_URL_MAX + ' 文字までです。' };
+    if (imageUrls.indexOf(url) >= 0) return { error: '同じ画像のアドレスが、重なっています。' };
+    imageUrls.push(url);
+  }
+  if (imageUrls.length > NOTICE_IMAGE_MAX_COUNT) return { error: '画像は、' + NOTICE_IMAGE_MAX_COUNT + ' 枚までです。' };
   const linkUrl = String(n.linkUrl === undefined || n.linkUrl === null ? '' : n.linkUrl).trim();
   if (linkUrl && !isHttpsNoticeUrl(linkUrl)) return { error: 'リンクのアドレスは、https:// で始まる ' + NOTICE_URL_MAX + ' 文字までです。' };
   const publishAt = Number(n.publishAt);
@@ -2347,7 +2370,7 @@ function cleanNoticeInput(n) {
   if (!isFinite(publishAt) || publishAt < now - 10 * 365 * 86400000 || publishAt > now + 5 * 365 * 86400000) {
     return { error: '公開する日時が正しくありません。' };
   }
-  return { value: { kind: kind, title: title, body: body, imageUrl: imageUrl, linkUrl: linkUrl, publishAt: Math.floor(publishAt) } };
+  return { value: { kind: kind, title: title, body: body, imageUrl: imageUrls[0] || '', imageUrls: imageUrls, linkUrl: linkUrl, publishAt: Math.floor(publishAt) } };
 }
 
 function findNoticeRow(sheet, id) {
@@ -2359,6 +2382,59 @@ function findNoticeRow(sheet, id) {
     if (String(ids[i][0]) === id && String(del[i][0]) !== '1') return i + 2;
   }
   return -1;
+}
+
+// 消されていない通知が、いま使っている画像のアドレス(すべて)。呼ぶ側が、ロックを持っていること
+function collectLiveNoticeImageUrls(sheet) {
+  const live = {};
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return live;
+  const imgs = sheet.getRange(2, 5, lastRow - 1, 1).getValues();
+  const del = sheet.getRange(2, 10, lastRow - 1, 1).getValues();
+  for (let i = 0; i < imgs.length; i++) {
+    if (String(del[i][0]) === '1') continue;
+    parseNoticeImageUrls(imgs[i][0]).forEach(function (u) { live[u] = true; });
+  }
+  return live;
+}
+
+// 通知の画像(https://lh3.googleusercontent.com/d/<ID>)を、ゴミ箱に入れる。
+// フォルダ「神埼線アプリ_通知画像」の中のファイルだけ(外部のアドレス・ほかのファイルは、触らない)。失敗しても、呼んだ側の処理は、続ける
+function trashNoticeImageByUrl(url) {
+  try {
+    const m = /^https:\/\/lh3\.googleusercontent\.com\/d\/([A-Za-z0-9_-]{10,100})$/.exec(String(url));
+    if (!m) return;
+    const folderId = PropertiesService.getScriptProperties().getProperty(NOTICE_IMAGE_FOLDER_PROPERTY);
+    if (!folderId) return;
+    let file;
+    try {
+      file = DriveApp.getFileById(m[1]);
+    } catch (err) {
+      return; // もう無い・見えない
+    }
+    let inFolder = false;
+    const parents = file.getParents();
+    while (parents.hasNext()) {
+      if (String(parents.next().getId()) === String(folderId)) inFolder = true;
+    }
+    if (inFolder) file.setTrashed(true);
+  } catch (err) {
+    logInternalError('trashNoticeImageByUrl', err);
+  }
+}
+
+// 外れた画像(before にあって、after に無いもの)のうち、ほかの通知が使っていないものを、ゴミ箱に入れる
+function trashRemovedNoticeImages(sheet, before, after) {
+  try {
+    const keep = {};
+    after.forEach(function (u) { keep[u] = true; });
+    const removed = before.filter(function (u) { return !keep[u]; });
+    if (removed.length === 0) return;
+    const live = collectLiveNoticeImageUrls(sheet);
+    removed.forEach(function (u) { if (!live[u]) trashNoticeImageByUrl(u); });
+  } catch (err) {
+    logInternalError('trashRemovedNoticeImages', err);
+  }
 }
 
 function handleAdminSaveNotice(adminToken, notice) {
@@ -2379,17 +2455,21 @@ function handleAdminSaveNotice(adminToken, notice) {
   try {
     const sheet = getOrCreateNoticeSheet();
     const nowText = formatNoticeTime(Date.now());
-    const cols = [v.kind, sheetSafe(v.title), sheetSafe(v.body), sheetSafe(v.imageUrl), sheetSafe(v.linkUrl), v.publishAt, formatNoticeTime(v.publishAt), nowText];
+    const cols = [v.kind, sheetSafe(v.title), sheetSafe(v.body), sheetSafe(v.imageUrls.join('\n')), sheetSafe(v.linkUrl), v.publishAt, formatNoticeTime(v.publishAt), nowText];
     let savedId = id;
+    let previousImages = [];
     if (id) {
       const row = findNoticeRow(sheet, id);
       if (row < 0) return createJsonResponse({ status: 'error', code: 'not_found', message: '通知が見つかりません(消されたかもしれません)。' });
+      previousImages = parseNoticeImageUrls(sheet.getRange(row, 5, 1, 1).getValues()[0][0]);
       sheet.getRange(row, 2, 1, cols.length).setValues([cols]);
     } else {
       savedId = 'n' + Utilities.getUuid().replace(/-/g, '').slice(0, 12);
       sheet.appendRow([savedId].concat(cols).concat(['']));
     }
     CacheService.getScriptCache().remove(NOTICE_CACHE_KEY);
+    // 編集で、画像の一覧から外れたものは、ゴミ箱へ(失敗しても、保存は成功)
+    trashRemovedNoticeImages(sheet, previousImages, v.imageUrls);
     return createJsonResponse({ status: 'success', id: savedId });
   } catch (err) {
     return internalErrorResponse('adminSaveNotice', err);
@@ -2415,8 +2495,11 @@ function handleAdminDeleteNotice(adminToken, id) {
     const sheet = getOrCreateNoticeSheet();
     const row = findNoticeRow(sheet, noticeId);
     if (row < 0) return createJsonResponse({ status: 'error', code: 'not_found', message: '通知が見つかりません。' });
+    const imagesOfNotice = parseNoticeImageUrls(sheet.getRange(row, 5, 1, 1).getValues()[0][0]);
     sheet.getRange(row, 9, 1, 2).setValues([[formatNoticeTime(Date.now()), '1']]);
     CacheService.getScriptCache().remove(NOTICE_CACHE_KEY);
+    // 付いていた画像は、ゴミ箱へ(ほかの通知が使っているものは、残す。失敗しても、削除は成功)
+    trashRemovedNoticeImages(sheet, imagesOfNotice, []);
     return createJsonResponse({ status: 'success' });
   } catch (err) {
     return internalErrorResponse('adminDeleteNotice', err);
