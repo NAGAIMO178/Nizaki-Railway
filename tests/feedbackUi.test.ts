@@ -5,6 +5,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { FeedbackDone, FeedbackSheet } from '../src/components/FeedbackSheet';
+import { LINE_BUBBLE_PATH, LineIcon } from '../src/components/LineIcon';
 import { MenuDrawer } from '../src/components/MenuDrawer';
 import { NoticeSheet } from '../src/components/NoticeSheet';
 import {
@@ -328,5 +329,64 @@ describe('画面(シート・メニュー・通知)', () => {
     expect(html).toContain('>公式LINE<');
     expect(html).toContain('href="https://lin.ee/TBKmXZ1"');
     expect(html).toContain('rel="noopener noreferrer"');
+  });
+});
+
+describe('PC では「LINEで送る」を出さない(スマホ・タブレットだけ)', () => {
+  const done = (desktop: boolean) => renderToStaticMarkup(React.createElement(FeedbackDone, { replyCode: 'ABC234', copied: false, onCopy: () => undefined, desktop }));
+  it('スマホ判定(PC でない): 「LINEで送る」が出る', () => {
+    const h = done(false);
+    expect(h).toContain('LINEで送る');
+    expect(h).toContain('href="https://line.me/R/oaMessage/%40836rgjze/?ABC234"');
+    expect(h).toContain('コードをコピー');
+  });
+  it('PC 判定(マウスの端末): 「LINEで送る」も、LINEを開くアドレスも出ない。「コードをコピー」と「公式LINEを友だち追加」だけ。受付コードと案内の1行は、そのまま', () => {
+    const h = done(true);
+    expect(h).not.toContain('LINEで送る');
+    expect(h).not.toContain('line.me/R/oaMessage');
+    expect(h).not.toContain('#06C755');
+    expect(h).toContain('コードをコピー');
+    expect(h).toContain('公式LINEを友だち追加');
+    expect(h).toContain('href="https://lin.ee/TBKmXZ1"');
+    expect(h).toContain('>ABC234<');
+    expect(h).toContain('公式LINEで、この6文字を、そのまま送ってください(10分間有効)');
+    expect(h).toContain('max-w-[240px]'); // ボタンが1つのときも、幅が伸びすぎない
+  });
+  it('判定は、すでにある isDesktopMouseDevice(readDeviceHints())', () => {
+    expect(read('src/components/FeedbackSheet.tsx')).toContain('desktop ?? isDesktopMouseDevice(readDeviceHints())');
+  });
+});
+
+describe('LINE のアイコン(LineIcon)', () => {
+  const normal = renderToStaticMarkup(React.createElement(LineIcon, { className: 'w-5 h-5' }));
+  const bare = renderToStaticMarkup(React.createElement(LineIcon, { bare: true, className: 'w-5 h-5' }));
+  it('形は、simple-icons の line の path(吹き出しの中に LINE の文字が抜かれた形)。正方形の viewBox', () => {
+    expect(LINE_BUBBLE_PATH.startsWith('M19.365 9.863c.349 0 .63.285.63.631')).toBe(true);
+    expect(LINE_BUBBLE_PATH.endsWith('C23.176 14.393 24 12.458 24 10.314')).toBe(true);
+    expect(normal).toContain(`d="${LINE_BUBBLE_PATH}"`);
+    expect(normal).toContain('viewBox="0 0 24 24"');
+  });
+  it('通常: 角の丸い緑の四角(#06C755)の中に、白い吹き出し。変形・回転・色替えをしない(移動と縮小だけ)', () => {
+    expect(normal).toMatch(/<rect width="24" height="24" rx="5\.5" fill="#06C755"/);
+    expect(normal).toContain('fill="#FFFFFF"');
+    expect(normal).toContain('transform="translate(4 4.34) scale(0.667)"');
+    expect(normal).not.toMatch(/rotate|skew|matrix/);
+  });
+  it('bare: 白い吹き出しだけ(緑の四角を敷かない。緑のボタンの中で使う)', () => {
+    expect(bare).not.toContain('<rect');
+    expect(bare).not.toContain('#06C755');
+    expect(bare).toContain('fill="#FFFFFF"');
+  });
+  it('使う場所は、すべて、この部品を通る(ほかに、LINE のロゴを、自前で描いた場所は無い)', () => {
+    for (const f of ['src/components/MenuDrawer.tsx', 'src/components/NoticeSheet.tsx', 'src/components/FeedbackSheet.tsx']) expect(read(f), f).toContain("import { LineIcon } from './LineIcon'");
+    expect(read('src/components/FeedbackSheet.tsx')).toContain('<LineIcon bare className="w-5 h-5" />'); // 緑のボタンの中は、四角なし
+    expect(read('src/components/MenuDrawer.tsx')).toContain('<LineIcon className="w-5 h-5" />');
+    expect(read('src/components/NoticeSheet.tsx')).toContain('<LineIcon className="w-5 h-5" />');
+    // #06C755 の緑を使うボタン(ログイン・謎解きの「公式LINEを開く」など)は、文字と矢印だけ。近くに、自前の <svg> のロゴは無い
+    const near = ['LoginModal.tsx', 'MysteryTrainApp.jsx', 'MysteryTrainEvent.tsx'].filter((f) => {
+      const src = read(`src/components/${f}`);
+      return [...src.matchAll(/06C755/g)].some((m) => /<svg/.test(src.slice(Math.max(0, (m.index ?? 0) - 300), (m.index ?? 0) + 600)));
+    });
+    expect(near).toEqual([]);
   });
 });
