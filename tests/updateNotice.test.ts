@@ -127,11 +127,11 @@ describe('version.json の中身(ビルド)', () => {
 
 // お知らせは、機能ごとに、そのつど届ける。ただし、高宮線の予告だけは、公開の時刻(TK_LAUNCH_AT)まで隠す(その分だけ、別の版・別の組にして、showAfter をつける)。
 //  形A(いまの版 4.6.2): showAfter なし・高宮線の言葉なし。すでに出した機能のお知らせが、すぐ届く
-//  形B(公開の前日にマージする版 4.7.0): showAfter あり(=TK_LAUNCH_AT)・高宮線の2行 + 同じ公開で届く2行(4行)
+//  形B(公開の前日にマージする版 4.7.1): showAfter あり(=TK_LAUNCH_AT)・高宮線の2行 + 同じ公開で届く3行(5行)
 const NOTES_A = ['マイページに、名札を出せるようにしました', '駅を選ぶとき、最寄り駅を探せるようにしました', '設定から、位置情報を許可できるようにしました'];
-const NOTES_B = ['新しい路線「高宮線」ができました', '有料特急「すみかぜ」を、予約できるようになりました', 'パソコンの画面を、広く使えるようにしました', '通知を見られるようにしました'];
+const NOTES_B = ['新しい路線「高宮線」ができました', '有料特急「すみかぜ」を、予約できるようになりました', 'パソコンの画面を、広く使えるようにしました', '通知を見られるようにしました', 'ご意見・不具合を、アプリから送れるようにしました'];
 const FORM_A = { version: '4.6.2', notes: NOTES_A };
-const FORM_B = { version: '4.7.0', notes: NOTES_B, showAfter: TK_LAUNCH_AT };
+const FORM_B = { version: '4.7.1', notes: NOTES_B, showAfter: TK_LAUNCH_AT };
 
 describe('形A: すぐ届くお知らせ(showAfter なし・3行・高宮線の言葉なし)', () => {
   const out = JSON.parse(buildVersionJson(FORM_A.version, { notes: FORM_A.notes }));
@@ -161,13 +161,13 @@ describe('形B: 高宮線の公開のお知らせ(showAfter あり・4行)は、
     for (const app of ['4.6.2', '4.6.1', '4.5.1']) {
       expect(evaluateUpdate(out, app, AT - 1), app).toEqual({ kind: 'held', showAtMs: AT });
       expect(evaluateUpdate(out, app, AT - 7 * 24 * 3600 * 1000), app).toEqual({ kind: 'held', showAtMs: AT });
-      expect(evaluateUpdate(out, app, AT), app).toEqual({ kind: 'show', version: '4.7.0', notes: NOTES_B });
-      expect(evaluateUpdate(out, app, AT + 3600 * 1000), app).toEqual({ kind: 'show', version: '4.7.0', notes: NOTES_B });
+      expect(evaluateUpdate(out, app, AT), app).toEqual({ kind: 'show', version: '4.7.1', notes: NOTES_B });
+      expect(evaluateUpdate(out, app, AT + 3600 * 1000), app).toEqual({ kind: 'show', version: '4.7.1', notes: NOTES_B });
     }
   });
 
   it('すでに同じ版のアプリには、いつでも出さない', () => {
-    for (const t of [AT - 1, AT, AT + 1]) expect(evaluateUpdate(out, '4.7.0', t).kind).toBe('none');
+    for (const t of [AT - 1, AT, AT + 1]) expect(evaluateUpdate(out, '4.7.1', t).kind).toBe('none');
   });
 
   it('showAfter は、高宮線の公開の日時(TK_LAUNCH_AT)と同じ', () => {
@@ -180,18 +180,18 @@ describe('いまの package.json と release-notes.json は、形A か 形B の�
   const notes = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'release-notes.json'), 'utf-8')) as { notes: string[]; showAfter?: string };
   const out = JSON.parse(buildVersionJson(pkg.version, notes));
 
-  it('出る version.json が、形A(4.6.2)か 形B(4.7.0)と、そのまま同じ', () => {
+  it('出る version.json が、形A(4.6.2)か 形B(4.7.1)と、そのまま同じ', () => {
     const a = JSON.parse(buildVersionJson(FORM_A.version, { notes: FORM_A.notes }));
     const b = JSON.parse(buildVersionJson(FORM_B.version, { notes: FORM_B.notes, showAfter: FORM_B.showAfter }));
     expect([a, b]).toContainEqual(out);
   });
 
-  it('showAfter が無い(すぐ届く)形に、高宮線の言葉が入っていない。showAfter がある形は、決めた4行', () => {
+  it('showAfter が無い(すぐ届く)形に、高宮線の言葉が入っていない。showAfter がある形は、決めた5行', () => {
     if (notes.showAfter === undefined) {
       expect(JSON.stringify(notes.notes)).not.toMatch(/高宮|すみかぜ/);
     } else {
       expect(Date.parse(notes.showAfter)).toBe(Date.parse(TK_LAUNCH_AT as string));
-      // 公開の日時まで出さない形(4.7.0): 高宮線の2行のあとに、同じ公開で届く2行(パソコンの画面・通知)
+      // 公開の日時まで出さない形(4.7.1): 高宮線の2行のあとに、同じ公開で届く3行(パソコンの画面・通知・ご意見)
       expect(notes.notes.slice(0, 2)).toEqual(NOTES_B.slice(0, 2));
       expect(notes.notes).toEqual(NOTES_B);
     }
