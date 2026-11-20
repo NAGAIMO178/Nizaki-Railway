@@ -12,7 +12,7 @@ import { fetchNotices, getNoticeOpenedAt, hasNewNotice, markNoticesOpened, norma
 
 const HOUR = 3600 * 1000;
 const NOW = Date.UTC(2026, 10, 17, 3, 0, 0); // 2026-11-17 12:00 JST
-const n = (over: Partial<Notice> = {}): Notice => ({ id: 'n1', kind: 'normal', title: '題名', body: '本文', imageUrl: '', linkUrl: '', publishAt: NOW - HOUR, ...over });
+const n = (over: Partial<Notice> = {}): Notice => ({ id: 'n1', kind: 'normal', title: '題名', body: '本文', imageUrl: '', imageUrls: [], linkUrl: '', publishAt: NOW - HOUR, ...over });
 const raw = (over: Record<string, unknown> = {}) => ({ id: 'n1', kind: 'normal', title: '題名', body: '本文', imageUrl: '', linkUrl: '', publishAt: NOW - HOUR, ...over });
 const read = (f: string) => fs.readFileSync(path.resolve(__dirname, '..', f), 'utf-8');
 
@@ -214,7 +214,7 @@ describe('作りは、ほかのシートと同じ(段階3): スマホは下か�
     expect(s).toContain('pc:rounded-3xl');
     expect(s).toContain('pc:justify-center pc:items-center pc:p-4');
     expect(s).toContain('const drag = useDragToDismiss(onClose, !pcLayout);');
-    expect(s).toContain("if (e.key === 'Escape') onClose();");
+    expect(s).toContain("if (e.key === 'Escape' && !viewerOpenRef.current) onClose();"); // 画像の全画面を開いているときの Esc は、画像だけを閉じる
   });
 });
 

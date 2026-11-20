@@ -12,13 +12,15 @@ export const NOTICE_LIMIT = 20; // 一覧に出す件数
 export const NOTICE_TITLE_MAX = 60;
 export const NOTICE_BODY_MAX = 1000;
 export const NOTICE_URL_MAX = 500;
+export const NOTICE_IMAGE_MAX = 4; // 1つの通知に付けられる画像の数
 
 export interface Notice {
   id: string;
   kind: NoticeKind;
   title: string;
   body: string;
-  imageUrl: string; // https:// のみ。なければ ''
+  imageUrl: string; // 最初の1枚(https:// のみ。なければ '')。古いデータは、これだけ
+  imageUrls: string[]; // 画像(https:// のみ・0〜4枚・重複なし)
   linkUrl: string; // https:// のみ。なければ ''
   publishAt: number; // 公開の日時(ms)
 }
@@ -37,6 +39,26 @@ export const safeHttpsUrl = (value: unknown): string | null => {
   }
 };
 
+// 画像のアドレスの並びを整える: https:// のものだけ・重複を除く・最大4枚
+export const cleanImageUrls = (list: unknown): string[] => {
+  if (!Array.isArray(list)) return [];
+  const out: string[] = [];
+  for (const v of list) {
+    const u = safeHttpsUrl(v);
+    if (u && !out.includes(u)) out.push(u);
+    if (out.length >= NOTICE_IMAGE_MAX) break;
+  }
+  return out;
+};
+
+// 通知の画像の一覧。imageUrls が無い(または空の)古いデータは、imageUrl を1枚として使う
+export const noticeImages = (n: { imageUrl?: unknown; imageUrls?: unknown }): string[] => {
+  const urls = cleanImageUrls(n.imageUrls);
+  if (urls.length > 0) return urls;
+  const one = safeHttpsUrl(n.imageUrl);
+  return one ? [one] : [];
+};
+
 const isKind = (v: unknown): v is NoticeKind => typeof v === 'string' && (NOTICE_KINDS as string[]).includes(v);
 
 const toNotice = (raw: unknown): Notice | null => {
@@ -46,12 +68,14 @@ const toNotice = (raw: unknown): Notice | null => {
   if (typeof r.id !== 'string' || !r.id || !Number.isFinite(publishAt)) return null;
   const title = typeof r.title === 'string' ? r.title.slice(0, NOTICE_TITLE_MAX) : '';
   if (!title.trim()) return null;
+  const images = noticeImages(r);
   return {
     id: r.id,
     kind: isKind(r.kind) ? r.kind : 'normal',
     title,
     body: typeof r.body === 'string' ? r.body.slice(0, NOTICE_BODY_MAX) : '',
-    imageUrl: safeHttpsUrl(r.imageUrl) ?? '',
+    imageUrl: images[0] ?? '',
+    imageUrls: images,
     linkUrl: safeHttpsUrl(r.linkUrl) ?? '',
     publishAt,
   };
