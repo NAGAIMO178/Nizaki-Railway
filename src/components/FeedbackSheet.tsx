@@ -8,6 +8,7 @@ import {
   buildEnvText, buildEnvTextForForm, buildFeedbackFormUrl, EnvInput, openFeedbackForm, FEEDBACK_KINDS, FEEDBACK_MESSAGE_MAX, FEEDBACK_SCREENS, LINE_OA_ADD_FRIEND_URL, lineOaMessageUrl, submitFeedback, validateFeedback,
 } from '../utils/feedback';
 import { LineIcon } from './LineIcon';
+import { isDesktopMouseDevice, readDeviceHints } from '../utils/imageSave';
 
 interface FeedbackSheetProps {
   isOpen: boolean;
@@ -22,18 +23,23 @@ const radioClass = (on: boolean) =>
   `flex items-center gap-2 rounded-xl border px-2.5 py-2 text-xs font-bold cursor-pointer ${on ? 'border-[#5B21B6] bg-[#EDE9FE] text-[#5B21B6]' : 'border-[#E6E2EE] bg-white text-[#221C35]'}`;
 
 // 送れたあと: 返信を希望した人には、受付コードを大きく出す
-export const FeedbackDone: React.FC<{ replyCode?: string; copied: boolean; onCopy: (code: string) => void }> = ({ replyCode, copied, onCopy }) => (
+export const FeedbackDone: React.FC<{ replyCode?: string; copied: boolean; onCopy: (code: string) => void; desktop?: boolean }> = ({ replyCode, copied, onCopy, desktop }) => {
+  // PC(マウスの端末)では「LINEで送る」を出さない(LINEのトップページに転送されて、役に立たない)。スマホ・タブレットだけ
+  const hideLineSend = desktop ?? isDesktopMouseDevice(readDeviceHints());
+  return (
   <div className="space-y-4 py-2 text-center">
     {replyCode ? (
       <>
         <div className="font-mono text-4xl font-black tracking-[0.3em] text-[#5B21B6] pl-[0.3em]" aria-label="受付コード">{replyCode}</div>
         <p className="text-xs font-bold text-[#221C35]">公式LINEで、この6文字を、そのまま送ってください(10分間有効)</p>
-        <div className="flex gap-2">
-          <a href={lineOaMessageUrl(replyCode)} target="_blank" rel="noopener noreferrer" className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#06C755] py-3 text-sm font-bold text-white">
-            <LineIcon className="w-5 h-5" />
-            <span>LINEで送る</span>
-          </a>
-          <button type="button" onClick={() => onCopy(replyCode)} className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl border border-[#E6E2EE] bg-white py-3 text-sm font-bold text-[#221C35] cursor-pointer">
+        <div className="flex gap-2 justify-center">
+          {!hideLineSend && (
+            <a href={lineOaMessageUrl(replyCode)} target="_blank" rel="noopener noreferrer" className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#06C755] py-3 text-sm font-bold text-white">
+              <LineIcon bare className="w-5 h-5" />
+              <span>LINEで送る</span>
+            </a>
+          )}
+          <button type="button" onClick={() => onCopy(replyCode)} className={`flex-1 ${hideLineSend ? 'max-w-[240px] ' : ''}inline-flex items-center justify-center gap-1.5 rounded-xl border border-[#E6E2EE] bg-white py-3 text-sm font-bold text-[#221C35] cursor-pointer`}>
             {copied ? <Check className="w-4 h-4 text-[#059669]" /> : <Copy className="w-4 h-4" />}
             <span>{copied ? 'コピーしました' : 'コードをコピー'}</span>
           </button>
@@ -46,7 +52,8 @@ export const FeedbackDone: React.FC<{ replyCode?: string; copied: boolean; onCop
       <p className="py-6 text-sm font-bold text-[#221C35]">送信しました。ありがとうございます</p>
     )}
   </div>
-);
+  );
+};
 
 // ご意見・不具合: 下から出るシート(PC では、中央の480px。段階3の、ほかのシートと同じ作り)
 export const FeedbackSheet: React.FC<FeedbackSheetProps> = ({ isOpen, onClose, defaultScreen, currentScreenLabel, sessionToken, loggedIn }) => {

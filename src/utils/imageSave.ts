@@ -29,7 +29,7 @@ export const isDesktopMouseDevice = (h: DeviceHints): boolean => {
 };
 
 // いまの端末の手がかりを読む(読めないものは、書かない = 迷う側になる)
-const readDeviceHints = (): DeviceHints => {
+export const readDeviceHints = (): DeviceHints => {
   const nav = (typeof navigator !== 'undefined' ? navigator : undefined) as (Navigator & { userAgentData?: { mobile?: boolean } }) | undefined;
   const mm = typeof globalThis.matchMedia === 'function' ? globalThis.matchMedia.bind(globalThis) : null;
   const media = (q: string): boolean | undefined => {
