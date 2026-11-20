@@ -672,6 +672,7 @@ export default function App() {
           }
           const refusal = refusalOf(res);
           if (refusal) {
+            if (refusal.refunded) void cloud.refresh(); // 戻ったポイントを、画面に反映する
             if (refusal.code === 'active_exists') void fetchMyReservations((a, p) => callGas(a, p), sessionToken).then((l) => importServerReservation(l, sessionToken));
             return refusal;
           }

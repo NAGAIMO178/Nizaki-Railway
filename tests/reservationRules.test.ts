@@ -47,6 +47,12 @@ describe('サーバーの断り(refusalOf)', () => {
     expect(refusalOf({ status: 'error', code: 'seat_taken' })?.message).toBe(RULE_MESSAGES.seat_taken);
     expect(refusalOf({ status: 'error', code: 'active_exists', message: '  ' })?.message).toBe(RULE_MESSAGES.active_exists);
   });
+  it('サーバーが N-POINT を戻したとき(refunded)だけ、その数を持つ。戻していなければ、付けない', () => {
+    expect(refusalOf({ status: 'error', code: 'seat_taken', message: 'x', refunded: 1000 })?.refunded).toBe(1000);
+    expect(refusalOf({ status: 'error', code: 'seat_taken', message: 'x', refunded: 0 })).not.toHaveProperty('refunded');
+    expect(refusalOf({ status: 'error', code: 'active_exists', message: 'x', refunded: 'あ' })).not.toHaveProperty('refunded');
+    expect(refusalOf({ status: 'error', code: 'seat_taken', message: 'x' })).not.toHaveProperty('refunded');
+  });
   it('成功・ほかの失敗・返事なしは、断りではない', () => {
     expect(refusalOf({ status: 'success' })).toBeNull();
     expect(refusalOf({ status: 'error', message: '混み合っています。' })).toBeNull();
@@ -158,6 +164,15 @@ describe('画面の流れ(ソースの確認)', () => {
     expect(tab).toContain('takenSeats={takenSeats}');
     expect(tab).toContain("refusal.code === 'seat_taken' ? '席を選びなおす' : '予約を見る'");
     expect(tab).toContain('setIsSeatSelectionModalOpen(true)');
+  });
+  it('「N-POINTは、お戻ししました」は、戻したときだけ出す。戻ったポイントは、画面に反映する', () => {
+    expect(tab).toContain('{refusal.refunded ? <p');
+    expect(tab).toContain('N-POINTは、お戻ししました');
+    expect(app).toContain('if (refusal.refunded) void cloud.refresh();');
+  });
+  it('サーバーの返事を待つあいだは、ボタンを押せず、「予約しています…」と出す', () => {
+    expect(tab).toContain("disabled={isCurrentTrainEnded || spending}");
+    expect(tab).toContain("'予約しています…'");
   });
   it('サーバーが規則を見る会員(公開後のクラウドの会員)だけに、確かめを渡す。デモ会員は、渡さない', () => {
     expect(app).toMatch(/const rulesOnServer = isLaunched\(\) && !!sessionToken && cloudOn && cloud\.ready && !cloud\.error;/);

@@ -9,6 +9,7 @@ export type RuleCode = 'seat_taken' | 'active_exists';
 export interface RuleRefusal {
   code: RuleCode;
   message: string;
+  refunded?: number; // 断ったときに、サーバーが戻した N-POINT(戻したときだけ)
 }
 
 // サーバーが message を返さなかったときの文(サーバーの文と同じ)
@@ -22,6 +23,7 @@ interface GasLike {
   code?: string;
   message?: string;
   reservations?: unknown;
+  refunded?: unknown;
 }
 
 // サーバーの返事が、2つの規則の断りなら、その中身を返す(それ以外は null)
@@ -29,7 +31,8 @@ export const refusalOf = (res: GasLike | undefined | null): RuleRefusal | null =
   if (!res || res.status !== 'error') return null;
   if (res.code !== 'seat_taken' && res.code !== 'active_exists') return null;
   const message = typeof res.message === 'string' && res.message.trim() ? res.message : RULE_MESSAGES[res.code];
-  return { code: res.code, message };
+  const refunded = typeof res.refunded === 'number' && isFinite(res.refunded) && res.refunded > 0 ? Math.floor(res.refunded) : 0;
+  return { code: res.code, message, ...(refunded > 0 ? { refunded } : {}) };
 };
 
 // ---- 台帳へ送る中身 ----

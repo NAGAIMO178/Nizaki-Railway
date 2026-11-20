@@ -1246,6 +1246,8 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
               className={`w-full font-bold text-xs py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-all ${
                 isCurrentTrainEnded
                   ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  : spending
+                  ? 'bg-gray-900 text-white opacity-60 cursor-wait shadow-xs'
                   : 'bg-gray-900 hover:bg-black text-white cursor-pointer shadow-xs'
               }`}
             >
@@ -1257,6 +1259,8 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
               <span>
                 {isCurrentTrainEnded
                   ? '予約できません'
+                  : spending
+                  ? '予約しています…'
                   : seatType === 'standard'
                   ? '自由席特急券を予約する'
                   : '座席を選択して特急券を予約する'}
@@ -1300,6 +1304,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
             onClick={(e) => e.stopPropagation()}
           >
             <p className="text-sm font-bold text-[#221C35] leading-relaxed">{refusal.message}</p>
+            {refusal.refunded ? <p className="text-xs font-bold text-[#5B21B6]">N-POINTは、お戻ししました</p> : null}
             <button
               type="button"
               onClick={() => {
