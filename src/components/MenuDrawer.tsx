@@ -1,5 +1,7 @@
 import React, { useEffect } from 'react';
-import { X, Settings, User, Barcode, Map, LogIn, ChevronRight, Sparkles, Bell } from 'lucide-react';
+import { X, Settings, User, Barcode, Map, LogIn, ChevronRight, Sparkles, Bell, MessageSquare } from 'lucide-react';
+import { LINE_OA_ADD_FRIEND_URL } from '../utils/accountApi';
+import { LineIcon } from './LineIcon';
 import { UserProfile } from '../types';
 
 import { useBackClose } from '../utils/backClose';
@@ -16,6 +18,7 @@ interface MenuDrawerProps {
   onOpenGuide?: () => void; // NIZAKI 2.0 のご案内を、もう一度見る(公開後だけ渡される)
   onOpenNotices?: () => void; // 通知の一覧を開く
   hasNewNotice?: boolean; // 新しい通知があるとき、「通知」の行に、赤丸
+  onOpenFeedback?: () => void; // ご意見・不具合のシートを開く
 }
 
 export const MenuDrawer: React.FC<MenuDrawerProps> = ({
@@ -31,6 +34,7 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
   onOpenGuide,
   onOpenNotices,
   hasNewNotice = false,
+  onOpenFeedback,
 }) => {
   useEffect(() => {
     if (!isOpen) return;
@@ -105,6 +109,9 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
         {onOpenNotices && <Row icon={<Bell className="w-5 h-5" />} label="通知" onClick={onOpenNotices} dot={hasNewNotice} />}
         <Row icon={<Map className="w-5 h-5" />} label="路線図" onClick={onOpenRouteMap} />
         {onOpenGuide && <Row icon={<Sparkles className="w-5 h-5" />} label="NIZAKI 2.0 のご案内" note="新しい機能を、もう一度見る" onClick={onOpenGuide} />}
+
+        {onOpenFeedback && <Row icon={<MessageSquare className="w-5 h-5" />} label="ご意見・不具合" onClick={onOpenFeedback} />}
+        <Row icon={<LineIcon className="w-5 h-5" />} label="公式LINE" onClick={() => window.open(LINE_OA_ADD_FRIEND_URL, '_blank', 'noopener,noreferrer')} />
 
         <SectionTitle>設定</SectionTitle>
         <Row icon={<Settings className="w-5 h-5" />} label="設定" note="通知・マイ駅・規約" onClick={onOpenSettings} />

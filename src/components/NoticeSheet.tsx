@@ -1,5 +1,7 @@
 import React, { useEffect } from 'react';
 import { ExternalLink, X } from 'lucide-react';
+import { LINE_OA_ADD_FRIEND_URL } from '../utils/accountApi';
+import { LineIcon } from './LineIcon';
 import { Notice, NOTICE_KIND_LABEL, NoticeKind, safeHttpsUrl } from '../utils/notices';
 import { useDragToDismiss } from '../utils/useDragToDismiss';
 import { usePcLayout } from '../utils/usePcLayout';
@@ -97,6 +99,10 @@ export const NoticeSheet: React.FC<NoticeSheetProps> = ({ isOpen, notices, onClo
               ))}
             </ul>
           )}
+          <a href={LINE_OA_ADD_FRIEND_URL} target="_blank" rel="noopener noreferrer" className="mt-4 flex items-center justify-center gap-2 rounded-xl border border-[#E6E2EE] py-2.5 text-xs font-bold text-[#221C35]">
+            <LineIcon className="w-5 h-5" />
+            <span>公式LINE</span>
+          </a>
         </div>
       </div>
     </div>
