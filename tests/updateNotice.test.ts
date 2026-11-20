@@ -132,6 +132,9 @@ const NOTES_A = ['マイページに、名札を出せるようにしました',
 const NOTES_B = ['新しい路線「高宮線」ができました', '有料特急「すみかぜ」を、予約できるようになりました', 'パソコンの画面を、広く使えるようにしました', '通知を見られるようにしました', 'ご意見・不具合を、アプリから送れるようにしました', '別の端末でログインしても、予約を見られるようにしました'];
 const FORM_A = { version: '4.6.2', notes: NOTES_A };
 const FORM_B = { version: '4.7.2', notes: NOTES_B, showAfter: TK_LAUNCH_AT };
+//  形C(いまの版 4.7.2): その更新の分だけ・showAfter なし。毎回、この行(版と文)を、その更新の分に書き換える
+const NOTES_C = ['別の端末でログインしても、予約を見られるようにしました'];
+const FORM_C = { version: '4.7.2', notes: NOTES_C };
 
 describe('形A: すぐ届くお知らせ(showAfter なし・3行・高宮線の言葉なし)', () => {
   const out = JSON.parse(buildVersionJson(FORM_A.version, { notes: FORM_A.notes }));
@@ -175,15 +178,16 @@ describe('形B: 高宮線の公開のお知らせ(showAfter あり・4行)は、
   });
 });
 
-describe('いまの package.json と release-notes.json は、形A か 形B のどちらか', () => {
+describe('いまの package.json と release-notes.json は、形A・形B・形C のどれか', () => {
   const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf-8')) as { version: string };
   const notes = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'release-notes.json'), 'utf-8')) as { notes: string[]; showAfter?: string };
   const out = JSON.parse(buildVersionJson(pkg.version, notes));
 
-  it('出る version.json が、形A(4.6.2)か 形B(4.7.2)と、そのまま同じ', () => {
+  it('出る version.json が、形A(4.6.2)・形B(4.7.2)・形C(4.7.2)のどれかと、そのまま同じ', () => {
     const a = JSON.parse(buildVersionJson(FORM_A.version, { notes: FORM_A.notes }));
     const b = JSON.parse(buildVersionJson(FORM_B.version, { notes: FORM_B.notes, showAfter: FORM_B.showAfter }));
-    expect([a, b]).toContainEqual(out);
+    const c = JSON.parse(buildVersionJson(FORM_C.version, { notes: FORM_C.notes }));
+    expect([a, b, c]).toContainEqual(out);
   });
 
   it('showAfter が無い(すぐ届く)形に、高宮線の言葉が入っていない。showAfter がある形は、決めた6行', () => {
@@ -195,6 +199,12 @@ describe('いまの package.json と release-notes.json は、形A か 形B の�
       expect(notes.notes.slice(0, 2)).toEqual(NOTES_B.slice(0, 2));
       expect(notes.notes).toEqual(NOTES_B);
     }
+  });
+
+  it('いまの内容は、その更新の分だけ(形C: 1行・showAfter なし)', () => {
+    expect(notes.notes).toEqual(NOTES_C);
+    expect(notes.showAfter).toBeUndefined();
+    expect(pkg.version).toBe(FORM_C.version);
   });
 });
 
