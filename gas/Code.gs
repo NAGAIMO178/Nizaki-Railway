@@ -153,6 +153,26 @@ function doPost(e) {
       return handleAdminDeleteNoticeImage(json.adminToken, json.id);
     }
 
+    // ①.67 アンケート(通知のリンクから開く専用画面)。答えるのは、ログインなし・匿名。結果は、管理者だけ(サーバー側で、管理トークンを確かめる)
+    if (json.action === 'getSurvey') {
+      return handleGetSurvey(json.surveyId);
+    }
+    if (json.action === 'submitSurvey') {
+      return handleSubmitSurvey(json.surveyId, json.deviceMark, json.answers);
+    }
+    if (json.action === 'adminListSurveys') {
+      return handleAdminListSurveys(json.adminToken);
+    }
+    if (json.action === 'adminSaveSurvey') {
+      return handleAdminSaveSurvey(json.adminToken, json.survey);
+    }
+    if (json.action === 'adminDeleteSurvey') {
+      return handleAdminDeleteSurvey(json.adminToken, json.id);
+    }
+    if (json.action === 'adminSurveyResults') {
+      return handleAdminSurveyResults(json.adminToken, json.surveyId);
+    }
+
     // ①.07 予約をサーバーから取り直す(自分の未終了の予約はログイン証が要る。予約済みの席は、公開用で、会員の情報は返さない)
     if (json.action === 'getMyReservations') {
       return handleGetMyReservations(json.sessionToken);
@@ -3062,6 +3082,466 @@ function handleAdminDeleteNoticeImage(adminToken, id) {
     return internalErrorResponse('adminDeleteNoticeImage', err);
   } finally {
     lock.releaseLock();
+  }
+}
+
+// ==============================================================================
+// アンケート(通知のリンクから、アプリ内の専用画面 ?survey=<アンケートID> を開いて答える)
+//  - 匿名: 名前・メール・会員ID・IP は、保存しない。端末の印(deviceMark)も、そのままでなく、アンケートごとのハッシュ(HMAC)にして保存する
+//  - 結果は、管理者だけ(adminSurveyResults)。公開用(getSurvey / submitSurvey)は、集計も管理用の中身も返さない
+//  - シート「アンケート」(定義)・「アンケート回答」(回答)。なければ自動で作る
+//  - 質問は5問まで。型は5つ: single(1つ選ぶ)・multi(複数選ぶ)・scale5(1〜5)・singleOther(1つ選ぶ + その他の短文)・text(短い自由記述)
+//  - 回答は、定義に照らして、サーバー側で、全部検査する。同じアンケートに、同じ印の回答は、1回だけ(完全には、防げない)
+// ==============================================================================
+const SHEET_SURVEYS = 'アンケート';
+const SURVEY_HEADERS = ['アンケートID', '題名', '説明', '質問', '状態', '作成日時', '更新日時', '削除'];
+const SHEET_SURVEY_ANSWERS = 'アンケート回答';
+const SURVEY_ANSWER_HEADERS = ['回答ID', 'アンケートID', '回答日時', '端末の印(ハッシュ)', '回答'];
+const SURVEY_TITLE_MAX = 60;
+const SURVEY_DESCRIPTION_MAX = 300;
+const SURVEY_QUESTION_MAX = 5;
+const SURVEY_QUESTION_TEXT_MAX = 100;
+const SURVEY_OPTION_MIN = 2;
+const SURVEY_OPTION_MAX = 8;
+const SURVEY_OPTION_TEXT_MAX = 40;
+const SURVEY_TEXT_ANSWER_MAX = 200;
+const SURVEY_OTHER_ANSWER_MAX = 100;
+const SURVEY_ANSWERS_PER_SURVEY_MAX = 5000;
+const SURVEY_TYPES = ['single', 'multi', 'scale5', 'singleOther', 'text'];
+const SURVEY_TYPES_WITH_OPTIONS = ['single', 'multi', 'singleOther'];
+const SURVEY_STATUSES = ['open', 'closed'];
+const SURVEY_ID_PATTERN = /^s[0-9a-f]{12}$/;
+const SURVEY_MARK_PATTERN = /^[A-Za-z0-9]{16,64}$/;
+const SURVEY_RATE_PER_MARK = 20; // 同じ端末の印で、1時間に(検査で断られた試しも数える)
+const SURVEY_RATE_ALL = 600;     // 全体で、1時間に
+const SURVEY_RATE_SECONDS = 3600;
+const SURVEY_RESULT_TEXT_MAX = 200; // 結果の、自由記述・その他の短文の一覧の件数
+
+function getOrCreateSurveySheet() {
+  return getOrCreateSheetWithHeaders(SHEET_SURVEYS, SURVEY_HEADERS, [1, 6, 7]);
+}
+function getOrCreateSurveyAnswerSheet() {
+  return getOrCreateSheetWithHeaders(SHEET_SURVEY_ANSWERS, SURVEY_ANSWER_HEADERS, [1, 2, 3, 4]);
+}
+
+function surveyError(code, message) {
+  return createJsonResponse({ status: 'error', code: code, message: message });
+}
+
+// 端末の印を、アンケートごとのハッシュにする(元の値は、どこにも残さない。ほかのアンケートの回答と、結びつけられない)
+function surveyDeviceHash(surveyId, deviceMark) {
+  return signSessionPayload('survey:' + surveyId + ':' + deviceMark);
+}
+
+function parseSurveyQuestions(cell) {
+  try {
+    const q = JSON.parse(String(cell));
+    return Array.isArray(q) ? q : [];
+  } catch (err) {
+    return [];
+  }
+}
+
+// 定義の1行を、扱いやすい形にする(消されていなければ)。row = シートの1行
+function surveyFromRow(v) {
+  if (!v[0] || String(v[7]) === '1') return null;
+  return {
+    id: String(v[0]),
+    title: String(v[1]),
+    description: String(v[2]),
+    questions: parseSurveyQuestions(v[3]),
+    status: SURVEY_STATUSES.indexOf(String(v[4])) >= 0 ? String(v[4]) : 'closed',
+    createdAt: cellText(v[5]),
+    updatedAt: cellText(v[6])
+  };
+}
+
+// 消されていないアンケートを、すべて読む(行番号つき)
+function readSurveys() {
+  const sheet = getOrCreateSurveySheet();
+  const lastRow = sheet.getLastRow();
+  const out = [];
+  if (lastRow < 2) return { sheet: sheet, surveys: out };
+  const values = sheet.getRange(2, 1, lastRow - 1, SURVEY_HEADERS.length).getValues();
+  for (let i = 0; i < values.length; i++) {
+    const sv = surveyFromRow(values[i]);
+    if (sv) {
+      sv.row = i + 2;
+      out.push(sv);
+    }
+  }
+  return { sheet: sheet, surveys: out };
+}
+
+function findSurvey(surveyId) {
+  const id = String(surveyId === undefined || surveyId === null ? '' : surveyId);
+  if (!SURVEY_ID_PATTERN.test(id)) return { sheet: null, survey: null };
+  const all = readSurveys();
+  for (let i = 0; i < all.surveys.length; i++) {
+    if (all.surveys[i].id === id) return { sheet: all.sheet, survey: all.surveys[i] };
+  }
+  return { sheet: all.sheet, survey: null };
+}
+
+// 回答の数(アンケートごと)。回答のシートの「アンケートID」の列だけを読む
+function countSurveyAnswers() {
+  const sheet = getOrCreateSurveyAnswerSheet();
+  const lastRow = sheet.getLastRow();
+  const counts = {};
+  if (lastRow < 2) return counts;
+  const ids = sheet.getRange(2, 2, lastRow - 1, 1).getValues();
+  for (let i = 0; i < ids.length; i++) counts[String(ids[i][0])] = (counts[String(ids[i][0])] || 0) + 1;
+  return counts;
+}
+
+// ---- 質問の検査 ----
+// 問題があれば { error: 文 }。よければ { value: 整えた質問の配列 }
+function cleanSurveyQuestions(raw) {
+  if (!Array.isArray(raw) || raw.length < 1) return { error: '質問を、1つ以上入れてください。' };
+  if (raw.length > SURVEY_QUESTION_MAX) return { error: '質問は、' + SURVEY_QUESTION_MAX + ' 問までです。' };
+  const out = [];
+  const ids = Object.create(null);
+  for (let i = 0; i < raw.length; i++) {
+    const q = raw[i];
+    const no = (i + 1) + '問目';
+    if (!q || typeof q !== 'object' || Array.isArray(q)) return { error: no + 'の質問が正しくありません。' };
+    const id = typeof q.id === 'string' ? q.id.trim() : '';
+    if (!/^[A-Za-z0-9_-]{1,20}$/.test(id)) return { error: no + 'の質問のIDが正しくありません。' };
+    if (ids[id]) return { error: '質問のIDが、重なっています。' };
+    ids[id] = true;
+    if (typeof q.type !== 'string' || SURVEY_TYPES.indexOf(q.type) < 0) return { error: no + 'の質問の型が正しくありません。' };
+    const text = typeof q.text === 'string' ? q.text.trim() : '';
+    if (!text) return { error: no + 'の質問の文を入れてください。' };
+    if (text.length > SURVEY_QUESTION_TEXT_MAX) return { error: no + 'の質問の文は、' + SURVEY_QUESTION_TEXT_MAX + ' 文字までです。' };
+    if (q.required !== undefined && typeof q.required !== 'boolean') return { error: no + 'の「必須」が正しくありません。' };
+    const clean = { id: id, type: q.type, text: text, required: q.required === true };
+    if (SURVEY_TYPES_WITH_OPTIONS.indexOf(q.type) >= 0) {
+      if (!Array.isArray(q.options) || q.options.length < SURVEY_OPTION_MIN || q.options.length > SURVEY_OPTION_MAX) {
+        return { error: no + 'の選択肢は、' + SURVEY_OPTION_MIN + '〜' + SURVEY_OPTION_MAX + ' 個にしてください。' };
+      }
+      const options = [];
+      for (let j = 0; j < q.options.length; j++) {
+        const o = typeof q.options[j] === 'string' ? q.options[j].trim() : '';
+        if (!o) return { error: no + 'の選択肢に、空のものがあります。' };
+        if (o.length > SURVEY_OPTION_TEXT_MAX) return { error: no + 'の選択肢は、' + SURVEY_OPTION_TEXT_MAX + ' 文字までです。' };
+        if (options.indexOf(o) >= 0) return { error: no + 'の選択肢が、重なっています。' };
+        options.push(o);
+      }
+      clean.options = options;
+    }
+    out.push(clean);
+  }
+  return { value: out };
+}
+
+// ---- 回答の検査 ----
+// 問題があれば { error: 文 }。よければ { value: 整えた回答 }(質問のIDごと。答えていない任意の質問は、入れない)
+function cleanSurveyAnswers(questions, answers) {
+  if (!answers || typeof answers !== 'object' || Array.isArray(answers)) return { error: '回答の形が正しくありません。' };
+  const known = Object.create(null); // 'constructor' などの、もとからある名前を、質問のIDと取り違えない
+  questions.forEach(function (q) { known[q.id] = true; });
+  const extra = Object.keys(answers).filter(function (k) { return !known[k]; });
+  if (extra.length > 0) return { error: '質問にない項目が、回答に含まれています。' };
+  const out = {};
+  for (let i = 0; i < questions.length; i++) {
+    const q = questions[i];
+    const no = (i + 1) + '問目';
+    const a = Object.prototype.hasOwnProperty.call(answers, q.id) ? answers[q.id] : undefined;
+    const missing = function () { return q.required ? { error: no + 'は、必須です。' } : null; };
+    if (a === undefined || a === null) {
+      const m = missing();
+      if (m) return m;
+      continue;
+    }
+    if (q.type === 'single') {
+      if (typeof a !== 'string') return { error: no + 'の答えが正しくありません。' };
+      if (q.options.indexOf(a) < 0) return { error: no + 'の答えが、選択肢にありません。' };
+      out[q.id] = a;
+    } else if (q.type === 'multi') {
+      if (!Array.isArray(a)) return { error: no + 'の答えが正しくありません。' };
+      const picked = [];
+      for (let j = 0; j < a.length; j++) {
+        if (typeof a[j] !== 'string' || q.options.indexOf(a[j]) < 0) return { error: no + 'の答えが、選択肢にありません。' };
+        if (picked.indexOf(a[j]) >= 0) return { error: no + 'の答えが、重なっています。' };
+        picked.push(a[j]);
+      }
+      if (picked.length === 0) {
+        const m = missing();
+        if (m) return m;
+        continue;
+      }
+      out[q.id] = picked;
+    } else if (q.type === 'scale5') {
+      if (typeof a !== 'number' || Math.floor(a) !== a || a < 1 || a > 5) return { error: no + 'は、1〜5 の整数で答えてください。' };
+      out[q.id] = a;
+    } else if (q.type === 'singleOther') {
+      // { choice: 選択肢 } か { other: 短い文 } の、どちらか1つ
+      if (typeof a !== 'object' || Array.isArray(a)) return { error: no + 'の答えが正しくありません。' };
+      const keys = Object.keys(a);
+      if (keys.some(function (k) { return k !== 'choice' && k !== 'other'; })) return { error: no + 'の答えが正しくありません。' };
+      const hasChoice = a.choice !== undefined && a.choice !== null && a.choice !== '';
+      const otherText = typeof a.other === 'string' ? a.other.trim() : '';
+      const hasOther = a.other !== undefined && a.other !== null && a.other !== '' && (typeof a.other !== 'string' || otherText !== '');
+      if (hasChoice && hasOther) return { error: no + 'は、選択肢か「その他」の、どちらか1つにしてください。' };
+      if (hasChoice) {
+        if (typeof a.choice !== 'string' || q.options.indexOf(a.choice) < 0) return { error: no + 'の答えが、選択肢にありません。' };
+        out[q.id] = { choice: a.choice };
+      } else if (hasOther) {
+        if (typeof a.other !== 'string') return { error: no + 'の答えが正しくありません。' };
+        if (otherText.length > SURVEY_OTHER_ANSWER_MAX) return { error: no + 'の「その他」は、' + SURVEY_OTHER_ANSWER_MAX + ' 文字までです。' };
+        out[q.id] = { other: otherText };
+      } else {
+        const m = missing();
+        if (m) return m;
+      }
+    } else if (q.type === 'text') {
+      if (typeof a !== 'string') return { error: no + 'の答えが正しくありません。' };
+      const t = a.trim();
+      if (!t) {
+        const m = missing();
+        if (m) return m;
+        continue;
+      }
+      if (t.length > SURVEY_TEXT_ANSWER_MAX) return { error: no + 'は、' + SURVEY_TEXT_ANSWER_MAX + ' 文字までです。' };
+      out[q.id] = t;
+    }
+  }
+  return { value: out };
+}
+
+// 公開用に返す形(題名・説明・質問だけ)
+function publicSurvey(sv) {
+  return {
+    id: sv.id,
+    title: sv.title,
+    description: sv.description,
+    questions: sv.questions.map(function (q) {
+      const o = { id: q.id, type: q.type, text: q.text, required: q.required === true };
+      if (q.options) o.options = q.options.slice();
+      return o;
+    })
+  };
+}
+
+// 公開用: 答える画面に出す、題名・説明・質問(状態が open で、消されていないものだけ)
+function handleGetSurvey(surveyId) {
+  try {
+    const found = findSurvey(surveyId);
+    if (!found.survey) return surveyError('not_found', 'アンケートが見つかりません。');
+    if (found.survey.status !== 'open') return surveyError('closed', 'このアンケートは、受付を終了しました。');
+    return createJsonResponse({ status: 'success', survey: publicSurvey(found.survey) });
+  } catch (err) {
+    return internalErrorResponse('getSurvey', err);
+  }
+}
+
+// 公開用: 回答を受け付ける(匿名)
+function handleSubmitSurvey(surveyId, deviceMark, answers) {
+  const id = String(surveyId === undefined || surveyId === null ? '' : surveyId);
+  if (!SURVEY_ID_PATTERN.test(id)) return surveyError('not_found', 'アンケートが見つかりません。');
+  if (typeof deviceMark !== 'string' || !SURVEY_MARK_PATTERN.test(deviceMark)) {
+    return surveyError('invalid', '送れませんでした。アプリを開き直して、もう一度お試しください。');
+  }
+  const hash = surveyDeviceHash(id, deviceMark);
+  // 回数の制限(同じ印・全体)。検査で断られる試しも数える
+  const g1 = reserveCounter('survey_rate_' + hash.slice(0, 24), SURVEY_RATE_PER_MARK, SURVEY_RATE_SECONDS);
+  const g2 = g1 === 'ok' ? reserveCounter('survey_rate_all', SURVEY_RATE_ALL, SURVEY_RATE_SECONDS) : g1;
+  if (g2 === 'locked') return surveyError('rate_limited', '短い時間に、たくさん送られたため、しばらくしてからお試しください。');
+  if (g2 === 'busy') return surveyError('busy', '混み合っています。しばらくしてからもう一度お試しください。');
+
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+  } catch (err) {
+    return surveyError('busy', '混み合っています。しばらくしてからもう一度お試しください。');
+  }
+  try {
+    const found = findSurvey(id);
+    if (!found.survey) return surveyError('not_found', 'アンケートが見つかりません。');
+    if (found.survey.status !== 'open') return surveyError('closed', 'このアンケートは、受付を終了しました。');
+    const cleaned = cleanSurveyAnswers(found.survey.questions, answers);
+    if (cleaned.error) return surveyError('invalid', cleaned.error);
+
+    const sheet = getOrCreateSurveyAnswerSheet();
+    const lastRow = sheet.getLastRow();
+    let total = 0;
+    if (lastRow >= 2) {
+      const rows = sheet.getRange(2, 2, lastRow - 1, 3).getValues(); // アンケートID・回答日時・端末の印(ハッシュ)
+      for (let i = 0; i < rows.length; i++) {
+        if (String(rows[i][0]) !== id) continue;
+        total++;
+        if (String(rows[i][2]) === hash) return surveyError('already_answered', 'このアンケートには、すでに回答されています。ありがとうございました。');
+      }
+    }
+    if (total >= SURVEY_ANSWERS_PER_SURVEY_MAX) return surveyError('full', 'このアンケートは、回答の受け付けが、上限に達しました。');
+    const answerId = 'a' + Utilities.getUuid().replace(/-/g, '').slice(0, 12);
+    sheet.appendRow([answerId, id, nowText(), hash, sheetSafe(JSON.stringify(cleaned.value))]);
+    return createJsonResponse({ status: 'success' });
+  } catch (err) {
+    return internalErrorResponse('submitSurvey', err);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function adminSurveyView(sv, counts) {
+  return {
+    id: sv.id,
+    title: sv.title,
+    description: sv.description,
+    questions: sv.questions,
+    status: sv.status,
+    createdAt: sv.createdAt,
+    updatedAt: sv.updatedAt,
+    responseCount: counts[sv.id] || 0
+  };
+}
+
+function handleAdminListSurveys(adminToken) {
+  const denied = adminTokenErrorResponse(checkAdminToken(adminToken));
+  if (denied) return denied;
+  try {
+    const all = readSurveys();
+    const counts = countSurveyAnswers();
+    const list = all.surveys.map(function (sv) { return adminSurveyView(sv, counts); });
+    list.reverse(); // 新しい作成が先
+    return createJsonResponse({ status: 'success', surveys: list });
+  } catch (err) {
+    return internalErrorResponse('adminListSurveys', err);
+  }
+}
+
+function handleAdminSaveSurvey(adminToken, survey) {
+  const denied = adminTokenErrorResponse(checkAdminToken(adminToken));
+  if (denied) return denied;
+  if (!survey || typeof survey !== 'object' || Array.isArray(survey)) return surveyError('invalid', 'アンケートの内容がありません。');
+  const title = typeof survey.title === 'string' ? survey.title.trim() : '';
+  if (!title) return surveyError('invalid', '題名を入れてください。');
+  if (title.length > SURVEY_TITLE_MAX) return surveyError('invalid', '題名は ' + SURVEY_TITLE_MAX + ' 文字までです。');
+  if (survey.description !== undefined && survey.description !== null && typeof survey.description !== 'string') return surveyError('invalid', '説明が正しくありません。');
+  const description = typeof survey.description === 'string' ? survey.description.trim() : '';
+  if (description.length > SURVEY_DESCRIPTION_MAX) return surveyError('invalid', '説明は ' + SURVEY_DESCRIPTION_MAX + ' 文字までです。');
+  const status = survey.status === undefined || survey.status === null ? 'open' : survey.status;
+  if (typeof status !== 'string' || SURVEY_STATUSES.indexOf(status) < 0) return surveyError('invalid', '状態が正しくありません。');
+  const cleaned = cleanSurveyQuestions(survey.questions);
+  if (cleaned.error) return surveyError('invalid', cleaned.error);
+  const id = survey.id === undefined || survey.id === null || survey.id === '' ? '' : String(survey.id);
+  if (id && !SURVEY_ID_PATTERN.test(id)) return surveyError('invalid', 'アンケートIDが正しくありません。');
+
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+  } catch (err) {
+    return surveyError('busy', '混み合っています。しばらくしてからもう一度お試しください。');
+  }
+  try {
+    const questionsJson = JSON.stringify(cleaned.value);
+    const now = nowText();
+    if (id) {
+      const found = findSurvey(id);
+      if (!found.survey) return surveyError('not_found', 'アンケートが見つかりません(消されたかもしれません)。');
+      // 回答が1件でもあれば、質問の中身(型・選択肢・数・文・必須)は、変えられない(集計が、合わなくなるため)
+      if ((countSurveyAnswers()[id] || 0) > 0 && JSON.stringify(found.survey.questions) !== questionsJson) {
+        return surveyError('has_answers', '回答がすでにあるため、質問は、変えられません(題名・説明・状態は、変えられます)。');
+      }
+      const keepQuestions = (countSurveyAnswers()[id] || 0) > 0 ? JSON.stringify(found.survey.questions) : questionsJson;
+      found.sheet.getRange(found.survey.row, 2, 1, 3).setValues([[sheetSafe(title), sheetSafe(description), keepQuestions]]);
+      found.sheet.getRange(found.survey.row, 5, 1, 1).setValues([[status]]);
+      found.sheet.getRange(found.survey.row, 7, 1, 1).setValues([[now]]);
+      return createJsonResponse({ status: 'success', id: id });
+    }
+    const sheet = getOrCreateSurveySheet();
+    const newId = 's' + Utilities.getUuid().replace(/-/g, '').slice(0, 12);
+    sheet.appendRow([newId, sheetSafe(title), sheetSafe(description), questionsJson, status, now, now, '']);
+    return createJsonResponse({ status: 'success', id: newId });
+  } catch (err) {
+    return internalErrorResponse('adminSaveSurvey', err);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// 消した扱い(「削除」の列に 1)。回答は、残す
+function handleAdminDeleteSurvey(adminToken, id) {
+  const denied = adminTokenErrorResponse(checkAdminToken(adminToken));
+  if (denied) return denied;
+  const surveyId = String(id === undefined || id === null ? '' : id);
+  if (!SURVEY_ID_PATTERN.test(surveyId)) return surveyError('invalid', 'アンケートIDが正しくありません。');
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+  } catch (err) {
+    return surveyError('busy', '混み合っています。しばらくしてからもう一度お試しください。');
+  }
+  try {
+    const found = findSurvey(surveyId);
+    if (!found.survey) return surveyError('not_found', 'アンケートが見つかりません。');
+    found.sheet.getRange(found.survey.row, 7, 1, 2).setValues([[nowText(), '1']]);
+    return createJsonResponse({ status: 'success' });
+  } catch (err) {
+    return internalErrorResponse('adminDeleteSurvey', err);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// 管理用: 回答数と、質問ごとの集計。文は、そのまま(エスケープしない)返す。表示で安全にするのは、アプリ側
+function handleAdminSurveyResults(adminToken, surveyId) {
+  const denied = adminTokenErrorResponse(checkAdminToken(adminToken));
+  if (denied) return denied;
+  try {
+    const found = findSurvey(surveyId);
+    if (!found.survey) return surveyError('not_found', 'アンケートが見つかりません。');
+    const sv = found.survey;
+    const sheet = getOrCreateSurveyAnswerSheet();
+    const lastRow = sheet.getLastRow();
+    const answers = []; // 新しい回答が先
+    if (lastRow >= 2) {
+      const rows = sheet.getRange(2, 2, lastRow - 1, 4).getValues(); // アンケートID・回答日時・端末の印・回答
+      for (let i = rows.length - 1; i >= 0; i--) {
+        if (String(rows[i][0]) !== sv.id) continue;
+        try {
+          const a = JSON.parse(String(rows[i][3]));
+          if (a && typeof a === 'object') answers.push(a);
+        } catch (err) {
+          // 読めない行は、数えない
+        }
+      }
+    }
+    const results = sv.questions.map(function (q) {
+      const r = { id: q.id, type: q.type, text: q.text, answered: 0 };
+      if (q.type === 'single' || q.type === 'multi' || q.type === 'singleOther') {
+        r.options = q.options.map(function (o) { return { option: o, count: 0 }; });
+      }
+      if (q.type === 'singleOther') { r.otherCount = 0; r.others = []; }
+      if (q.type === 'scale5') { r.counts = [0, 0, 0, 0, 0]; r.average = null; }
+      if (q.type === 'text') r.texts = [];
+      let sum = 0;
+      answers.forEach(function (a) {
+        const v = Object.prototype.hasOwnProperty.call(a, q.id) ? a[q.id] : undefined;
+        if (v === undefined || v === null) return;
+        const bump = function (opt) {
+          for (let i = 0; i < r.options.length; i++) if (r.options[i].option === opt) { r.options[i].count++; return; }
+        };
+        if (q.type === 'single' && typeof v === 'string') { r.answered++; bump(v); }
+        else if (q.type === 'multi' && Array.isArray(v)) { r.answered++; v.forEach(bump); }
+        else if (q.type === 'scale5' && typeof v === 'number' && v >= 1 && v <= 5) { r.answered++; r.counts[v - 1]++; sum += v; }
+        else if (q.type === 'singleOther' && typeof v === 'object') {
+          if (typeof v.choice === 'string') { r.answered++; bump(v.choice); }
+          else if (typeof v.other === 'string') { r.answered++; r.otherCount++; if (r.others.length < SURVEY_RESULT_TEXT_MAX) r.others.push(v.other); }
+        } else if (q.type === 'text' && typeof v === 'string') { r.answered++; if (r.texts.length < SURVEY_RESULT_TEXT_MAX) r.texts.push(v); }
+      });
+      if (q.type === 'scale5' && r.answered > 0) r.average = Math.round((sum / r.answered) * 100) / 100;
+      return r;
+    });
+    return createJsonResponse({
+      status: 'success',
+      survey: { id: sv.id, title: sv.title, description: sv.description, status: sv.status },
+      responseCount: answers.length,
+      results: results
+    });
+  } catch (err) {
+    return internalErrorResponse('adminSurveyResults', err);
   }
 }
 
