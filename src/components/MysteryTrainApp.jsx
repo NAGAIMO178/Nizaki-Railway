@@ -136,9 +136,9 @@ export const BOSS_STAGE = {
   title: '最終関門：怪盗のアジト特定',
   riddle: '集めた3つの雅石（柏・北千住・我孫子）を鉄路の線で結べ。その三角形が示す中心の駅に、怪盗のアジトがある…！',
   hint: '路線図上で「北千住」「柏」「我孫子」を結ぶ三角形を描いてみよ。その中心・中継点として位置する主要乗換駅じゃ！',
-  correctStationId: 'matsudo',
-  correctStationName: '松戸駅',
-  explanation: '見事じゃ！！北千住・柏・我孫子が描く三角形の要衝、松戸駅の地下留置線にて怪盗を完全に包囲した！これにて一件落着じゃ！',
+  correctStationId: 'shinmatsudo',
+  correctStationName: '新松戸駅',
+  explanation: '見事じゃ！！北千住・柏・我孫子が描く三角形の要衝、新松戸駅の地下留置線にて怪盗を完全に包囲した！これにて一件落着じゃ！',
 };
 
 export const CLEAR_CODE = 'MYSTERY_2026_MASHIN_CLEAR';
@@ -395,7 +395,7 @@ export const MysteryTrainApp = ({ onAddNPoints, onExit, posterImageUrl }) => {
           isOpen: true,
           isCorrect: true,
           title: '【真の隠し場所 特定完了！】',
-          message: '斬丸「あっぱれじゃ！！松戸駅にて怪盗のアジトを完全制圧せり！坂東の平和は保たれたぞ！」',
+          message: '斬丸「あっぱれじゃ！！新松戸駅にて怪盗のアジトを完全制圧せり！坂東の平和は保たれたぞ！」',
           explanation: BOSS_STAGE.explanation,
         });
         setGameState((prev) => ({
@@ -661,7 +661,7 @@ export const MysteryTrainApp = ({ onAddNPoints, onExit, posterImageUrl }) => {
                   怪盗のアジト
                 </span>
                 <span className="text-[9px] text-amber-300 font-bold">
-                  松戸駅 制覇
+                  新松戸駅 制覇
                 </span>
               </>
             ) : gameState.bossUnlocked ? (
@@ -848,7 +848,7 @@ export const MysteryTrainApp = ({ onAddNPoints, onExit, posterImageUrl }) => {
                 <Search className="w-4 h-4 text-amber-500 absolute left-3.5 pointer-events-none" />
                 <input
                   type="text"
-                  placeholder="駅名または駅コードを入力（例: 柏、北千住、我孫子、松戸）"
+                  placeholder="駅名または駅コードを入力（例: 柏、北千住、我孫子、新松戸）"
                   value={searchKeyword}
                   onChange={(e) => {
                     setSearchKeyword(e.target.value);
@@ -985,7 +985,7 @@ export const MysteryTrainApp = ({ onAddNPoints, onExit, posterImageUrl }) => {
               </span>
             </div>
 
-            {/* 三角形幾何学路線図（北千住・柏・我孫子・松戸） */}
+            {/* 三角形幾何学路線図（北千住・柏・我孫子・新松戸）。3駅は、実際の緯度・経度の比率で置く(1km ≈ 12px。経度1度は、緯度1度の約0.81倍) */}
             <div className="relative w-full h-64 bg-[#140F20] rounded-lg border border-amber-500/30 overflow-hidden flex items-center justify-center">
               <svg className="w-full h-full" viewBox="0 0 400 240">
                 <defs>
@@ -1003,37 +1003,37 @@ export const MysteryTrainApp = ({ onAddNPoints, onExit, posterImageUrl }) => {
                 <line x1="200" y1="0" x2="200" y2="240" stroke="#251F33" strokeDasharray="4" />
                 <line x1="300" y1="0" x2="300" y2="240" stroke="#251F33" strokeDasharray="4" />
 
-                {/* 3点を結ぶ三角形（柏(378, 40) - 北千住(290, 190) - 我孫子(120, 90)・架空駅） */}
+                {/* 3点を結ぶ三角形（北千住(70, 195) - 柏(249, 46) - 我孫子(315, 40)。実際の位置の比率） */}
                 <polygon
-                  points="378,45 290,190 120,90"
+                  points="70,195 249,46 315,40"
                   fill="rgba(245, 158, 11, 0.1)"
                   stroke="url(#goldLine)"
                   strokeWidth="3"
                   strokeDasharray="6 3"
                 />
 
-                {/* 頂点1: 柏駅 */}
-                <circle cx="378" cy="45" r="7" fill="#10B981" stroke="#FFF" strokeWidth="2" />
-                <text x="378" y="30" fill="#6EE7B7" fontSize="11" fontWeight="bold" textAnchor="middle">
+                {/* 頂点1: 柏駅（点の左に出す。我孫子と近いため） */}
+                <circle cx="249" cy="46" r="7" fill="#10B981" stroke="#FFF" strokeWidth="2" />
+                <text x="236" y="50" fill="#6EE7B7" fontSize="11" fontWeight="bold" textAnchor="end" stroke="#140F20" strokeWidth="3" paintOrder="stroke">
                   柏駅（緑白の雅石）
                 </text>
 
                 {/* 頂点2: 北千住駅 */}
-                <circle cx="290" cy="190" r="7" fill="#06B6D4" stroke="#FFF" strokeWidth="2" />
-                <text x="290" y="215" fill="#67E8F9" fontSize="11" fontWeight="bold" textAnchor="middle">
+                <circle cx="70" cy="195" r="7" fill="#06B6D4" stroke="#FFF" strokeWidth="2" />
+                <text x="70" y="219" fill="#67E8F9" fontSize="11" fontWeight="bold" textAnchor="middle" stroke="#140F20" strokeWidth="3" paintOrder="stroke">
                   北千住駅（蒼線の雅石）
                 </text>
 
-                {/* 頂点3: 我孫子駅 */}
-                <circle cx="120" cy="90" r="7" fill="#A855F7" stroke="#FFF" strokeWidth="2" />
-                <text x="120" y="65" fill="#D8B4FE" fontSize="11" fontWeight="bold" textAnchor="middle">
+                {/* 頂点3: 我孫子駅（点の上に、右に寄せて出す） */}
+                <circle cx="315" cy="40" r="7" fill="#A855F7" stroke="#FFF" strokeWidth="2" />
+                <text x="392" y="22" fill="#D8B4FE" fontSize="11" fontWeight="bold" textAnchor="end" stroke="#140F20" strokeWidth="3" paintOrder="stroke">
                   我孫子駅（時空の雅石）
                 </text>
 
-                {/* 中心：松戸駅 */}
-                <circle cx="263" cy="108" r="10" fill="#EF4444" stroke="#F59E0B" strokeWidth="3" className="animate-ping opacity-75" />
-                <circle cx="263" cy="108" r="7" fill="#EF4444" stroke="#FFF" strokeWidth="2" />
-                <text x="263" y="133" fill="#FCA5A5" fontSize="12" fontWeight="black" textAnchor="middle">
+                {/* 中心：新松戸駅（ラベルは、三角形の外の、右下に出す） */}
+                <circle cx="211" cy="94" r="10" fill="#EF4444" stroke="#F59E0B" strokeWidth="3" className="animate-ping opacity-75" />
+                <circle cx="211" cy="94" r="7" fill="#EF4444" stroke="#FFF" strokeWidth="2" />
+                <text x="226" y="124" fill="#FCA5A5" fontSize="12" fontWeight="black" textAnchor="start" stroke="#140F20" strokeWidth="3" paintOrder="stroke">
                   ？（三角形の中心）
                 </text>
               </svg>
@@ -1145,7 +1145,7 @@ export const MysteryTrainApp = ({ onAddNPoints, onExit, posterImageUrl }) => {
                 特務最高顧問 探偵士
               </h3>
               <p className="text-xs text-stone-300 leading-relaxed max-w-md mx-auto">
-                貴殿は「緑白の雅石（柏）」「蒼線の雅石（北千住）」「時空の雅石（我孫子）」を揃え、さらに三角形の結節点たる「松戸駅」のアジトを暴き出し、全事件を完全解決に導いたことを永久に証す。
+                貴殿は「緑白の雅石（柏）」「蒼線の雅石（北千住）」「時空の雅石（我孫子）」を揃え、さらに三角形の結節点たる「新松戸駅」のアジトを暴き出し、全事件を完全解決に導いたことを永久に証す。
               </p>
             </div>
 
