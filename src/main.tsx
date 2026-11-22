@@ -10,9 +10,12 @@ import { installPreloadErrorReload } from './utils/preloadReload';
 import { LazyBoundary } from './components/LazyBoundary';
 import { ticketRouteToken } from './utils/ticketToken';
 import { startPcLayout } from './utils/pcLayout';
+import { surveyParamFromSearch } from './utils/survey';
 
 // QR乗車券を読み取って開いたリンク(公開後だけ)は、検札用の画面だけを出す
 const TicketCheckPage = lazy(() => import('./components/TicketCheckPage'));
+// お知らせのリンク(?survey=アンケートID)を開いたときは、アンケートに答える画面だけを出す
+const SurveyPage = lazy(() => import('./components/SurveyPage'));
 
 const Root = () => {
   const [ticketToken, setTicketToken] = useState(() => ticketRouteToken());
@@ -21,6 +24,14 @@ const Root = () => {
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
+  const surveyId = surveyParamFromSearch();
+  if (surveyId !== null) {
+    return (
+      <LazyBoundary fallback={<div className="text-center text-xs text-[#857D99] py-10">読み込み中…</div>}>
+        <SurveyPage surveyId={surveyId} />
+      </LazyBoundary>
+    );
+  }
   if (ticketToken) {
     return (
       <LazyBoundary fallback={<div className="text-center text-xs text-[#857D99] py-10">読み込み中…</div>}>
@@ -45,8 +56,8 @@ installPreloadErrorReload();
 // Initialize System Error Logger & Diagnostics
 systemLogger.init();
 
-// 検札の画面だけを開いたときは、アプリ本体の起動処理(通知の登録・アクセス記録)は行わない
-if (!ticketRouteToken()) {
+// 検札・アンケートの画面だけを開いたときは、アプリ本体の起動処理(通知の登録・アクセス記録)は行わない
+if (!ticketRouteToken() && surveyParamFromSearch() === null) {
   // Register Service Worker for Web Push notifications
   registerServiceWorker();
 

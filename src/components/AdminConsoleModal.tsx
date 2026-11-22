@@ -35,8 +35,10 @@ import {
   Info,
   Bell,
   MessageSquare,
+  ClipboardList,
 } from 'lucide-react';
 import { AdminNoticeEditor } from './AdminNoticeEditor';
+import { AdminSurveyPanel } from './AdminSurveyPanel';
 import { AdminFeedbackPanel } from './AdminFeedbackPanel';
 import { systemLogger, SystemLogEntry, SystemMetrics } from '../utils/systemLogger';
 import { checkStoredAdminKey, submitAdminKey, type AdminAccess } from '../utils/adminAccess';
@@ -137,7 +139,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
   const [verifying, setVerifying] = useState(false);
   const isAuthenticated = access === 'ok';
   // Tabs: 'disruption' | 'forecast' | 'diagnostics' | 'errors' | 'storage' | 'settings'
-  const [activeTab, setActiveTab] = useState<'disruption' | 'forecast' | 'diagnostics' | 'errors' | 'storage' | 'settings' | 'notices' | 'feedback'>('disruption');
+  const [activeTab, setActiveTab] = useState<'disruption' | 'forecast' | 'diagnostics' | 'errors' | 'storage' | 'settings' | 'notices' | 'feedback' | 'surveys'>('disruption');
 
   // Disruption Dispatcher State
   const [selectedLineId, setSelectedLineId] = useState<string>('kanzaki');
@@ -919,6 +921,18 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
               >
                 <MessageSquare className="w-3.5 h-3.5" />
                 <span>ご意見</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('surveys')}
+                className={`px-3 py-2 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 border-b-2 ${
+                  activeTab === 'surveys'
+                    ? 'text-amber-400 border-amber-400'
+                    : 'text-slate-400 hover:text-slate-200 border-transparent'
+                }`}
+              >
+                <ClipboardList className="w-3.5 h-3.5" />
+                <span>アンケート</span>
               </button>
 
               <button
@@ -2466,6 +2480,8 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
               {activeTab === 'notices' && <AdminNoticeEditor />}
 
               {activeTab === 'feedback' && <AdminFeedbackPanel />}
+
+              {activeTab === 'surveys' && <AdminSurveyPanel />}
 
               {activeTab === 'settings' && (
                 <div className="space-y-3">
