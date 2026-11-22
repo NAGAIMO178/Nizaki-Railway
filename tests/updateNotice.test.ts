@@ -132,9 +132,9 @@ const NOTES_A = ['マイページに、名札を出せるようにしました',
 const NOTES_B = ['新しい路線「高宮線」ができました', '有料特急「すみかぜ」を、予約できるようになりました', 'パソコンの画面を、広く使えるようにしました', '通知を見られるようにしました', 'ご意見・不具合を、アプリから送れるようにしました', '別の端末でログインしても、予約を見られるようにしました'];
 const FORM_A = { version: '4.6.2', notes: NOTES_A };
 const FORM_B = { version: '4.7.2', notes: NOTES_B, showAfter: TK_LAUNCH_AT };
-//  形C(いまの版 4.7.5): その更新の分だけ・showAfter なし。毎回、この行(版と文)を、その更新の分に書き換える
-const NOTES_C = ['座席選びで、ほかの会員が予約した席を、先に、選べないように表示しました'];
-const FORM_C = { version: '4.7.5', notes: NOTES_C };
+//  形C(いまの版 4.8.0): その更新の分だけ・showAfter なし。毎回、この行(版と文)を、その更新の分に書き換える
+const NOTES_C = ['アンケートに、答えられるようになりました'];
+const FORM_C = { version: '4.8.0', notes: NOTES_C };
 
 describe('形A: すぐ届くお知らせ(showAfter なし・3行・高宮線の言葉なし)', () => {
   const out = JSON.parse(buildVersionJson(FORM_A.version, { notes: FORM_A.notes }));
