@@ -52,7 +52,12 @@ export type Action =
 
 export type RearrangeEvent =
   | { kind: 'delay'; train: string; at: number; sec: number } // 列車 train が、駅 at で sec 秒、遅れた
-  | { kind: 'suspend'; from: number; to: number; startSec: number; endSec: number }; // 駅 from〜to の間が、startSec〜endSec のあいだ、止まる(from < to)
+  | { kind: 'suspend'; from: number; to: number; startSec: number; endSec: number } // 駅 from〜to の間が、startSec〜endSec のあいだ、止まる(from < to)
+  | { kind: 'cancel'; train: string }; // この列車は、運休(運行乱れの設定で、運休と決まった列車)
+
+/** 出来事は、1件でも、何件でも渡せる(遅れ・区間運休・運休を、いっぺんに) */
+export type EventInput = RearrangeEvent | RearrangeEvent[];
+const asList = (e: EventInput): RearrangeEvent[] => (Array.isArray(e) ? e : [e]);
 
 /** 変更の記録の1行。画面は、これを読んで描く(行き先の変更・運休・待避・待機・遅れ)。 */
 export type ChangeRecord =
@@ -83,7 +88,7 @@ export interface Proposal {
 }
 
 export interface RearrangeResult {
-  event: RearrangeEvent;
+  events: RearrangeEvent[];
   base: Summary; // 何もしなかったときの見込み
   forced: Summary; // 区間運休では、止まる列車の打ち切りだけをしたときの見込み(遅れのときは base と同じ)
   proposals: Proposal[]; // おすすめの順。先頭から順に重ねて採ってよい形(それぞれ、前の案を採ったあとの点数)
@@ -207,17 +212,20 @@ const cutStart = (t: Train, at: number): Train | null => {
  * (始発の駅に、編成がいないときは、そこから走れるところだけ残す。走れなければ、運休)。
  * 元のダイヤで、前の列車の終点と次の列車の始発が違う編成(間に回送がある)は、つなぎ直さない。
  */
-export const applyChanges = (data: RearrangeData, actions: Action[], event?: RearrangeEvent): Working => {
+export const applyChanges = (data: RearrangeData, actions: Action[], event: EventInput = []): Working => {
+  const events = asList(event);
   const name = (st: number) => data.stations[st].name;
   const byNo = new Map(data.trains.map((t) => [t.no, t]));
   const removed = new Set<string>();
   const changes: ChangeRecord[] = [];
   const turns = new Map<string, number>();
   const cancels = new Set<string>();
+  const forced = new Set<string>(); // 運行乱れの設定で、運休と決まった列車
   for (const a of actions) {
     if (a.kind === 'turn') turns.set(a.train, a.at);
     if (a.kind === 'cancel') cancels.add(a.train);
   }
+  for (const ev of events) if (ev.kind === 'cancel') forced.add(ev.train);
   const out = new Map<string, Train>();
   for (const { nos } of chainsOf(data.trains)) {
     let pos: number | null = null; // 編成がいま、いる駅
@@ -239,7 +247,10 @@ export const applyChanges = (data: RearrangeData, actions: Action[], event?: Rea
           reason = '編成が、始発駅にいないため';
         }
       }
-      if (t && cancels.has(no)) {
+      if (t && forced.has(no)) {
+        t = null;
+        reason = '運休(運行乱れの設定)';
+      } else if (t && cancels.has(no)) {
         t = null;
         reason = '運休(整理案)';
       }
@@ -250,8 +261,9 @@ export const applyChanges = (data: RearrangeData, actions: Action[], event?: Rea
           t = cut;
         }
       }
-      if (t && event?.kind === 'suspend') {
-        const cut = cutForSuspension(t, event);
+      for (const ev of events) {
+        if (!t || ev.kind !== 'suspend') continue;
+        const cut = cutForSuspension(t, ev);
         if (cut === null) {
           t = null;
           reason = '区間運休のため';
@@ -304,7 +316,8 @@ interface Sim {
 
 type Pred = { ti: number; j: number; gap: number } | null;
 
-const simulate = (data: RearrangeData, work: Working, actions: Action[], event?: RearrangeEvent): Sim => {
+const simulate = (data: RearrangeData, work: Working, actions: Action[], event: EventInput = []): Sim => {
+  const delays = asList(event).filter((e): e is Extract<RearrangeEvent, { kind: 'delay' }> => e.kind === 'delay');
   const trains = work.trains;
   const idx = new Map(trains.map((t, i) => [t.no, i]));
   const nodeAt = (ti: number, st: number) => trains[ti].nodes.findIndex((n) => n.st === st);
@@ -409,9 +422,10 @@ const simulate = (data: RearrangeData, work: Working, actions: Action[], event?:
         }
         let d = j === last ? a : n.stop ? Math.max(n.sd, a + Math.min(MIN_DWELL_SEC, Math.max(0, n.sd - n.sa))) : Math.max(n.sd, a);
         if (j === 0) d = Math.max(d, a, n.sd);
-        if (event?.kind === 'delay' && event.train === t.no && event.at === n.st) {
-          d = Math.max(d, n.sd + event.sec);
-          if (j === last) a = Math.max(a, n.sa + event.sec);
+        for (const ev of delays) {
+          if (ev.train !== t.no || ev.at !== n.st) continue;
+          d = Math.max(d, n.sd + ev.sec);
+          if (j === last) a = Math.max(a, n.sa + ev.sec);
         }
         for (const h of holds) if (h.train === t.no && h.at === n.st) d = Math.max(d, a + h.sec);
         const p = pred[ti][j];
@@ -463,7 +477,7 @@ const summarize = (sim: Sim, work: Working, actions: Action[]): Summary => {
   };
 };
 
-const evaluate = (data: RearrangeData, actions: Action[], event: RearrangeEvent) => {
+const evaluate = (data: RearrangeData, actions: Action[], event: EventInput) => {
   const work = applyChanges(data, actions, event);
   const sim = simulate(data, work, actions, event);
   return { work, sim, sum: summarize(sim, work, actions) };
@@ -553,7 +567,8 @@ const candidates = (data: RearrangeData, cur: ReturnType<typeof evaluate>, taken
 const keyOf = (a: Action) => JSON.stringify(a);
 
 /** 出来事から、整理案を出す(おすすめの順) */
-export const rearrange = (data: RearrangeData, event: RearrangeEvent, opts: { maxProposals?: number } = {}): RearrangeResult => {
+export const rearrange = (data: RearrangeData, input: EventInput, opts: { maxProposals?: number } = {}): RearrangeResult => {
+  const event = asList(input);
   const max = opts.maxProposals ?? 3;
   const baseEval = evaluate(data, [], event);
   const taken: Action[] = [];
@@ -586,7 +601,7 @@ export const rearrange = (data: RearrangeData, event: RearrangeEvent, opts: { ma
     cur = best.e;
   }
   return {
-    event,
+    events: event,
     base: baseEval.sum,
     forced: baseEval.sum,
     proposals,
@@ -600,7 +615,7 @@ export interface RearrangeLog {
   id: string;
   line: string;
   at: string; // 作った日時(ISO)
-  event: RearrangeEvent;
+  events: RearrangeEvent[];
   chosen: string[]; // 採った案の id
   actions: Action[];
   changes: ChangeRecord[]; // 区間運休で必ず起きる変更 + 採った案の変更 + 遅れの見込み
@@ -615,7 +630,7 @@ export const makeLog = (line: string, result: RearrangeResult, chosenCount: numb
     id: `${line}-${now.getTime()}`,
     line,
     at: now.toISOString(),
-    event: result.event,
+    events: result.events,
     chosen: chosen.map((p) => p.id),
     actions: last ? last.actions : [],
     changes: [...result.baseChanges, ...chosen.flatMap((p) => p.changes), ...result.delays],
@@ -660,7 +675,7 @@ export interface FixedDia {
  * ダイヤと出来事(遅れ・区間運休)から、整理案をすべて採ったあとのダイヤを返す。
  * 同じダイヤと同じ出来事からは、必ず同じ答えが出る(時刻や乱数は、使わない。出来事の時刻は、引数で受け取る)。
  */
-export const fixedDia = (data: RearrangeData, event: RearrangeEvent): FixedDia => {
+export const fixedDia = (data: RearrangeData, event: EventInput): FixedDia => {
   const res = rearrange(data, event);
   const actions = res.proposals.length ? res.proposals[res.proposals.length - 1].actions : [];
   const e = evaluate(data, actions, event);
@@ -686,4 +701,81 @@ export const fixedDia = (data: RearrangeData, event: RearrangeEvent): FixedDia =
     changes: [...e.work.changes, ...handChanges, ...delayRecords(e.sim)],
     summary: e.sum,
   };
+};
+
+// ---------- 保存・配信用の、短い形 ----------
+// 管理者の端末で、エンジンを1回動かし、その結果を、変わった列車の分だけに絞って保存する。利用者の端末は、これを読むだけ(エンジンは動かさない)。
+export interface CompactResult {
+  v: 1;
+  cancelled: string[]; // 運休の列車番号
+  trains: { no: string; o?: number; d?: number; x?: [number, number, number][] }[]; // 変わった列車だけ。o=新しい始発の駅番号 d=新しい行先の駅番号 x=[駅番号, 着の遅れ秒, 発の遅れ秒]
+  pass: [string, string, number][]; // [待避する列車, 先に通す列車, 駅番号]
+  hold: [string, number, number][]; // [列車, 駅番号, 待機の秒]
+}
+
+export const toCompact = (data: RearrangeData, fixed: FixedDia): CompactResult => {
+  void data;
+  const trains: CompactResult['trains'] = [];
+  for (const t of fixed.trains) {
+    const x: [number, number, number][] = [];
+    for (const n of t.nodes) {
+      const da = n.arr - n.schedArr;
+      const dd = n.dep - n.schedDep;
+      if (da !== 0 || dd !== 0) x.push([n.st, da, dd]);
+    }
+    const e: CompactResult['trains'][number] = { no: t.no };
+    if (t.changedOrigin) e.o = t.nodes[0].st;
+    if (t.changedDest) e.d = t.nodes[t.nodes.length - 1].st;
+    if (x.length) e.x = x;
+    if (e.o !== undefined || e.d !== undefined || e.x) trains.push(e);
+  }
+  const pass: CompactResult['pass'] = [];
+  const hold: CompactResult['hold'] = [];
+  for (const a of fixed.actions) {
+    if (a.kind === 'pass') pass.push([a.slow, a.fast, a.at]);
+    if (a.kind === 'hold') hold.push([a.train, a.at, a.sec]);
+  }
+  return { v: 1, cancelled: [...fixed.cancelled], trains, pass, hold };
+};
+
+/** 短い形から、直したあとのダイヤを組み立てる(エンジンは使わない。元のダイヤと、保存された結果だけで決まる) */
+export const fromCompact = (data: RearrangeData, c: CompactResult): { trains: FixedTrain[]; cancelled: string[] } => {
+  const cancelled = new Set(c.cancelled);
+  const byNo = new Map(c.trains.map((t) => [t.no, t]));
+  const name = (st: number) => data.stations[st].name;
+  const trains: FixedTrain[] = [];
+  for (const t of data.trains) {
+    if (cancelled.has(t.no)) continue;
+    const e = byNo.get(t.no);
+    let nodes = t.nodes;
+    let cutS = false;
+    let cutE = false;
+    if (e?.o !== undefined) {
+      const i = nodes.findIndex((n, k) => n.st === e.o && n.stop && k < nodes.length - 1);
+      if (i > 0) {
+        nodes = nodes.slice(i);
+        cutS = true;
+      }
+    }
+    if (e?.d !== undefined) {
+      const i = nodes.findIndex((n, k) => n.st === e.d && n.stop && k > 0);
+      if (i > 0) {
+        nodes = nodes.slice(0, i + 1);
+        cutE = true;
+      }
+    }
+    const shift = new Map((e?.x ?? []).map(([st, a, d]) => [st, [a, d] as [number, number]]));
+    const out: FixedNode[] = nodes.map((n, k) => {
+      const schedArr = cutS && k === 0 ? n.sd : n.sa;
+      const schedDep = cutE && k === nodes.length - 1 ? n.sa : n.sd;
+      const [da, dd] = shift.get(n.st) ?? [0, 0];
+      return { st: n.st, stop: n.stop, arr: schedArr + da, dep: schedDep + dd, schedArr, schedDep };
+    });
+    trains.push({
+      no: t.no, type: t.type, typeName: t.typeName, dir: t.dir, set: t.set, opNo: t.opNo,
+      origin: name(out[0].st), dest: name(out[out.length - 1].st),
+      changedOrigin: cutS, changedDest: cutE, nodes: out,
+    });
+  }
+  return { trains, cancelled: [...c.cancelled] };
 };
