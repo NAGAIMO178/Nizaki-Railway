@@ -132,9 +132,9 @@ const NOTES_A = ['マイページに、名札を出せるようにしました',
 const NOTES_B = ['新しい路線「高宮線」ができました', '有料特急「すみかぜ」を、予約できるようになりました', 'パソコンの画面を、広く使えるようにしました', '通知を見られるようにしました', 'ご意見・不具合を、アプリから送れるようにしました', '別の端末でログインしても、予約を見られるようにしました'];
 const FORM_A = { version: '4.6.2', notes: NOTES_A };
 const FORM_B = { version: '4.7.2', notes: NOTES_B, showAfter: TK_LAUNCH_AT };
-//  形C(いまの版 4.7.4): その更新の分だけ・showAfter なし。毎回、この行(版と文)を、その更新の分に書き換える
-const NOTES_C = ['ミステリートレインの三角形の図を、正しい位置に直しました'];
-const FORM_C = { version: '4.7.4', notes: NOTES_C };
+//  形C(いまの版 4.7.5): その更新の分だけ・showAfter なし。毎回、この行(版と文)を、その更新の分に書き換える
+const NOTES_C = ['座席選びで、ほかの会員が予約した席を、先に、選べないように表示しました'];
+const FORM_C = { version: '4.7.5', notes: NOTES_C };
 
 describe('形A: すぐ届くお知らせ(showAfter なし・3行・高宮線の言葉なし)', () => {
   const out = JSON.parse(buildVersionJson(FORM_A.version, { notes: FORM_A.notes }));
@@ -183,7 +183,7 @@ describe('いまの package.json と release-notes.json は、形A・形B・形C
   const notes = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'release-notes.json'), 'utf-8')) as { notes: string[]; showAfter?: string };
   const out = JSON.parse(buildVersionJson(pkg.version, notes));
 
-  it('出る version.json が、形A(4.6.2)・形B(4.7.2)・形C(4.7.4)のどれかと、そのまま同じ', () => {
+  it('出る version.json が、形A(4.6.2)・形B(4.7.2)・形C(4.7.5)のどれかと、そのまま同じ', () => {
     const a = JSON.parse(buildVersionJson(FORM_A.version, { notes: FORM_A.notes }));
     const b = JSON.parse(buildVersionJson(FORM_B.version, { notes: FORM_B.notes, showAfter: FORM_B.showAfter }));
     const c = JSON.parse(buildVersionJson(FORM_C.version, { notes: FORM_C.notes }));

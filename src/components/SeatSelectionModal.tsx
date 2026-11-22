@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { X, Armchair, Check } from 'lucide-react';
 import { getTodayDateString, generateOccupiedSeats, isTodayWeekend, MAX_SEATS } from '../utils/seatUtils';
 import { pickDefaultSeat, sortSeats, toggleSeat } from '../utils/seatPick';
@@ -6,6 +6,8 @@ import { SUMIKAZE } from '../utils/sumikaze';
 import type { ExpressKey } from '../utils/diaTimetable';
 
 import { useBackClose } from '../utils/backClose';
+import { fetchOccupiedSeats, type OccupiedCall } from '../utils/occupiedSeats';
+import { getLocalDateString } from '../utils/orderExpiry';
 interface SeatSelectionModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -20,6 +22,7 @@ interface SeatSelectionModalProps {
   maxSeats?: number; // 1つの予約で選べる席の数(既定は1席。公開後は複数席)。basePrice は、選んだ席の数ぶんの合計
   onSeatCountChange?: (count: number) => void; // 選んだ席の数が変わったとき(予約画面の金額に反映する)
   takenSeats?: Record<number, string[]>; // サーバーに「すでに予約されている」と断られた席(号車ごと)。選べなくする
+  fetchOccupied?: OccupiedCall; // ほかの会員が予約した席を取る呼び出し(テスト用。渡さなければ、サーバーへ)
   onConfirmSeat: (selection: {
     carNo: number;
     seatNo: string;
@@ -43,6 +46,7 @@ export const SeatSelectionModal: React.FC<SeatSelectionModalProps> = ({
   onSeatCountChange,
   onConfirmSeat,
   takenSeats,
+  fetchOccupied,
 }) => {
   const isSpecialSeatType =
     initialSeatType === 'green' ||
@@ -79,25 +83,70 @@ export const SeatSelectionModal: React.FC<SeatSelectionModalProps> = ({
   const todayStr = useMemo(() => getTodayDateString(), []);
   const isWeekend = useMemo(() => isTodayWeekend(), []);
 
-  // 当日・当該列車・号車の固定された予約済み座席リストを取得
-  const currentOccupied = useMemo(() => {
+  // ほかの会員が、すでに予約した席(サーバーにある。号車ごと)。この画面を開いているあいだだけ覚える
+  const [serverOccupied, setServerOccupied] = useState<Record<number, string[]>>({});
+  const serverOccupiedRef = useRef<Record<number, string[]>>({});
+  serverOccupiedRef.current = serverOccupied;
+
+  // 当日・当該列車・号車の固定された予約済み座席リスト(模擬の埋まり方 + 断られた席 + サーバーにある予約の席)
+  const occupiedOf = (carNo: number, server: Record<number, string[]> = serverOccupiedRef.current): string[] => {
     const generated = generateOccupiedSeats(
       todayStr,
       `${expressType}_${trainName}`,
-      selectedCarNo,
-      selectedCarNo === 1,
-      expressType === 'sumikaze' ? rowsOfCar(selectedCarNo) : undefined
+      carNo,
+      carNo === 1,
+      expressType === 'sumikaze' ? rowsOfCar(carNo) : undefined
     );
-    const taken = takenSeats?.[selectedCarNo];
-    return taken && taken.length > 0 ? [...generated, ...taken] : generated;
-  }, [todayStr, expressType, trainName, selectedCarNo, takenSeats]);
+    return [...generated, ...(takenSeats?.[carNo] ?? []), ...(server[carNo] ?? [])];
+  };
+  const currentOccupied = useMemo(
+    () => occupiedOf(selectedCarNo, serverOccupied),
+    [todayStr, expressType, trainName, selectedCarNo, takenSeats, serverOccupied]
+  );
 
   // 初期選択席: 既定席が埋まっていれば、その号車の最初の空席を選ぶ(満席なら選ばない)
-  const defaultSeats = (carNo: number): string[] => {
+  const defaultSeats = (carNo: number, server: Record<number, string[]> = serverOccupiedRef.current): string[] => {
     const rows = expressType === 'sumikaze' ? rowsOfCar(carNo) : undefined;
-    const seat = pickDefaultSeat([...generateOccupiedSeats(todayStr, `${expressType}_${trainName}`, carNo, carNo === 1, rows), ...(takenSeats?.[carNo] ?? [])], carNo === 1, rows);
+    const seat = pickDefaultSeat(occupiedOf(carNo, server), carNo === 1, rows);
     return seat ? [seat] : [];
   };
+
+  // 席選びを開くたびに、サーバーの席は、取り直す(前に開いたときの分は、捨てる)。号車ごとに、1回だけ取る
+  const openGen = useRef(0);
+  const triedRef = useRef<Set<string>>(new Set());
+  const selectedCarRef = useRef(selectedCarNo);
+  selectedCarRef.current = selectedCarNo;
+  useEffect(() => {
+    openGen.current += 1;
+    triedRef.current = new Set();
+    serverOccupiedRef.current = {};
+    setServerOccupied({});
+    if (!isOpen) setSelectedCarNo(availableCars[0]); // 閉じたとき、号車を最初に戻す(開いたとき、前に見た号車の分を、取らないように)
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || !trainName) return;
+    const car = selectedCarNo;
+    const date = getLocalDateString(); // 予約をサーバーへ送るときの「予約日」と、同じ形
+    const key = `${date}|${trainName}|${car}`;
+    if (triedRef.current.has(key)) return;
+    triedRef.current.add(key); // 失敗しても、同じ画面では、もう一度は取らない
+    const gen = openGen.current;
+    void fetchOccupiedSeats(date, trainName, car, fetchOccupied).then((seats) => {
+      if (!seats || seats.length === 0 || gen !== openGen.current) return; // 取れなかったときは、何もしない(模擬の埋まり方のまま)
+      const next = { ...serverOccupiedRef.current, [car]: seats };
+      serverOccupiedRef.current = next;
+      setServerOccupied(next);
+      // いま選んでいる席が重なったら、その席だけ外す(選択が空になったら、空いている席を1つ選びなおす)
+      if (selectedCarRef.current === car) {
+        setSelectedSeats((prev) => {
+          const rest = prev.filter((seat) => !seats.includes(seat));
+          if (rest.length === prev.length) return prev;
+          return rest.length > 0 ? rest : defaultSeats(car, next);
+        });
+      }
+    });
+  }, [isOpen, trainName, selectedCarNo]);
 
   useEffect(() => {
     if (isOpen) {
