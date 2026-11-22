@@ -43,7 +43,10 @@ export const normalizeFeedbackRows = (raw: unknown): FeedbackRow[] => {
     }));
 };
 
-export const AdminFeedbackPanel: React.FC<{ call?: Call }> = ({ call = (a, p) => callGas(a, p) as Promise<GasLike> }) => {
+// 描きなおしのたびに別の関数にならないよう、外に1つだけ置く(中に書くと、一覧の読み込みが、止まらなくなる)
+const defaultCall: Call = (a, p) => callGas(a, p) as Promise<GasLike>;
+
+export const AdminFeedbackPanel: React.FC<{ call?: Call }> = ({ call = defaultCall }) => {
   const [rows, setRows] = useState<FeedbackRow[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
