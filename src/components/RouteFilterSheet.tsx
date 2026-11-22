@@ -146,7 +146,7 @@ export const RouteFilterSheet: React.FC<RouteFilterSheetProps> = ({ isOpen, opti
               />
               {options.sortBy === 'crowd' && (
                 <div className="text-[11px] text-[#857D99] leading-relaxed">
-                  早く着く便から45分以内の候補のなかで、混雑の目安が低い順に並べます(模擬の混雑です)。
+                  早く着く便から45分以内の候補のなかで、混雑の目安が低い順に並べます。
                 </div>
               )}
               {options.sortBy === 'safe' && (

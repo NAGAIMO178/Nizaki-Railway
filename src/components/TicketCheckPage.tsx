@@ -147,8 +147,6 @@ export const TicketCheckPage: React.FC<{ token: string }> = ({ token }) => {
             )}
           </>
         )}
-
-        <p className="mt-5 text-[11px] text-[#857D99] leading-relaxed">※架空の鉄道を題材にしたフィクションです。</p>
       </div>
 
       {confirming !== null && (
