@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { buildData, rearrange, makeLog, applyChanges, fixedDia, type RearrangeData } from '../src/utils/rearrange';
+import { buildData, rearrange, makeLog, applyChanges, fixedDia, toCompact, fromCompact, type RearrangeData, type RearrangeEvent } from '../src/utils/rearrange';
 import type { TrainRow } from '../src/utils/diaTimetable';
 
 // 高宮線(TK)の、実際のダイヤ(public/data/dia-2)で、整理案の計算を確かめる
@@ -121,5 +121,68 @@ describe('直したあとのダイヤ(fixedDia)', () => {
     const f = fixedDia(data, delayEv);
     for (const a of f.actions) if (a.kind === 'turn') expect(f.trains.find((t) => t.no === a.train)?.changedDest).toBe(true);
     for (const a of f.actions) if (a.kind === 'cancel') expect(f.cancelled).toContain(a.train);
+  });
+});
+
+describe('出来事を、何件でも渡せる', () => {
+  const pick = (hour: number, tn: string, dir: 'D' | 'U') => trainAt(tn, dir, hour);
+  const evs: RearrangeEvent[] = [
+    { kind: 'delay', train: pick(7, '各停', 'D').no, at: pick(7, '各停', 'D').nodes[0].st, sec: 5 * 60 },
+    { kind: 'delay', train: pick(8, '快速', 'D').no, at: pick(8, '快速', 'D').nodes[0].st, sec: 3 * 60 },
+    { kind: 'delay', train: pick(17, '各停', 'U').no, at: pick(17, '各停', 'U').nodes[0].st, sec: 4 * 60 },
+  ];
+  it('複数の遅れが、すべて反映される', () => {
+    const f = fixedDia(data, evs);
+    for (const e of evs) {
+      if (e.kind !== 'delay') continue;
+      const t = f.trains.find((x) => x.no === e.train)!;
+      expect(t.nodes[0].dep).toBeGreaterThanOrEqual(t.nodes[0].schedDep + e.sec);
+    }
+  });
+  it('件数が違っても、1件の渡し方と同じ答えになる', () => {
+    expect(JSON.stringify(fixedDia(data, [evs[0]]))).toBe(JSON.stringify(fixedDia(data, evs[0])));
+  });
+  it('運休の出来事は、その列車を運休にする', () => {
+    const t = pick(9, '快速', 'D');
+    const f = fixedDia(data, [{ kind: 'cancel', train: t.no }]);
+    expect(f.cancelled).toContain(t.no);
+    expect(f.trains.some((x) => x.no === t.no)).toBe(false);
+  });
+  it('遅れと区間運休と運休を、いっぺんに渡せる', () => {
+    const f = fixedDia(data, [...evs, { kind: 'suspend', from: st('下妻'), to: st('宇都宮'), startSec: 9 * 3600, endSec: 11 * 3600 }, { kind: 'cancel', train: pick(12, '各停', 'U').no }]);
+    expect(f.cancelled.length).toBeGreaterThan(0);
+    expect(f.trains.some((t) => t.changedDest)).toBe(true);
+  });
+});
+
+describe('保存用の短い形', () => {
+  const t1 = trainAt('各停', 'D', 8);
+  const cases: Record<string, RearrangeEvent[]> = {
+    遅れ1件: [{ kind: 'delay', train: t1.no, at: t1.nodes[0].st, sec: 20 * 60 }],
+    遅れ多数: data.trains.filter((_, i) => i % 9 === 0).map((t, i) => ({ kind: 'delay' as const, train: t.no, at: t.nodes[0].st, sec: (1 + (i % 5)) * 60 })),
+    区間運休: [{ kind: 'suspend', from: st('下妻'), to: st('宇都宮'), startSec: 9 * 3600, endSec: 11 * 3600 }],
+    全部入り: [
+      { kind: 'suspend', from: st('新治'), to: st('群馬製作所'), startSec: 7 * 3600, endSec: 10 * 3600 },
+      { kind: 'cancel', train: trainAt('快速', 'U', 8).no },
+      { kind: 'delay', train: t1.no, at: t1.nodes[0].st, sec: 15 * 60 },
+    ],
+  };
+  for (const [name, evs] of Object.entries(cases)) {
+    it(`${name}: 短い形から組み立てた結果が、エンジンの結果と同じ`, () => {
+      const f = fixedDia(data, evs);
+      const c = toCompact(data, f);
+      const back = fromCompact(data, JSON.parse(JSON.stringify(c)));
+      expect(back.cancelled).toEqual(f.cancelled);
+      expect(back.trains).toEqual(f.trains);
+    });
+    it(`${name}: 保存の大きさが、GAS のセルの上限(5万字)の半分に収まる`, () => {
+      const size = JSON.stringify(toCompact(data, fixedDia(data, evs))).length;
+      expect(size).toBeLessThan(25000);
+    });
+  }
+  it('出来事がなければ、変わった列車は0', () => {
+    const c = toCompact(data, fixedDia(data, []));
+    expect(c.trains).toHaveLength(0);
+    expect(c.cancelled).toHaveLength(0);
   });
 });
