@@ -140,6 +140,13 @@ function doPost(e) {
     if (json.action === 'adminSetRearrangeFlag') {
       return handleAdminSetRearrangeFlag(json.adminToken, json.enabled);
     }
+    // 運転整理の結果(短い形)。管理者の端末が1回計算して保存し、利用者の端末は、読むだけ。読むのは認証なし。書くのは管理者だけ
+    if (json.action === 'getRearrangeResult') {
+      return handleGetRearrangeResult();
+    }
+    if (json.action === 'adminSaveRearrangeResult') {
+      return handleAdminSaveRearrangeResult(json.adminToken, json.result, json.basedOn);
+    }
 
     // ①.65 通知(アプリのメニューの「通知」)。公開用は、ログインなしで読める。管理用は、すべて、サーバー側で、管理トークンを確かめる
     if (json.action === 'getNotices') {
@@ -2276,18 +2283,23 @@ const REARRANGE_PROPERTY = 'REARRANGE_ENABLED';
 const REARRANGE_CACHE_KEY = 'rearrange_flag_v1';
 const REARRANGE_CACHE_SECONDS = 30;
 
+// 入り・切り(30秒の覚えつき)。読めなければ、例外を投げる
+function readRearrangeEnabled() {
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get(REARRANGE_CACHE_KEY);
+  if (cached === '1' || cached === '0') return cached === '1';
+  const enabled = PropertiesService.getScriptProperties().getProperty(REARRANGE_PROPERTY) === 'true';
+  try {
+    cache.put(REARRANGE_CACHE_KEY, enabled ? '1' : '0', REARRANGE_CACHE_SECONDS);
+  } catch (ignored) {
+    // 覚えられなくても、読み出しは続ける
+  }
+  return enabled;
+}
+
 function handleGetRearrangeFlag() {
   try {
-    const cache = CacheService.getScriptCache();
-    const cached = cache.get(REARRANGE_CACHE_KEY);
-    if (cached === '1' || cached === '0') return createJsonResponse({ status: 'success', enabled: cached === '1' });
-    const enabled = PropertiesService.getScriptProperties().getProperty(REARRANGE_PROPERTY) === 'true';
-    try {
-      cache.put(REARRANGE_CACHE_KEY, enabled ? '1' : '0', REARRANGE_CACHE_SECONDS);
-    } catch (ignored) {
-      // 覚えられなくても、読み出しは続ける
-    }
-    return createJsonResponse({ status: 'success', enabled: enabled });
+    return createJsonResponse({ status: 'success', enabled: readRearrangeEnabled() });
   } catch (err) {
     return internalErrorResponse('getRearrangeFlag', err);
   }
@@ -3600,6 +3612,212 @@ function handleAdminSurveyResults(adminToken, surveyId) {
     });
   } catch (err) {
     return internalErrorResponse('adminSurveyResults', err);
+  }
+}
+
+// ==============================================================================
+// 運転整理の結果(短い形 CompactResult。src/utils/rearrange.ts)の、保存と配信
+//  - 管理者の端末が、運行乱れを保存したときに、エンジンを1回動かし、その結果を、保存する(adminSaveRearrangeResult)。利用者の端末は、読むだけ(getRearrangeResult。認証なし)
+//  - 入り・切り(REARRANGE_ENABLED。上のトグル)が切れているときは、保存も取得も、何もしない(取得は null)
+//  - 保存先: シート「ダイヤ整理」の、2行目の1行(最新の1件だけ)。スクリプトプロパティは、1つの値が 9KB までなので、使えない(結果は、約22,000字・最大5万字未満)
+//  - 解除: 保存したときの、「いま有効な運行乱れ」の印(指紋)を、一緒に持つ。読むときに、いまの運行乱れの指紋と、違えば(解除された・自動解除の時刻が来た・内容が変わった)、null を返す。
+//    運行乱れの保存・取得・自動解除の仕組み(handleSetDisruptions・getStoredDisruptionsData)は、変えない
+//  - 形の検査: v:1・cancelled・trains・pass・hold だけ。ほかの項目や、形の違うものは断る。大きさは5万字未満。保存したものは、文字として扱う(実行しない)
+// ==============================================================================
+const SHEET_REARRANGE = 'ダイヤ整理';
+const REARRANGE_RESULT_HEADERS = ['保存日時', '保存日時(ms)', '運行乱れの印', '保存した側の印', '結果'];
+const REARRANGE_RESULT_CACHE_KEY = 'rearrange_result_v1';
+const REARRANGE_RESULT_CACHE_SECONDS = 30;
+const REARRANGE_RESULT_MAX_CHARS = 50000; // 5万字未満
+const REARRANGE_LIST_MAX = 2000;          // cancelled・trains・pass・hold の、それぞれの件数の上限
+const REARRANGE_STOPS_PER_TRAIN_MAX = 200;
+const REARRANGE_BASIS_MAX = 100;
+const REARRANGE_TRAIN_NO = /^[0-9A-Za-z回_-]{1,16}$/; // 列車番号('回' で始まる回送もある)
+
+function getOrCreateRearrangeResultSheet() {
+  return getOrCreateSheetWithHeaders(SHEET_REARRANGE, REARRANGE_RESULT_HEADERS, [1, 3, 4, 5]);
+}
+
+// いま有効な運行乱れの印。平常でないものの、路線・種類・区間・遅れ・方向・連動・更新・自動解除の時刻から作る
+// (自動解除の時刻を過ぎたものは、getStoredDisruptionsData が、もう返さないので、入らない)
+function rearrangeDisruptionFingerprint() {
+  const data = getStoredDisruptionsData();
+  const active = Object.keys(data.disruptions).sort().filter(function (k) {
+    const d = data.disruptions[k];
+    return d && d.statusType && d.statusType !== 'normal';
+  });
+  if (active.length === 0) return '';
+  const parts = active.map(function (k) {
+    const d = data.disruptions[k];
+    return [k, d.statusType, d.section || '', Number(d.maxDelayMinutes) || 0, d.targetDirection || '', d.linkToSystem !== false, d.updatedAt || '', Number(d.expiresAtTimestamp) || 0];
+  });
+  return signSessionPayload('rearrange:' + JSON.stringify(parts));
+}
+
+function isIntInRange(v, min, max) {
+  return typeof v === 'number' && isFinite(v) && Math.floor(v) === v && v >= min && v <= max;
+}
+
+// 短い形の検査。問題があれば { error: 文 }。よければ { value: 整えた結果 }(受け取った項目だけを、新しく組み立てる)
+function cleanRearrangeResult(r) {
+  const bad = function (m) { return { error: m }; };
+  if (!r || typeof r !== 'object' || Array.isArray(r)) return bad('結果の形が正しくありません。');
+  const keys = Object.keys(r);
+  const allowed = ['v', 'cancelled', 'trains', 'pass', 'hold'];
+  if (keys.length !== allowed.length || keys.some(function (k) { return allowed.indexOf(k) < 0; })) return bad('結果の項目が正しくありません。');
+  if (r.v !== 1) return bad('結果の版(v)が正しくありません。');
+  const tooMany = function (a) { return !Array.isArray(a) || a.length > REARRANGE_LIST_MAX; };
+  if (tooMany(r.cancelled) || tooMany(r.trains) || tooMany(r.pass) || tooMany(r.hold)) return bad('結果の件数が正しくありません。');
+  const isNo = function (v) { return typeof v === 'string' && REARRANGE_TRAIN_NO.test(v); };
+
+  const cancelled = [];
+  for (let i = 0; i < r.cancelled.length; i++) {
+    if (!isNo(r.cancelled[i])) return bad('運休の列車番号が正しくありません。');
+    cancelled.push(r.cancelled[i]);
+  }
+  const trains = [];
+  for (let i = 0; i < r.trains.length; i++) {
+    const t = r.trains[i];
+    if (!t || typeof t !== 'object' || Array.isArray(t)) return bad('列車の形が正しくありません。');
+    if (Object.keys(t).some(function (k) { return ['no', 'o', 'd', 'x'].indexOf(k) < 0; })) return bad('列車の項目が正しくありません。');
+    if (!isNo(t.no)) return bad('列車番号が正しくありません。');
+    const e = { no: t.no };
+    if (t.o !== undefined) {
+      if (!isIntInRange(t.o, 0, 999)) return bad('始発の駅番号が正しくありません。');
+      e.o = t.o;
+    }
+    if (t.d !== undefined) {
+      if (!isIntInRange(t.d, 0, 999)) return bad('行先の駅番号が正しくありません。');
+      e.d = t.d;
+    }
+    if (t.x !== undefined) {
+      if (!Array.isArray(t.x) || t.x.length > REARRANGE_STOPS_PER_TRAIN_MAX) return bad('駅ごとの遅れが正しくありません。');
+      e.x = [];
+      for (let j = 0; j < t.x.length; j++) {
+        const q = t.x[j];
+        if (!Array.isArray(q) || q.length !== 3 || !isIntInRange(q[0], 0, 999) || !isIntInRange(q[1], -86400, 172800) || !isIntInRange(q[2], -86400, 172800)) {
+          return bad('駅ごとの遅れが正しくありません。');
+        }
+        e.x.push([q[0], q[1], q[2]]);
+      }
+    }
+    trains.push(e);
+  }
+  const pass = [];
+  for (let i = 0; i < r.pass.length; i++) {
+    const q = r.pass[i];
+    if (!Array.isArray(q) || q.length !== 3 || !isNo(q[0]) || !isNo(q[1]) || !isIntInRange(q[2], 0, 999)) return bad('待避の形が正しくありません。');
+    pass.push([q[0], q[1], q[2]]);
+  }
+  const hold = [];
+  for (let i = 0; i < r.hold.length; i++) {
+    const q = r.hold[i];
+    if (!Array.isArray(q) || q.length !== 3 || !isNo(q[0]) || !isIntInRange(q[1], 0, 999) || !isIntInRange(q[2], 0, 86400)) return bad('待機の形が正しくありません。');
+    hold.push([q[0], q[1], q[2]]);
+  }
+  return { value: { v: 1, cancelled: cancelled, trains: trains, pass: pass, hold: hold } };
+}
+
+// 保存してある結果(最新の1件)を読む。無ければ null。30秒だけ覚える
+function readStoredRearrangeResult() {
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get(REARRANGE_RESULT_CACHE_KEY);
+  if (cached) {
+    try {
+      return JSON.parse(cached);
+    } catch (ignored) {
+      // 覚えが壊れていたら、シートから読む
+    }
+  }
+  const sheet = getOrCreateRearrangeResultSheet();
+  let stored = null;
+  if (sheet.getLastRow() >= 2) {
+    const v = sheet.getRange(2, 1, 1, REARRANGE_RESULT_HEADERS.length).getValues()[0];
+    if (v[2] && v[4]) stored = { savedAt: Number(v[1]) || 0, fingerprint: String(v[2]), json: String(v[4]) };
+  }
+  try {
+    cache.put(REARRANGE_RESULT_CACHE_KEY, JSON.stringify(stored || { none: true }), REARRANGE_RESULT_CACHE_SECONDS);
+  } catch (ignored) {
+    // 大きすぎて覚えられなくても、読み出しは続ける
+  }
+  return stored;
+}
+
+// 公開用: 保存された結果を返す(認証なし)。無い・解除された(運行乱れの印が、保存したときと違う)・入り・切りが切れているときは、null
+function handleGetRearrangeResult() {
+  try {
+    if (!readRearrangeEnabled()) return createJsonResponse({ status: 'success', result: null });
+    const stored = readStoredRearrangeResult();
+    if (!stored || stored.none) return createJsonResponse({ status: 'success', result: null });
+    const fingerprint = rearrangeDisruptionFingerprint();
+    if (!fingerprint || fingerprint !== stored.fingerprint) return createJsonResponse({ status: 'success', result: null });
+    let result = null;
+    try {
+      result = JSON.parse(stored.json);
+    } catch (err) {
+      result = null; // 壊れた保存は、返さない
+    }
+    return createJsonResponse({ status: 'success', result: result });
+  } catch (err) {
+    return internalErrorResponse('getRearrangeResult', err);
+  }
+}
+
+// 管理用: 結果を保存する(最新の1件だけ。前のものは、置き換える)。result が null のときは、保存してある結果を消す
+//  basedOn: 保存する側が、元にした運行乱れを識別するための印(任意。100文字まで。台帳にだけ残す)
+function handleAdminSaveRearrangeResult(adminToken, result, basedOn) {
+  const denied = adminTokenErrorResponse(checkAdminToken(adminToken));
+  if (denied) return denied;
+  const invalid = function (message) { return createJsonResponse({ status: 'error', code: 'invalid', message: message }); };
+  let enabled;
+  try {
+    enabled = readRearrangeEnabled();
+  } catch (err) {
+    return internalErrorResponse('adminSaveRearrangeResult', err);
+  }
+  if (!enabled) return createJsonResponse({ status: 'error', code: 'disabled', message: '運転整理は、いま、切れています。' });
+  if (basedOn !== undefined && basedOn !== null && (typeof basedOn !== 'string' || basedOn.length > REARRANGE_BASIS_MAX)) {
+    return invalid('元にした運行乱れの印が正しくありません(' + REARRANGE_BASIS_MAX + ' 文字までの文字)。');
+  }
+  const clearing = result === null;
+  let json = '';
+  if (!clearing) {
+    const cleaned = cleanRearrangeResult(result);
+    if (cleaned.error) return invalid(cleaned.error);
+    json = JSON.stringify(cleaned.value);
+    if (json.length >= REARRANGE_RESULT_MAX_CHARS) {
+      return createJsonResponse({ status: 'error', code: 'too_large', message: '結果が大きすぎます(5万字未満)。' });
+    }
+  }
+
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+  } catch (err) {
+    return createJsonResponse({ status: 'error', code: 'busy', message: '混み合っています。しばらくしてからもう一度お試しください。' });
+  }
+  try {
+    const sheet = getOrCreateRearrangeResultSheet();
+    let row;
+    if (clearing) {
+      row = ['', '', '', '', ''];
+    } else {
+      // 元にする運行乱れが、いま、無ければ、保存しない(解除されたあとに、遅れて届いた結果を、残さない)
+      const fingerprint = rearrangeDisruptionFingerprint();
+      if (!fingerprint) return createJsonResponse({ status: 'error', code: 'no_disruption', message: 'いま有効な運行乱れが、保存されていません。先に運行乱れを保存してください。' });
+      row = [nowText(), Date.now(), fingerprint, sheetSafe(basedOn || ''), sheetSafe(json)];
+    }
+    if (sheet.getLastRow() >= 2) {
+      sheet.getRange(2, 1, 1, REARRANGE_RESULT_HEADERS.length).setValues([row]);
+    } else if (!clearing) {
+      sheet.appendRow(row);
+    }
+    CacheService.getScriptCache().remove(REARRANGE_RESULT_CACHE_KEY); // 切り替えを、すぐ反映する
+    return createJsonResponse({ status: 'success', saved: !clearing });
+  } catch (err) {
+    return internalErrorResponse('adminSaveRearrangeResult', err);
+  } finally {
+    lock.releaseLock();
   }
 }
 
