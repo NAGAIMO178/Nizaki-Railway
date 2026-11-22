@@ -4,6 +4,7 @@ import { safeStorage } from './safeStorage';
 import { callGas } from './accountApi';
 import { TK_LINE_COLOR, withTk } from './tkLine';
 import { getAffectedStationRange, isTrainInAffectedRange } from './disruptionSections';
+import { syncRearrange } from './rearrangeOverlay';
 
 export type DisruptionStatusType = 'normal' | 'delay' | 'suspended' | 'partially_suspended';
 export type DisruptionDirection = 'both' | 'up' | 'down';
@@ -596,9 +597,12 @@ if (typeof window !== 'undefined') {
 
   // 起動時、および20秒ごとにGASから最新の運行情報を取り込む
   // (タブが何であっても常時バックグラウンドで同期する)
+  // 運転整理(トグルが入っているときだけ、管理者が保存した整理の結果を読む)も、同じ間隔で取り込む
   disruptionManager.syncFromServer();
+  void syncRearrange();
   setInterval(() => {
     disruptionManager.syncFromServer();
+    void syncRearrange();
   }, 20000);
 }
 
