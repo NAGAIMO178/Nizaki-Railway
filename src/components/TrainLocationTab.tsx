@@ -709,14 +709,12 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
               ? '一部区間で運休中'
               : '遅延が発生しています';
           const dirLabel = dis.targetDirection === 'up' ? '（上り線）' : dis.targetDirection === 'down' ? '（下り線）' : '';
-          const hidesTrains = dis.linkToSystem && dis.statusType !== 'delay';
           return (
             <div className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-900 space-y-0.5">
               <div className="font-bold">
                 {label}
                 {dirLabel}（{dis.section || '全線'}）
               </div>
-              {hidesTrains && <div className="text-[11px] text-rose-800">運休となった列車は表示していません。</div>}
             </div>
           );
         })()}

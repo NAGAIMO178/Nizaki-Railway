@@ -122,10 +122,6 @@ const parseExpiryFromDuration = (text: string, now: Date = new Date()): number |
   return null;
 };
 
-// 元の文言に付いていた「（※架空設定）」の注記は残したまま、時刻だけを差し替える
-const rewriteDuration = (prev: string, ts: number): string =>
-  buildDurationLabel(ts) + (/※架空/.test(prev) ? '（※架空設定）' : '');
-
 
 export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
   isOpen,
@@ -313,7 +309,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
 
   // 自動解除の時刻を選んだら、復旧見込みの文言も同じ時刻に揃える
   const syncDurationWithExpiry = (ts: number) => {
-    setDurationUntil((prev) => (isSyncableDuration(prev) ? rewriteDuration(prev, ts) : prev));
+    setDurationUntil((prev) => (isSyncableDuration(prev) ? buildDurationLabel(ts) : prev));
   };
 
   // 復旧見込みの文言を選ぶ・入力したら、自動解除の時刻もその内容に合わせる
@@ -447,7 +443,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
     // 復旧見込みが時刻の文言なら、実際の自動解除の時刻に揃える(選択後に時間が経っていてもずれない)
     let durationText = durationUntil.trim();
     if (expiresAtTimestamp && isTimeBasedDuration(durationText)) {
-      durationText = rewriteDuration(durationText, expiresAtTimestamp);
+      durationText = buildDurationLabel(expiresAtTimestamp);
       setDurationUntil(durationText);
     }
 
