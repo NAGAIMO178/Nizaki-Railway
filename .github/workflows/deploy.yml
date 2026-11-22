@@ -15,10 +15,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build-and-deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  # ビルド: 型・テスト・ビルドを通して、公開する中身(dist)を、アップロードする
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -51,6 +49,15 @@ jobs:
         with:
           path: './dist'
 
+  # 公開: アップロードされた中身を、公開するだけ(GitHub が勧める、ビルドと公開を分ける形)。
+  # ここだけが失敗したときは、「Re-run failed jobs」で、公開だけを、やり直せる(ビルドは、やり直さない)
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
