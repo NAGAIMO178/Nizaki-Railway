@@ -187,8 +187,6 @@ export const TicketQRModal: React.FC<TicketQRModalProps> = ({ isOpen, onClose, a
           </button>
         )}
 
-        <p className="text-[11px] text-center text-[#857D99] leading-relaxed">※本アプリは架空の鉄道を題材にしたフィクションです。</p>
-
         <button
           onClick={onClose}
           className="w-full bg-[#5B21B6] hover:bg-[#4C1D95] text-white font-bold text-xs py-3 rounded-xl shadow-xs transition-all cursor-pointer"

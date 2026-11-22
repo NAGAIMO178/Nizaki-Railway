@@ -126,7 +126,6 @@ export const TrainDetailV2: React.FC<TrainDetailV2Props> = ({ train, lineName, o
                 <PeopleMeter level={info.level} />
                 <span className="text-xs font-bold text-[#221C35]">{info.label}</span>
               </div>
-              <div className="text-[10px] font-bold text-[#857D99] mt-0.5 pc:hidden">※模擬の混雑です</div>
             </div>
           </div>
         ) : (

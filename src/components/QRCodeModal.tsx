@@ -38,9 +38,6 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({
             <h3 className="text-base font-black text-[#221C35] leading-tight">
               QR乗車券（デモ表示）
             </h3>
-            <p className="text-[11px] text-[#6B6380] font-medium">
-              架空鉄道アプリの表示イメージです
-            </p>
           </div>
         </div>
 
@@ -150,10 +147,6 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({
 
           <div className="text-[11px] font-bold text-[#DDD6FE]">表示イメージ（読み取りはできません）</div>
         </div>
-
-        <p className="text-[11px] text-center text-[#857D99] leading-relaxed">
-          ※本アプリは架空の鉄道を題材にしたフィクションです。この画面は表示イメージで、実際の改札や検札では使えません。
-        </p>
 
         <button
           onClick={onClose}

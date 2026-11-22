@@ -64,12 +64,12 @@ describe('PC 用のクラスを取り除くと、スマホのクラスは、こ�
     expect(s.split('className="w-full py-3 -mt-3 flex items-center justify-center cursor-grab active:cursor-grabbing group rounded-t-xl select-none"').length - 1).toBe(2);
     expect(s).toContain('className="max-h-[62vh] overflow-y-auto overscroll-contain -mx-1 px-1 space-y-5"');
   });
-  it('列車の詳細: 見出しの帯・「いまの混雑」・「※模擬の混雑です」・外枠', () => {
+  it('列車の詳細: 見出しの帯・「いまの混雑」・外枠(「※模擬の混雑です」は、断り書きを減らすため、無い)', () => {
     const s = phoneOnly(read('TrainDetailV2'));
     expect(s).toContain("'max-h-[62vh] overflow-y-auto overscroll-contain -mx-1 px-1 space-y-3'");
     expect(s).toContain('<div className={`rounded-xl bg-[#5B21B6] text-white px-3.5 py-2 text-sm font-black flex items-center gap-2 shadow-xs${train.paid && train.expressBand ? \'\' : \'\'}`}>');
     expect(s).toContain('whitespace-nowrap shadow-2xs">いまの混雑</span>');
-    expect(s).toContain('<div className="text-[10px] font-bold text-[#857D99] mt-0.5">※模擬の混雑です</div>');
+    expect(s).not.toContain('※模擬の混雑です');
   });
 });
 
@@ -88,11 +88,10 @@ describe('PC のときだけ消すもの(整理)', () => {
     expect(s).toContain('<span className="pc:hidden">おもな行き先: {direction?.mainDest}行</span>');
     expect(s).toContain('<span>全日共通のダイヤ</span>');
   });
-  it('列車の詳細: 路線名の紫の帯(有料の特急の列車名の帯は残す)・「いまの混雑」・「※模擬の混雑です」', () => {
+  it('列車の詳細: 路線名の紫の帯(有料の特急の列車名の帯は残す)・「いまの混雑」', () => {
     const s = read('TrainDetailV2');
     expect(s).toContain("shadow-xs${train.paid && train.expressBand ? '' : ' pc:hidden'}`}");
     expect(s).toContain('shadow-2xs pc:hidden">いまの混雑</span>');
-    expect(s).toContain('mt-0.5 pc:hidden">※模擬の混雑です</div>');
   });
 });
 

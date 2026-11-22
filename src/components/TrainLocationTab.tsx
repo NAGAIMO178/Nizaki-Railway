@@ -1085,7 +1085,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
                       </div>
                       {futureTimetable.some((item) => item.crowd) && (
                         <p className="text-[10px] text-[#857D99] leading-relaxed pt-1">
-                          ※色つきの言葉は、その駅を出たあとの区間の混雑の目安です(模擬)。遅れている列車は、人がたまるので、1段階高く見せています。
+                          ※色つきの言葉は、その駅を出たあとの区間の混雑の目安です。遅れている列車は、人がたまるので、1段階高く見せています。
                         </p>
                       )}
                     </div>
