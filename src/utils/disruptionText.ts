@@ -91,6 +91,13 @@ export function getDurationPresetsForReason(reason: string): string[] {
   ];
 }
 
+// 運行支障の文の中の「架空」の印。画面ごとの断り書きは1つだけにしたので、文の中には載せない。
+// すでに保存ずみの文(以前の形)にも入っているため、画面に出すときに取り除く(保存された中身は書き換えない)
+const KAKUU_MARKS = /【※架空・シミュレーション】|【架空・設定】|[（(]※架空(?:設定)?[）)]/g;
+export function stripKakuuMarks(text: string): string {
+  return text.replace(KAKUU_MARKS, '');
+}
+
 /**
  * 鉄道公式アナウンス形式の自動文言生成関数
  * 天候要因・復旧未定・時刻見込みなど状況に応じた自然な日本語文言を構築
@@ -121,7 +128,7 @@ export function generateDisruptionText(
   // 運転見合わせ
   if (statusType === 'suspended') {
     const scopeLabel = targetDirection === 'up' ? '上り線で' : targetDirection === 'down' ? '下り線で' : '全線で';
-    let msg = `【※架空・シミュレーション】${timeStr}現在、${lineName}は、${cleanSection}での${cleanReason}の影響により、${scopeLabel}運転を見合わせております。`;
+    let msg = `${timeStr}現在、${lineName}は、${cleanSection}での${cleanReason}の影響により、${scopeLabel}運転を見合わせております。`;
     if (cleanUntil) {
       if (cleanUntil.includes('めど') || cleanUntil.includes('未定') || cleanUntil.includes('立っていません')) {
         msg += '（現時点で運転再開・復旧のめどは立っておりません）';
@@ -140,7 +147,7 @@ export function generateDisruptionText(
 
   // 一部運休
   if (statusType === 'partially_suspended') {
-    let msg = `【※架空・シミュレーション】${timeStr}現在、${lineName}は、${cleanReason}の影響により、${cleanSection}の${directionLabel}一部列車の運転を取り止めております。`;
+    let msg = `${timeStr}現在、${lineName}は、${cleanReason}の影響により、${cleanSection}の${directionLabel}一部列車の運転を取り止めております。`;
     if (cleanUntil) {
       if (cleanUntil.includes('めど') || cleanUntil.includes('未定')) {
         msg += '（現時点で通常運行復帰のめどは立っておりません）';
@@ -157,7 +164,7 @@ export function generateDisruptionText(
 
   // statusType === 'delay' (列車遅延)
   const delayStr = maxDelayMinutes > 0 ? `最大約${maxDelayMinutes}分` : '一部';
-  let msg = `【※架空・シミュレーション】${timeStr}現在、${lineName}は、${cleanSection}での${cleanReason}の影響により、${directionLabel}${delayStr}の遅れが発生しております。`;
+  let msg = `${timeStr}現在、${lineName}は、${cleanSection}での${cleanReason}の影響により、${directionLabel}${delayStr}の遅れが発生しております。`;
   if (cleanUntil) {
     if (cleanUntil.includes('めど') || cleanUntil.includes('未定') || cleanUntil.includes('立っていません')) {
       msg += '（天候・現場状況により、遅れの拡大や運転見合わせとなる可能性があります）';

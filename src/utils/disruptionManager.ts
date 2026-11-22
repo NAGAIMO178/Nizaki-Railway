@@ -102,8 +102,8 @@ export {
 export type { ForecastPresetDef } from './disruptionPresets';
 
 // 文章づくり・理由に合う候補・自動解除の時刻候補は disruptionText.ts に置き、ここからも今までどおり取り出せるようにする
-import { generateDisruptionText } from './disruptionText';
-export { generateDisruptionText, getDurationPresetsForReason, getExpiryOptions, isWeatherRelatedReason } from './disruptionText';
+import { generateDisruptionText, stripKakuuMarks } from './disruptionText';
+export { generateDisruptionText, getDurationPresetsForReason, getExpiryOptions, isWeatherRelatedReason, stripKakuuMarks } from './disruptionText';
 
 let listeners: (() => void)[] = [];
 
@@ -253,7 +253,7 @@ export const disruptionManager = {
 
       if (d && d.statusType !== 'normal') {
         hasDelay = true;
-        const msg = d.useCustomMessage && d.customMessage.trim()
+        const rawMsg = d.useCustomMessage && d.customMessage.trim()
           ? d.customMessage.trim()
           : generateDisruptionText(
               def.name,
@@ -264,6 +264,8 @@ export const disruptionManager = {
               d.durationUntil,
               d.targetDirection || 'both'
             );
+        // 保存ずみの文に「架空」の印が入っていても、画面には出さない(断り書きは、カードの下に1つだけ)
+        const msg = stripKakuuMarks(rawMsg);
 
         let statusText = '平常運転';
         let delayMinutes = 0;
@@ -293,8 +295,8 @@ export const disruptionManager = {
           message: msg,
           linkToSystem: d.linkToSystem ?? true,
           section: d.section || '全線',
-          reason: d.reason || '',
-          durationUntil: d.durationUntil || '',
+          reason: stripKakuuMarks(d.reason || ''),
+          durationUntil: stripKakuuMarks(d.durationUntil || ''),
         };
       }
 
