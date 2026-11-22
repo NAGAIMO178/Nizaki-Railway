@@ -133,6 +133,14 @@ function doPost(e) {
       return handleVerifyAdminToken(json.adminToken);
     }
 
+    // 運転整理(ダイヤ整理案)の、入り・切り。読むのは公開用(認証なし)。書くのは管理者だけ(サーバー側で、管理トークンを確かめる)
+    if (json.action === 'getRearrangeFlag') {
+      return handleGetRearrangeFlag();
+    }
+    if (json.action === 'adminSetRearrangeFlag') {
+      return handleAdminSetRearrangeFlag(json.adminToken, json.enabled);
+    }
+
     // ①.65 通知(アプリのメニューの「通知」)。公開用は、ログインなしで読める。管理用は、すべて、サーバー側で、管理トークンを確かめる
     if (json.action === 'getNotices') {
       return handleGetNotices();
@@ -2256,6 +2264,56 @@ function adminTokenErrorResponse(result) {
 
 function handleVerifyAdminToken(adminToken) {
   return adminTokenErrorResponse(checkAdminToken(adminToken)) || createJsonResponse({ status: 'success' });
+}
+
+// ==============================================================================
+// 運転整理(ダイヤ整理案)の、入り・切り(トグル1つ)
+//  - 保存: スクリプトプロパティ REARRANGE_ENABLED(文字の 'true' / 'false')。一度も設定されていなければ、切れている(enabled: false)
+//  - 読む(getRearrangeFlag): 認証なし。30秒だけ覚える。書くときに、覚えを消すので、切り替えは、すぐ反映される
+//  - 書く(adminSetRearrangeFlag): 管理トークンを、サーバー側で必ず確かめる。enabled は、真偽(boolean)だけ。ロックの中で書く
+// ==============================================================================
+const REARRANGE_PROPERTY = 'REARRANGE_ENABLED';
+const REARRANGE_CACHE_KEY = 'rearrange_flag_v1';
+const REARRANGE_CACHE_SECONDS = 30;
+
+function handleGetRearrangeFlag() {
+  try {
+    const cache = CacheService.getScriptCache();
+    const cached = cache.get(REARRANGE_CACHE_KEY);
+    if (cached === '1' || cached === '0') return createJsonResponse({ status: 'success', enabled: cached === '1' });
+    const enabled = PropertiesService.getScriptProperties().getProperty(REARRANGE_PROPERTY) === 'true';
+    try {
+      cache.put(REARRANGE_CACHE_KEY, enabled ? '1' : '0', REARRANGE_CACHE_SECONDS);
+    } catch (ignored) {
+      // 覚えられなくても、読み出しは続ける
+    }
+    return createJsonResponse({ status: 'success', enabled: enabled });
+  } catch (err) {
+    return internalErrorResponse('getRearrangeFlag', err);
+  }
+}
+
+function handleAdminSetRearrangeFlag(adminToken, enabled) {
+  const denied = adminTokenErrorResponse(checkAdminToken(adminToken));
+  if (denied) return denied;
+  if (typeof enabled !== 'boolean') {
+    return createJsonResponse({ status: 'error', code: 'invalid', message: '入り・切りは、true か false で渡してください。' });
+  }
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+  } catch (err) {
+    return createJsonResponse({ status: 'error', code: 'busy', message: '混み合っています。しばらくしてからもう一度お試しください。' });
+  }
+  try {
+    PropertiesService.getScriptProperties().setProperty(REARRANGE_PROPERTY, enabled ? 'true' : 'false');
+    CacheService.getScriptCache().remove(REARRANGE_CACHE_KEY); // 切り替えを、すぐ反映する
+    return createJsonResponse({ status: 'success', enabled: enabled });
+  } catch (err) {
+    return internalErrorResponse('adminSetRearrangeFlag', err);
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // ==============================================================================
