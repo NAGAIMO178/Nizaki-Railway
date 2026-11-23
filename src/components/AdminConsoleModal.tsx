@@ -62,6 +62,7 @@ import {
   COMMON_SECTIONS,
   generateDisruptionText,
   formValuesOf,
+  stripKakuuMarks,
   getStationsForLine,
   isWeatherRelatedReason,
   getDurationPresetsForReason,
@@ -1837,7 +1838,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                                   </span>
                                 </div>
                                 <p className="text-[11px] text-slate-300 line-clamp-2 leading-relaxed">
-                                  {dis.customMessage || dis.reason}
+                                  {stripKakuuMarks(dis.customMessage || dis.reason)}
                                 </p>
                               </div>
 

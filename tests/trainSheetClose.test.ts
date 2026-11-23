@@ -15,3 +15,15 @@ describe('列車の詳細の閉じる行(PC の幅だけ)', () => {
     for (const r of rows) expect(r[1]).toBe('hidden pc:flex justify-end');
   });
 });
+
+describe('駅の詳細・到着時刻のシートの閉じる行(PC の幅だけ)も、重ならない', () => {
+  it('駅の詳細の閉じる行は、下の余白をマイナスにしていない', () => {
+    const m = src.match(/<div className="(hidden pc:flex justify-end[^"]*)">\s*<button\s+type="button"\s+onClick=\{\(\) => setSelectedStation\(null\)\}/);
+    expect(m?.[1]).toBe('hidden pc:flex justify-end');
+  });
+  it('到着時刻のシートの閉じる行も、同じ', () => {
+    const arrival = readFileSync('src/components/ArrivalTimeSheet.tsx', 'utf8');
+    expect(arrival).toContain('<div className="hidden pc:flex justify-end">');
+    expect(arrival).not.toMatch(/pc:flex justify-end -mb-/);
+  });
+});

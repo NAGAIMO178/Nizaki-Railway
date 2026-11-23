@@ -68,6 +68,7 @@ export interface RearrangeView {
   cancelled: Set<string>; // 運休の列車番号
   delays: Map<string, number[]>; // 列車番号 → 停車駅ごとの遅れ(分)。0 だけの列車は入れない
   offset: Map<string, number>; // 列車番号 → 始発が切り直されたときの、もとの停車駅の番号とのずれ
+  origDest: Map<string, string>; // 列車番号 → 行き先(終点側)が変わった列車の、もとの行き先の駅名(始発だけが変わった列車は入れない)
 }
 
 type MasterArg = Parameters<typeof buildData>[1];
@@ -90,6 +91,8 @@ export const rearrangeView = (code: string, master: unknown, rows: TrainRow[]): 
   const byNo = new Map(fx.trains.map((t) => [t.no, t]));
   const delays = new Map<string, number[]>();
   const offset = new Map<string, number>();
+  const origDest = new Map<string, string>();
+  const stationName = (i: number): string => (master as { stations: [string, number][] }).stations[i]?.[0] ?? '';
 
   const out = rows.map((row) => {
     const f = byNo.get(row[0]);
@@ -97,6 +100,10 @@ export const rearrangeView = (code: string, master: unknown, rows: TrainRow[]): 
     const stops = f.nodes.filter((n) => n.stop);
     const mins = stops.map((n, j) => Math.round((j === stops.length - 1 ? n.arr - n.schedArr : n.dep - n.schedDep) / 60));
     if (mins.some((m) => m !== 0)) delays.set(row[0], mins);
+    if (f.changedDest) {
+      const from = row[7] ?? stationName(row[5][row[5].length - 3]);
+      if (from && from !== f.dest) origDest.set(row[0], from);
+    }
     if (!f.changedOrigin && !f.changedDest) return row;
 
     // 行き先・始発が変わった列車: 停車駅の並びを、切り直した範囲だけにする(時刻は時刻表のまま。遅れは別に持つ)
@@ -124,7 +131,7 @@ export const rearrangeView = (code: string, master: unknown, rows: TrainRow[]): 
     return next;
   });
 
-  const view: RearrangeView = { rows: out, cancelled: new Set(fx.cancelled), delays, offset };
+  const view: RearrangeView = { rows: out, cancelled: new Set(fx.cancelled), delays, offset, origDest };
   viewCache.set(rows, { saved, view });
   return view;
 };

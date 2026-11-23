@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { DestinationLabel } from './DestinationLabel';
 import { ChevronDown, ChevronRight, ChevronUp, Clock, User, Users } from 'lucide-react';
 import type { LiveTrainPos } from './TrainLocationTab';
 import { CROWD_LEVELS, CROWD_MAX_LEVEL, crowdInfo } from '../utils/crowd';
@@ -91,7 +92,7 @@ export const TrainDetailV2: React.FC<TrainDetailV2Props> = ({ train, lineName, o
               )}
             </div>
             {train.paid && train.expressName && <div className="text-xs font-bold text-[#221C35]">{train.expressName}</div>}
-            <div className="text-base font-bold text-[#221C35]">{train.destination} 行き</div>
+            <div className="text-base font-bold text-[#221C35]"><DestinationLabel destination={train.destination} original={train.originalDestination} /></div>
             {train.runNo && <div className="text-[10px] font-bold text-[#857D99]">運行番号 {train.runNo}</div>}
           </div>
         </div>
