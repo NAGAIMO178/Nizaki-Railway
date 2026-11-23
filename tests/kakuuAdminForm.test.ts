@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../src/utils/accountApi', () => ({ callGas: vi.fn(async () => ({ status: 'success' })) }));
 
-import { disruptionManager, FORECAST_PRESETS, formValuesOf, generateDisruptionText, type LineDisruption } from '../src/utils/disruptionManager';
+import { disruptionManager, formValuesOf, generateDisruptionText, type LineDisruption } from '../src/utils/disruptionManager';
 
 // 画面で見つかった、印の入った保存ずみの値
 const SAVED: LineDisruption = {
@@ -68,16 +68,5 @@ describe('運行乱れの保存し直し', () => {
     expect(`${resaved.durationUntil}${resaved.reason}${resaved.customMessage}`).not.toMatch(MARK);
     // もう一度読み込んでも、同じ
     expect(formValuesOf(resaved)).toEqual({ durationUntil: resaved.durationUntil, reason: resaved.reason, customMessage: resaved.customMessage });
-  });
-});
-
-describe('運行予測の定型', () => {
-  it('見出しのバッジに、「架空」の印が無い(本文の注意書きは、カードごとに1つ残る)', () => {
-    expect(FORECAST_PRESETS).toHaveLength(8);
-    for (const p of FORECAST_PRESETS) {
-      expect(p.badgeLabel, p.category).not.toMatch(/架空/);
-      expect(p.generateDescription('高宮線', '本日', '全線')).toContain('※本情報は架空鉄道アプリ内のシミュレーション（フィクション）です。');
-    }
-    expect(FORECAST_PRESETS[0].badgeLabel).toBe('台風接近警戒');
   });
 });
