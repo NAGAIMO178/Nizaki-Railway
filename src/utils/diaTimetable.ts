@@ -291,7 +291,7 @@ export const computeBoard = (data: BoardData, platform: 1 | 2, nowMs: number, li
   }
 
   const departures: DynamicDeparture[] = upcoming.map((c) => {
-    const view = rearrangeView(c.line.code, c.line.master, c.line.trains, nowMs);
+    const view = rearrangeView(c.line.code, c.line.master, c.line.trains);
     // 運転整理で、この駅から出なくなった列車(終点が手前に変わった・始発が先に変わった)は、もとの行のまま、運転見合わせとして出す(区間が止まっているため)
     const rearrangedRow = view?.rows[c.ti];
     const departs = !rearrangedRow || departsFrom(rearrangedRow, c.line.stationIdx);
@@ -492,7 +492,7 @@ export const computeLiveTrains = (data: LineData, lineId: string, direction: 1 |
 
   const result: DiaLiveTrain[] = [];
   // 運転整理の結果があるときは、直したあとのダイヤの行を読む
-  const view = rearrangeView(data.code, master, data.trains, nowMs);
+  const view = rearrangeView(data.code, master, data.trains);
 
   for (const t of view?.rows ?? data.trains) {
     if (t[2] !== dirCode) continue;

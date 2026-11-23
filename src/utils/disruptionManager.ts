@@ -145,10 +145,20 @@ function reportPushResult(ok: boolean, message?: string) {
   } catch {}
 }
 
+// 直近の保存(setDisruptions)の結果。運転整理の結果は、これが成功したあとに保存する(順番が逆だと、サーバーが断る)
+let lastPush: Promise<boolean> = Promise.resolve(true);
+export const whenDisruptionsPushed = (): Promise<boolean> => lastPush;
+
 function pushDisruptionsToServer(disruptions: Record<string, LineDisruption>, forecasts: OperationForecast[]) {
-  callGas('setDisruptions', { disruptions, forecasts, adminToken: getAdminToken() })
-    .then((res) => reportPushResult(res.status === 'success', res.message))
-    .catch(() => reportPushResult(false, '通信に失敗しました。'));
+  lastPush = callGas('setDisruptions', { disruptions, forecasts, adminToken: getAdminToken() })
+    .then((res) => {
+      reportPushResult(res.status === 'success', res.message);
+      return res.status === 'success';
+    })
+    .catch(() => {
+      reportPushResult(false, '通信に失敗しました。');
+      return false;
+    });
 }
 
 export const disruptionManager = {

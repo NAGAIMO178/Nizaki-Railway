@@ -1,6 +1,7 @@
 // 運転整理の入口: 管理者の保存でエンジンを1回動かす(出来事づくり・結果の保存)と、利用者の端末が、保存された結果を読んで画面のダイヤに重ねること。
 // ダイヤは高宮線(TK)の実物(public/data/dia-2)。GAS は作りもの(本番には、何も書かない)。
 import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const gas = vi.hoisted(() => ({ calls: [] as { action: string; payload: Record<string, unknown> }[], replies: {} as Record<string, unknown> }));
@@ -16,9 +17,10 @@ vi.mock('../src/utils/accountApi', () => ({
 import { buildData, fixedDia, type RearrangeData, type RearrangeEvent } from '../src/utils/rearrange';
 import type { LineDisruption } from '../src/utils/disruptionManager';
 import {
-  currentServiceDay, departsFrom, fetchRearrangeFlag, parseSaved, rearrangeView, setSavedRearrange, syncRearrange, getSavedRearrange, type RearrangeSaved,
+  departsFrom, fetchRearrangeFlag, parseSaved, rearrangeView, setSavedRearrange, syncRearrange, getSavedRearrange,
 } from '../src/utils/rearrangeOverlay';
-import { buildRearrangeEvents, makeSavedRearrange, runRearrangeFor, saveRearrangeFlag } from '../src/utils/rearrangeAdmin';
+import { buildRearrangeEvents, makeSavedRearrange, runRearrangeFor, saveRearrangeFlag, stableStartMs } from '../src/utils/rearrangeAdmin';
+import { disruptionManager } from '../src/utils/disruptionManager';
 import { computeBoard, computeLiveTrains, type BoardData, type LineData, type TrainRow } from '../src/utils/diaTimetable';
 
 const read = (f: string) => JSON.parse(readFileSync(`public/data/dia-2/${f}`, 'utf8'));
@@ -115,25 +117,46 @@ describe('管理者: 運行乱れから、出来事を作る', () => {
 describe('管理者: エンジンを1回動かして、結果を保存する', () => {
   const susEvents = buildRearrangeEvents(dis(), data, NOW);
 
-  it('保存する形は、きょうのダイヤの日つき・JSON で5万字より小さい・読み直せる', () => {
-    const saved = makeSavedRearrange(data, susEvents, NOW)!;
-    expect(saved.day).toBe(currentServiceDay(NOW));
+  it('保存する形は、短い形(CompactResult)そのもの・JSON で5万字より小さい・読み直せる', () => {
+    const saved = makeSavedRearrange(data, susEvents)!;
+    expect(Object.keys(saved).sort()).toEqual(['cancelled', 'hold', 'pass', 'trains', 'v']);
     const text = JSON.stringify(saved);
     expect(text.length).toBeLessThan(50000);
     expect(parseSaved(JSON.parse(text))).toEqual(saved);
   });
   it('出来事が無いときは、null', () => {
-    expect(makeSavedRearrange(data, [], NOW)).toBeNull();
+    expect(makeSavedRearrange(data, [])).toBeNull();
   });
   it('遅れ(全列車ぶん)でも、時間内に動いて、5万字に収まる', () => {
     const eff = () => ({ delayMinutes: 15, isSuspended: false });
     const ev = buildRearrangeEvents(dis({ statusType: 'delay', section: '全線', maxDelayMinutes: 15 }), data, NOW, eff as never);
     expect(ev.length).toBe(data.trains.length);
     const t0 = Date.now();
-    const saved = makeSavedRearrange(data, ev, NOW)!;
+    const saved = makeSavedRearrange(data, ev)!;
     expect(JSON.stringify(saved).length).toBeLessThan(50000);
     void t0;
   }, 60000);
+  it('サーバー(gas/Code.gs)の形の検査を通る(列車番号・駅番号・数字は整数・項目は決まったものだけ)', () => {
+    const noop = new Proxy(() => undefined, { get: () => noop, apply: () => noop });
+    const ctx: Record<string, unknown> = {
+      console: { log: () => undefined, error: () => undefined },
+      PropertiesService: noop, CacheService: noop, LockService: noop, Utilities: noop, ContentService: noop, SpreadsheetApp: noop, Logger: noop,
+    };
+    vm.createContext(ctx);
+    vm.runInContext(readFileSync('gas/Code.gs', 'utf8'), ctx);
+    const clean = ctx.cleanRearrangeResult as (r: unknown) => { error?: string; value?: unknown };
+    const eff = (): { delayMinutes: number; isSuspended: boolean } => ({ delayMinutes: 7, isSuspended: false });
+    const inputs = [
+      makeSavedRearrange(data, susEvents)!,
+      makeSavedRearrange(data, buildRearrangeEvents(dis({ statusType: 'delay', section: '全線' }), data, NOW, eff as never))!,
+      makeSavedRearrange(data, buildRearrangeEvents(dis({ targetDirection: 'up' }), data, NOW))!,
+    ];
+    for (const r of inputs) {
+      const out = clean(JSON.parse(JSON.stringify(r)));
+      expect(out.error, out.error).toBeUndefined();
+      expect(JSON.stringify(out.value)).toBe(JSON.stringify(r));
+    }
+  });
   it('runRearrangeFor: 高宮線なら、結果を adminSaveRearrangeResult で1回だけ送る(管理トークン・結果)', async () => {
     vi.stubGlobal('fetch', (async (url: string) => ({ ok: true, json: async () => JSON.parse(readFileSync(`public/data/dia-2/${decodeURIComponent(String(url).split('/dia-2/')[1].split('?')[0])}`, 'utf8')) })) as never);
     try {
@@ -141,6 +164,7 @@ describe('管理者: エンジンを1回動かして、結果を保存する', (
       const saves = gas.calls.filter((c) => c.action === 'adminSaveRearrangeResult');
       expect(saves).toHaveLength(1);
       expect(parseSaved(saves[0].payload.result)).not.toBeNull();
+      expect(Object.keys(saves[0].payload).sort()).toEqual(['adminToken', 'result']);
       // 別の路線は、何もしない
       gas.calls = [];
       expect(await runRearrangeFor(dis({ lineId: 'kanzaki' }), NOW)).toBe('skipped');
@@ -155,6 +179,32 @@ describe('管理者: エンジンを1回動かして、結果を保存する', (
       vi.unstubAllGlobals();
     }
   });
+  it('順番: 運行乱れの保存(setDisruptions)が失敗したときは、結果を送らない', async () => {
+    gas.replies.setDisruptions = { status: 'error', message: 'x' };
+    disruptionManager.setLineDisruption(dis());
+    gas.calls = [];
+    expect(await runRearrangeFor(dis(), NOW)).toBe('failed');
+    expect(gas.calls.map((c) => c.action)).toEqual([]);
+    gas.replies.setDisruptions = { status: 'success' };
+    disruptionManager.setLineDisruption(dis());
+    vi.stubGlobal('fetch', (async (url: string) => ({ ok: true, json: async () => JSON.parse(readFileSync(`public/data/dia-2/${decodeURIComponent(String(url).split('/dia-2/')[1].split('?')[0])}`, 'utf8')) })) as never);
+    try {
+      gas.calls = [];
+      expect(await runRearrangeFor(dis(), NOW)).toBe('saved');
+      expect(gas.calls.map((c) => c.action)).toEqual(['adminSaveRearrangeResult']);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+  it('作り直しても、区間運休の開始は、最初に保存した時刻のまま(内容が同じあいだ)。内容が変われば、いま', () => {
+    localStorage.clear();
+    const d = dis({ updatedAt: '09:30' });
+    expect(stableStartMs(d, NOW)).toBe(NOW);
+    expect(stableStartMs(d, NOW + 600_000)).toBe(NOW);
+    const [e] = buildRearrangeEvents(d, data, NOW + 600_000, undefined, stableStartMs(d, NOW + 600_000));
+    expect(e).toMatchObject({ kind: 'suspend', startSec: 9.5 * 3600 });
+    expect(stableStartMs(dis({ updatedAt: '09:41', section: '加須 〜 下妻 間' }), NOW + 600_000)).toBe(NOW + 600_000);
+  });
   it('トグルの保存: 成功したら、サーバーの値。失敗は null', async () => {
     gas.replies.adminSetRearrangeFlag = { status: 'success', enabled: true };
     expect(await saveRearrangeFlag(true)).toBe(true);
@@ -166,50 +216,51 @@ describe('管理者: エンジンを1回動かして、結果を保存する', (
   });
 });
 
-describe('利用者: トグルと結果の取り込み', () => {
-  const saved = makeSavedRearrange(data, buildRearrangeEvents(dis(), data, NOW), NOW)!;
-  it('OFF・失敗・アクションが無い は、OFF 扱い(結果を取りにいかない)', async () => {
-    for (const reply of [{ status: 'success', enabled: false }, { status: 'error' }, new Error('offline'), { status: 'success' }]) {
-      gas.calls = [];
-      gas.replies = { getRearrangeFlag: reply, getRearrangeResult: { status: 'success', result: saved } };
-      setSavedRearrange(saved);
-      await syncRearrange();
-      expect(getSavedRearrange(), String(reply)).toBeNull();
-      expect(gas.calls.map((c) => c.action)).toEqual(['getRearrangeFlag']);
-    }
-    expect(await fetchRearrangeFlag()).toBe(false);
-  });
-  it('ON で結果があれば取り込む。結果が無い・読めない・取得に失敗 は、重ねない', async () => {
-    gas.replies = { getRearrangeFlag: { status: 'success', enabled: true }, getRearrangeResult: { status: 'success', result: saved } };
+describe('利用者: 結果の取り込み', () => {
+  const saved = makeSavedRearrange(data, buildRearrangeEvents(dis(), data, NOW))!;
+  it('結果を取り込む(読むのは、getRearrangeResult だけ。トグルは、サーバーが見て、OFF なら null を返す)', async () => {
+    gas.replies = { getRearrangeResult: { status: 'success', result: saved } };
     await syncRearrange();
     expect(getSavedRearrange()).toEqual(saved);
-    for (const result of [{ status: 'success', result: null }, { status: 'success', result: { v: 2 } }, { status: 'error' }, new Error('offline')]) {
-      gas.replies = { getRearrangeFlag: { status: 'success', enabled: true }, getRearrangeResult: result };
+    expect(gas.calls.map((c) => c.action)).toEqual(['getRearrangeResult']);
+  });
+  it('null(OFF・結果なし・解除・内容が変わった)・読めない・取得に失敗・アクションが無い は、重ねない', async () => {
+    for (const result of [{ status: 'success', result: null }, { status: 'success', result: { v: 2 } }, { status: 'success' }, { status: 'error' }, new Error('offline')]) {
+      setSavedRearrange(saved);
+      gas.replies = { getRearrangeResult: result };
       await syncRearrange();
       expect(getSavedRearrange(), String(result)).toBeNull();
     }
   });
+  it('管理者のスイッチの表示用: トグルは、失敗・アクションが無いとき OFF 扱い', async () => {
+    gas.replies = { getRearrangeFlag: { status: 'success', enabled: true } };
+    expect(await fetchRearrangeFlag()).toBe(true);
+    for (const reply of [{ status: 'success', enabled: false }, { status: 'error' }, new Error('offline'), { status: 'success' }]) {
+      gas.replies = { getRearrangeFlag: reply };
+      expect(await fetchRearrangeFlag(), String(reply)).toBe(false);
+    }
+  });
   it('parseSaved は、形の違う中身を断る', () => {
-    for (const bad of [null, 1, {}, { compact: {}, day: 'x' }, { compact: { v: 1, cancelled: [1], trains: [], pass: [], hold: [] }, day: 'x' }, { compact: { ...saved.compact, trains: [{ no: 1 }] }, day: 'x' }, { compact: saved.compact }]) {
+    for (const bad of [null, 1, {}, { v: 1 }, { ...saved, cancelled: [1] }, { ...saved, trains: [{ no: 1 }] }, { ...saved, hold: [['a', 'b', 1]] }, { compact: saved, day: 'x' }]) {
       expect(parseSaved(bad)).toBeNull();
     }
+    expect(parseSaved(JSON.parse(JSON.stringify(saved)))).toEqual(saved);
   });
 });
 
 describe('利用者: 結果を、ダイヤの行に重ねる', () => {
   const sus = buildRearrangeEvents(dis(), data, NOW);
-  const saved = makeSavedRearrange(data, sus, NOW)!;
+  const saved = makeSavedRearrange(data, sus)!;
 
-  it('何も取り込んでいない・高宮線ではない・別の日の結果 は、重ねない(いまのダイヤのまま)', () => {
-    expect(rearrangeView('TK', master, rows, NOW)).toBeNull();
+  it('何も取り込んでいない・高宮線ではない は、重ねない(いまのダイヤのまま)', () => {
+    expect(rearrangeView('TK', master, rows)).toBeNull();
     setSavedRearrange(saved);
-    expect(rearrangeView('Y', master, rows, NOW)).toBeNull();
-    expect(rearrangeView('TK', master, rows, NOW + 24 * 3600 * 1000)).toBeNull();
-    expect(rearrangeView('TK', master, rows, NOW)).not.toBeNull();
+    expect(rearrangeView('Y', master, rows)).toBeNull();
+    expect(rearrangeView('TK', master, rows)).not.toBeNull();
   });
   it('行き先が変わった列車は、行が作り直され、それ以外の行は、そのまま', () => {
     setSavedRearrange(saved);
-    const v = rearrangeView('TK', master, rows, NOW)!;
+    const v = rearrangeView('TK', master, rows)!;
     expect(v.rows).toHaveLength(rows.length);
     const fx = fixedDia(data, sus);
     let changed = 0;
@@ -234,7 +285,7 @@ describe('利用者: 結果を、ダイヤの行に重ねる', () => {
   });
   it('手前で打ち切られた列車は、打ち切りの駅から先で出なくなり、折り返す列車は、その駅から出る', () => {
     setSavedRearrange(saved);
-    const v = rearrangeView('TK', master, rows, NOW)!;
+    const v = rearrangeView('TK', master, rows)!;
     const fx = fixedDia(data, sus);
     const cutEnd = fx.trains.find((t) => t.changedDest)!;
     const i = rows.findIndex((r) => r[0] === cutEnd.no);
@@ -250,8 +301,8 @@ describe('利用者: 結果を、ダイヤの行に重ねる', () => {
   it('遅れは、停車駅ごとの分で持つ', () => {
     const slow = data.trains.find((t) => t.typeName === '各停' && t.dir === 'D' && Math.floor(t.nodes[0].sd / 3600) === 8)!;
     const ev: RearrangeEvent[] = [{ kind: 'delay', train: slow.no, at: slow.nodes[0].st, sec: 20 * 60 }];
-    setSavedRearrange(makeSavedRearrange(data, ev, NOW)!);
-    const v = rearrangeView('TK', master, rows, NOW)!;
+    setSavedRearrange(makeSavedRearrange(data, ev)!);
+    const v = rearrangeView('TK', master, rows)!;
     const d = v.delays.get(slow.no)!;
     expect(d[0]).toBeGreaterThanOrEqual(20);
     expect(d.length).toBe(slow.nodes.filter((n) => n.stop).length);
@@ -264,7 +315,7 @@ describe('利用者: 発車案内・列車位置が、重ねた結果を読む',
   const board = (stName: string, nowMs: number, limit = 12) =>
     computeBoard({ stationName: stName, lines: [{ code: 'TK', master, trains: rows, file: fileOf(st(stName)), stationIdx: st(stName) }] } as BoardData, 1, nowMs, limit);
   const sus = buildRearrangeEvents(dis(), data, NOW);
-  const saved = makeSavedRearrange(data, sus, NOW)!;
+  const saved = makeSavedRearrange(data, sus)!;
   const fx = fixedDia(data, sus);
 
   it('OFF(結果なし)のときは、いまのダイヤのまま', () => {
@@ -324,13 +375,24 @@ describe('利用者: 発車案内・列車位置が、重ねた結果を読む',
   });
   it('ON: 遅れは、重ねた結果の分(列車位置・発車案内)', () => {
     const slow = data.trains.find((t) => t.typeName === '各停' && t.dir === 'D' && Math.floor(t.nodes[0].sd / 3600) === 8)!;
-    setSavedRearrange(makeSavedRearrange(data, [{ kind: 'delay', train: slow.no, at: slow.nodes[0].st, sec: 20 * 60 }], NOW)!);
+    setSavedRearrange(makeSavedRearrange(data, [{ kind: 'delay', train: slow.no, at: slow.nodes[0].st, sec: 20 * 60 }])!);
     const first = data.stations[slow.nodes[0].st].name;
     const dep = board(first, DAY0 + (slow.nodes[0].sd - 120) * 1000, 12).departures.find((d) => d.id.startsWith(`dia-TK-${slow.no}-`));
     expect(dep?.delayMinutes).toBeGreaterThanOrEqual(20);
     const mid = DAY0 + (slow.nodes[0].sd + 30 * 60) * 1000;
     const live = computeLiveTrains(lineData, 'takamiya', 1, mid).find((t) => t.trainNo === slow.no);
     expect(live?.delayMinutes).toBeGreaterThanOrEqual(15);
+  });
+});
+
+describe('管理者コンソール: 運行乱れの保存が成功したあとに、結果を作り直す', () => {
+  const src = readFileSync('src/components/AdminConsoleModal.tsx', 'utf8');
+  it('保存の成功(DISRUPTION_PUSH_EVENT の ok)で、作り直す。保存の操作から直接は、送らない', () => {
+    expect(src).toMatch(/detail\?\.ok\) resaveRearrangeRef\.current\(\)/);
+    expect(src.match(/runRearrangeFor\(/g)).toHaveLength(1);
+  });
+  it('スイッチは1つ(role=switch・運転整理)', () => {
+    expect(src.match(/aria-label="運転整理"/g)).toHaveLength(1);
   });
 });
 

@@ -1,31 +1,21 @@
 // 運転整理(ダイヤ整理案)の、利用者の端末側の入口。
 // 管理者の端末が1回だけ動かして保存した結果(短い形)を、GAS から読み、元のダイヤに重ねて見せる。この端末では、エンジンは動かさない。
-//  - トグルが OFF・取得に失敗・保存された結果が無い・結果の日が違う のときは、何も重ねない(いまのダイヤのまま)。
+//  - 結果が取れない(トグルが OFF・結果が無い・運行乱れが解除された・内容が変わった・取得に失敗)ときは、何も重ねない(いまのダイヤのまま)。
 //  - 画面(発車案内・列車位置)は、ダイヤの行(TrainRow)を、ここの rearrangeView を通して読む。入口は、ここ1か所。
 import { callGas } from './accountApi';
 import { buildData, fromCompact, type CompactResult } from './rearrange';
 import type { TrainRow } from './diaTimetable';
 import { isTkLaunched, TK_CODE } from './tkLine';
-import { serviceDayKey, serviceDayStartOf } from './serviceDay';
 
 type Raw = Record<string, unknown>;
 
-// GAS に保存する形: 短い形の結果と、それを作った、ダイヤの日(別の日の結果を、重ねないため)
-export interface RearrangeSaved {
-  compact: CompactResult;
-  day: string;
-}
-
-export const currentServiceDay = (nowMs: number = Date.now()): string => serviceDayKey(serviceDayStartOf(nowMs));
-
 const isTriple = (x: unknown): x is [unknown, unknown, unknown] => Array.isArray(x) && x.length === 3;
 
-// GAS から受け取った中身が、読める形かを確かめる(読めなければ null。画面は、いまのダイヤのまま)
-export const parseSaved = (raw: unknown): RearrangeSaved | null => {
+// GAS から受け取った中身(短い形)が、読める形かを確かめる(読めなければ null。画面は、いまのダイヤのまま)
+export const parseSaved = (raw: unknown): CompactResult | null => {
   if (!raw || typeof raw !== 'object') return null;
-  const r = raw as Raw;
-  const c = r.compact as Raw | undefined;
-  if (!c || typeof c !== 'object' || c.v !== 1 || typeof r.day !== 'string') return null;
+  const c = raw as Raw;
+  if (c.v !== 1) return null;
   if (!Array.isArray(c.cancelled) || !c.cancelled.every((s) => typeof s === 'string')) return null;
   if (!Array.isArray(c.pass) || !c.pass.every((p) => isTriple(p) && typeof p[0] === 'string' && typeof p[1] === 'string' && typeof p[2] === 'number')) return null;
   if (!Array.isArray(c.hold) || !c.hold.every((p) => isTriple(p) && typeof p[0] === 'string' && typeof p[1] === 'number' && typeof p[2] === 'number')) return null;
@@ -36,18 +26,18 @@ export const parseSaved = (raw: unknown): RearrangeSaved | null => {
     if (t.d !== undefined && typeof t.d !== 'number') return null;
     if (t.x !== undefined && !(Array.isArray(t.x) && t.x.every((p) => isTriple(p) && p.every((n) => typeof n === 'number')))) return null;
   }
-  return { compact: c as unknown as CompactResult, day: r.day };
+  return c as unknown as CompactResult;
 };
 
 // ---------- 取得(トグルと結果) ----------
-let current: RearrangeSaved | null = null;
+let current: CompactResult | null = null;
 
-export const getSavedRearrange = (): RearrangeSaved | null => current;
-export const setSavedRearrange = (saved: RearrangeSaved | null): void => {
+export const getSavedRearrange = (): CompactResult | null => current;
+export const setSavedRearrange = (saved: CompactResult | null): void => {
   current = saved;
 };
 
-// トグル: 失敗・アクションが無いときは OFF 扱い
+// トグル(管理者のスイッチの表示用): 失敗・アクションが無いときは OFF 扱い
 export const fetchRearrangeFlag = async (): Promise<boolean> => {
   try {
     const res = (await callGas('getRearrangeFlag', {})) as unknown as Raw;
@@ -57,13 +47,10 @@ export const fetchRearrangeFlag = async (): Promise<boolean> => {
   }
 };
 
-// トグルが ON のときだけ結果を読む。どこかで失敗したら、重ねない
+// 結果を読む。サーバーは、トグルが OFF・結果が無い・運行乱れが解除された(自動解除を含む)・運行乱れの内容が変わった ときに null を返す。
+// 失敗したときも、重ねない(いまのダイヤのまま)
 export const syncRearrange = async (): Promise<void> => {
   if (!isTkLaunched()) {
-    current = null;
-    return;
-  }
-  if (!(await fetchRearrangeFlag())) {
     current = null;
     return;
   }
@@ -85,24 +72,21 @@ export interface RearrangeView {
 
 type MasterArg = Parameters<typeof buildData>[1];
 
-const viewCache = new WeakMap<TrainRow[], { saved: RearrangeSaved; view: RearrangeView }>();
-
-/** 保存された結果が、いま使えるか(ON で取得できていて、きょうの結果) */
-const usable = (nowMs: number): RearrangeSaved | null => (current && current.day === currentServiceDay(nowMs) ? current : null);
+const viewCache = new WeakMap<TrainRow[], { saved: CompactResult; view: RearrangeView }>();
 
 /**
  * 路線 code のダイヤの行を、直したあとのダイヤに読み替える。重ねるものが無いときは null(いまのダイヤのまま)。
  * いまは高宮線(TK)だけ。
  */
-export const rearrangeView = (code: string, master: unknown, rows: TrainRow[], nowMs: number = Date.now()): RearrangeView | null => {
+export const rearrangeView = (code: string, master: unknown, rows: TrainRow[]): RearrangeView | null => {
   if (code !== TK_CODE) return null;
-  const saved = usable(nowMs);
+  const saved = current;
   if (!saved) return null;
   const hit = viewCache.get(rows);
   if (hit && hit.saved === saved) return hit.view;
 
   const data = buildData(rows, master as MasterArg, {});
-  const fx = fromCompact(data, saved.compact);
+  const fx = fromCompact(data, saved);
   const byNo = new Map(fx.trains.map((t) => [t.no, t]));
   const delays = new Map<string, number[]>();
   const offset = new Map<string, number>();

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   Activity,
@@ -143,6 +143,9 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
 
   // 運転整理(ダイヤ整理案)の入り・切り。null は、まだ読めていない(スイッチは、押せない)
   const [rearrangeOn, setRearrangeOn] = useState<boolean | null>(null);
+  const rearrangeOnRef = useRef(false);
+  const resaveRearrangeRef = useRef<() => void>(() => undefined);
+  rearrangeOnRef.current = rearrangeOn === true;
 
   // Disruption Dispatcher State
   const [selectedLineId, setSelectedLineId] = useState<string>('kanzaki');
@@ -431,15 +434,20 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
     if (onRefreshAppState) onRefreshAppState();
   };
 
-  // 運転整理: 高宮線の運行乱れを、エンジンに通して、結果をサーバーに保存する(切のときは、何もしない)
-  const rearrangeSave = (d: LineDisruption) => {
-    if (!rearrangeOn || d.lineId !== REARRANGE_LINE_ID) return;
+  // 運転整理: 高宮線の運行乱れが有効なら、エンジンを1回動かして、結果をサーバーに保存する。切のときは、何もしない。
+  // 運行乱れを保存し直すと(ほかの路線でも)、サーバーは結果をいったん空にするので、保存が成功するたびに、これを呼ぶ
+  const resaveRearrange = () => {
+    if (!rearrangeOnRef.current) return;
+    const d = disruptionManager.getLineDisruption(REARRANGE_LINE_ID);
+    if (!d || d.statusType === 'normal') return;
     void runRearrangeFor(d).then((r) => {
       if (r !== 'failed') return;
       setActionNotice('【運転整理】結果をサーバーへ保存できませんでした');
       setTimeout(() => setActionNotice(null), 5000);
     });
   };
+
+  resaveRearrangeRef.current = resaveRearrange;
 
   const handleToggleRearrange = async () => {
     if (rearrangeOn === null) return;
@@ -451,9 +459,9 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
       return;
     }
     setRearrangeOn(saved);
+    rearrangeOnRef.current = saved;
     // 入れたときに、高宮線の運行乱れがすでにあれば、その分も結果を作る
-    const current = disruptionManager.getLineDisruption(REARRANGE_LINE_ID);
-    if (saved && current) void runRearrangeFor(current);
+    if (saved) resaveRearrange();
   };
 
   // Dispatch disruption
@@ -508,7 +516,6 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
     };
 
     disruptionManager.setLineDisruption(disruptionData);
-    rearrangeSave(disruptionData);
     setActiveDisruptionsMap(disruptionManager.getAllDisruptions());
     const dirLabel = targetDirection === 'up' ? ' [上り線のみ]' : targetDirection === 'down' ? ' [下り線のみ]' : ' [上下線]';
     systemLogger.info(
@@ -596,6 +603,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
   useEffect(() => {
     const onPush = (event: Event) => {
       const detail = (event as CustomEvent<{ ok: boolean; message?: string }>).detail;
+      if (detail?.ok) resaveRearrangeRef.current();
       if (detail && !detail.ok) {
         setActionNotice(`【サーバー未反映】${detail.message || '運行情報をサーバーへ保存できませんでした。'}（管理トークンをご確認ください）`);
         setTimeout(() => setActionNotice(null), 7000);
