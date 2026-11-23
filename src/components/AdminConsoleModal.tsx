@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   Activity,
@@ -36,6 +36,7 @@ import {
   Bell,
   MessageSquare,
   ClipboardList,
+  Shuffle,
 } from 'lucide-react';
 import { AdminNoticeEditor } from './AdminNoticeEditor';
 import { AdminSurveyPanel } from './AdminSurveyPanel';
@@ -43,6 +44,9 @@ import { AdminFeedbackPanel } from './AdminFeedbackPanel';
 import { systemLogger, SystemLogEntry, SystemMetrics } from '../utils/systemLogger';
 import { checkStoredAdminKey, submitAdminKey, type AdminAccess } from '../utils/adminAccess';
 import { useBackClose } from '../utils/backClose';
+import { fetchRearrangeFlag } from '../utils/rearrangeOverlay';
+import { REARRANGE_LINE_ID, runRearrangeFor, saveRearrangeFlag } from '../utils/rearrangeAdmin';
+import { isTkLaunched } from '../utils/tkLine';
 import {
   disruptionManager,
   getAdminToken,
@@ -136,6 +140,12 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
   const isAuthenticated = access === 'ok';
   // Tabs: 'disruption' | 'forecast' | 'diagnostics' | 'errors' | 'storage' | 'settings'
   const [activeTab, setActiveTab] = useState<'disruption' | 'forecast' | 'diagnostics' | 'errors' | 'storage' | 'settings' | 'notices' | 'feedback' | 'surveys'>('disruption');
+
+  // 運転整理(ダイヤ整理案)の入り・切り。null は、まだ読めていない(スイッチは、押せない)
+  const [rearrangeOn, setRearrangeOn] = useState<boolean | null>(null);
+  const rearrangeOnRef = useRef(false);
+  const resaveRearrangeRef = useRef<() => void>(() => undefined);
+  rearrangeOnRef.current = rearrangeOn === true;
 
   // Disruption Dispatcher State
   const [selectedLineId, setSelectedLineId] = useState<string>('kanzaki');
@@ -424,6 +434,36 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
     if (onRefreshAppState) onRefreshAppState();
   };
 
+  // 運転整理: 高宮線の運行乱れが有効なら、エンジンを1回動かして、結果をサーバーに保存する。切のときは、何もしない。
+  // 運行乱れを保存し直すと(ほかの路線でも)、サーバーは結果をいったん空にするので、保存が成功するたびに、これを呼ぶ
+  const resaveRearrange = () => {
+    if (!rearrangeOnRef.current) return;
+    const d = disruptionManager.getLineDisruption(REARRANGE_LINE_ID);
+    if (!d || d.statusType === 'normal') return;
+    void runRearrangeFor(d).then((r) => {
+      if (r !== 'failed') return;
+      setActionNotice('【運転整理】結果をサーバーへ保存できませんでした');
+      setTimeout(() => setActionNotice(null), 5000);
+    });
+  };
+
+  resaveRearrangeRef.current = resaveRearrange;
+
+  const handleToggleRearrange = async () => {
+    if (rearrangeOn === null) return;
+    const next = !rearrangeOn;
+    const saved = await saveRearrangeFlag(next);
+    if (saved === null) {
+      setActionNotice('【運転整理】切り替えをサーバーへ保存できませんでした');
+      setTimeout(() => setActionNotice(null), 5000);
+      return;
+    }
+    setRearrangeOn(saved);
+    rearrangeOnRef.current = saved;
+    // 入れたときに、高宮線の運行乱れがすでにあれば、その分も結果を作る
+    if (saved) resaveRearrange();
+  };
+
   // Dispatch disruption
   const handleDispatchDisruption = () => {
     // 自動解除の時刻を決定
@@ -547,10 +587,23 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
     };
   }, [isOpen]);
 
+  // 運転整理の入り・切りを、認証が通ったときに読む
+  useEffect(() => {
+    if (!isOpen || !isAuthenticated || !isTkLaunched()) return;
+    let cancelled = false;
+    fetchRearrangeFlag().then((on) => {
+      if (!cancelled) setRearrangeOn(on);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, isAuthenticated]);
+
   // サーバー(GAS)への反映に失敗したら管理者に知らせる(トークン未設定・不一致など)
   useEffect(() => {
     const onPush = (event: Event) => {
       const detail = (event as CustomEvent<{ ok: boolean; message?: string }>).detail;
+      if (detail?.ok) resaveRearrangeRef.current();
       if (detail && !detail.ok) {
         setActionNotice(`【サーバー未反映】${detail.message || '運行情報をサーバーへ保存できませんでした。'}（管理トークンをご確認ください）`);
         setTimeout(() => setActionNotice(null), 7000);
@@ -1004,6 +1057,33 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                         </button>
                       )}
                     </div>
+
+                    {/* 運転整理の入り・切り */}
+                    {isTkLaunched() && (
+                      <div className="p-2 bg-slate-800 rounded-xl border border-slate-700 flex items-center justify-between">
+                        <div className="flex items-center gap-1 text-[11px] font-bold text-slate-200">
+                          <Shuffle className="w-3.5 h-3.5 text-amber-400" />
+                          <span>運転整理</span>
+                        </div>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={rearrangeOn === true}
+                          aria-label="運転整理"
+                          disabled={rearrangeOn === null}
+                          onClick={handleToggleRearrange}
+                          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-wait shrink-0 ${
+                            rearrangeOn ? 'bg-amber-400' : 'bg-slate-700'
+                          }`}
+                        >
+                          <span
+                            className={`inline-block h-3.5 w-3.5 transform rounded-full bg-slate-950 transition-transform ${
+                              rearrangeOn ? 'translate-x-4.5' : 'translate-x-1'
+                            }`}
+                          />
+                        </button>
+                      </div>
+                    )}
 
                     {/* Step 1: Target Line & Status Type */}
                     <div className="p-3 bg-slate-800/90 rounded-xl border border-slate-700 space-y-2.5">

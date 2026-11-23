@@ -8,6 +8,7 @@ import type { DynamicDeparture } from '../components/MyStationCard';
 import { platformAtStop, departurePlatformOfRow } from './platform';
 import { adminDelaySeed } from './serviceDay';
 import { isTkLaunched, MASTER_FILE, MASTER_TK_FILE, TK_CODE } from './tkLine';
+import { departsFrom, rearrangeDelayAt, rearrangeView, type RearrangeView } from './rearrangeOverlay';
 
 type MasterLine = {
   name: string;
@@ -105,8 +106,15 @@ const resolveDelay = (
   serviceDayStartMs: number,
   direction: 1 | 2,
   position: { stationName: string; isBetween?: boolean },
-  trainStartSec?: number // その列車が始発駅を出る時刻(0時からの秒)。ラッシュの判定に使う
+  trainStartSec?: number, // その列車が始発駅を出る時刻(0時からの秒)。ラッシュの判定に使う
+  rearranged?: { view: RearrangeView; stopIdx: number } // 運転整理の結果があるとき: 管理者の設定の代わりに、この結果を使う(停車駅 stopIdx での遅れ・運休)
 ): ResolvedDelay => {
+  if (rearranged) {
+    const r = rearrangeDelayAt(rearranged.view, trainNo, rearranged.stopIdx);
+    if (r.suspended) return { delayMinutes: 0, isSuspended: true };
+    if (r.minutes > 0) return { delayMinutes: r.minutes, isSuspended: false };
+    return { delayMinutes: autoDelayMinutes(lineCode, trainNo, serviceDayStartMs, trainStartSec), isSuspended: false };
+  }
   // 管理者設定の遅れ・運休の種は、ダイヤの日+列車番号(どの画面でも、同じ列車は同じ結果になる)
   const eff = disruptionManager.getEffectiveDelayForTrain(disruptionLineId, adminDelaySeed(serviceDayStartMs, trainNo), direction, position);
   if (eff.isSuspended) return { delayMinutes: 0, isSuspended: true };
@@ -153,6 +161,9 @@ const loadOnce = <T>(file: string): Promise<T> => {
   }
   return p;
 };
+
+// 管理者の運転整理が、配線など、ダイヤの別のファイルを読むための入口(読み込みは、同じキャッシュを使う)
+export const loadDiaFile = <T>(file: string): Promise<T> => loadOnce<T>(file);
 
 // 路線の一覧(master.json)。高宮線は、見せないあいだは、一覧に入れない(読むのは、4路線の master.json のまま。念のため、TK を取り除く)
 const loadMaster = async (): Promise<Master> => {
@@ -280,25 +291,31 @@ export const computeBoard = (data: BoardData, platform: 1 | 2, nowMs: number, li
   }
 
   const departures: DynamicDeparture[] = upcoming.map((c) => {
-    const train = c.line.trains[c.ti];
+    const view = rearrangeView(c.line.code, c.line.master, c.line.trains);
+    // 運転整理で、この駅から出なくなった列車(終点が手前に変わった・始発が先に変わった)は、もとの行のまま、運転見合わせとして出す(区間が止まっているため)
+    const rearrangedRow = view?.rows[c.ti];
+    const departs = !rearrangedRow || departsFrom(rearrangedRow, c.line.stationIdx);
+    const train = (departs ? rearrangedRow : undefined) ?? c.line.trains[c.ti];
     const stops = train[5];
     const depTs = base + c.eff * 1000;
-    const eff = resolveDelay(LINE_IDS[c.line.code] || 'kanzaki', c.line.code, train[0], c.dayMs, platform, {
+    // この駅を出る停車駅の番号(混雑・運転整理の遅れの位置)
+    let k = -1;
+    for (let i = 0; i * 3 < stops.length; i++) {
+      if (stops[i * 3] === c.line.stationIdx && stops[i * 3 + 2] !== -1) {
+        k = i;
+        break;
+      }
+    }
+    let eff = resolveDelay(LINE_IDS[c.line.code] || 'kanzaki', c.line.code, train[0], c.dayMs, platform, {
       stationName: data.stationName,
-    }, train[4]);
+    }, train[4], view && departs && k >= 0 ? { view, stopIdx: k } : undefined);
+    if (!departs) eff = { delayMinutes: 0, isSuspended: true };
     const hh = String(Math.floor(c.eff / 3600) % 24).padStart(2, '0');
     const mm = String(Math.floor((c.eff % 3600) / 60)).padStart(2, '0');
     // 今の混雑の目安(公開後だけ): この駅を出た直後の区間。遅れて3分以上なら1つ上げる。データが無いときは、なし
     let crowd: number | undefined;
     if (isLaunched()) {
-      let k = -1;
-      for (let i = 0; i * 3 < stops.length; i++) {
-        if (stops[i * 3] === c.line.stationIdx && stops[i * 3 + 2] !== -1) {
-          k = i;
-          break;
-        }
-      }
-      const lv = k >= 0 ? trainSegmentLevel(dayTypeOf(c.dayMs), c.line.code, train[0], k) : undefined;
+      const lv = k >= 0 ? trainSegmentLevel(dayTypeOf(c.dayMs), c.line.code, train[0], k + (view?.offset.get(train[0]) ?? 0)) : undefined;
       crowd = lv === undefined ? undefined : bumpForDelay(lv, eff.delayMinutes);
     }
     return {
@@ -474,8 +491,10 @@ export const computeLiveTrains = (data: LineData, lineId: string, direction: 1 |
   };
 
   const result: DiaLiveTrain[] = [];
+  // 運転整理の結果があるときは、直したあとのダイヤの行を読む
+  const view = rearrangeView(data.code, master, data.trains);
 
-  for (const t of data.trains) {
+  for (const t of view?.rows ?? data.trains) {
     if (t[2] !== dirCode) continue;
     const t0 = t[4];
     const arr = t[5];
@@ -549,7 +568,7 @@ export const computeLiveTrains = (data: LineData, lineId: string, direction: 1 |
     const eff = resolveDelay(lineId, data.code, t[0], serviceDayMs, direction, {
       stationName,
       isBetween,
-    }, t0);
+    }, t0, view ? { view, stopIdx: atStop >= 0 ? atStop : segment } : undefined);
     if (eff.isSuspended) continue;
     const delay = eff.delayMinutes;
 
@@ -557,7 +576,7 @@ export const computeLiveTrains = (data: LineData, lineId: string, direction: 1 |
     const crowdDay = dayTypeOf(serviceDayMs);
     const crowdAt = (k: number): number | undefined => {
       if (!isLaunched()) return undefined;
-      const base = trainSegmentLevel(crowdDay, data.code, t[0], k);
+      const base = trainSegmentLevel(crowdDay, data.code, t[0], k + (view?.offset.get(t[0]) ?? 0));
       return base === undefined ? undefined : bumpForDelay(base, delay);
     };
     const timetable = stops.slice(futureFrom).map((st, i) => ({
