@@ -95,7 +95,7 @@ export const FORECAST_PRESETS: ForecastPresetDef[] = [
   {
     category: 'typhoon',
     name: '台風接近・暴風雨警戒',
-    badgeLabel: '台風接近警戒（※架空）',
+    badgeLabel: '台風接近警戒',
     icon: 'ShieldAlert',
     defaultSeverity: 'warning',
     defaultPeriod: '本日夕方以降（16時頃〜終電）',
@@ -107,7 +107,7 @@ export const FORECAST_PRESETS: ForecastPresetDef[] = [
   {
     category: 'gale',
     name: '強風・速度規制注意',
-    badgeLabel: '強風・速度規制注意（※架空）',
+    badgeLabel: '強風・速度規制注意',
     icon: 'Wind',
     defaultSeverity: 'caution',
     defaultPeriod: '本日午後から夜間にかけて',
@@ -119,7 +119,7 @@ export const FORECAST_PRESETS: ForecastPresetDef[] = [
   {
     category: 'heavy_rain',
     name: '大雨・集中豪雨警戒',
-    badgeLabel: '大雨・冠水警戒（※架空）',
+    badgeLabel: '大雨・冠水警戒',
     icon: 'CloudRain',
     defaultSeverity: 'warning',
     defaultPeriod: '本日夕方から夜遅くにかけて',
@@ -131,7 +131,7 @@ export const FORECAST_PRESETS: ForecastPresetDef[] = [
   {
     category: 'snow',
     name: '降雪・積雪凍結警戒',
-    badgeLabel: '降雪・積雪凍結注意（※架空）',
+    badgeLabel: '降雪・積雪凍結注意',
     icon: 'Snowflake',
     defaultSeverity: 'warning',
     defaultPeriod: '今夜から明朝にかけて',
@@ -143,7 +143,7 @@ export const FORECAST_PRESETS: ForecastPresetDef[] = [
   {
     category: 'thunder',
     name: '落雷・突風急変注意',
-    badgeLabel: '落雷・突風注意（※架空）',
+    badgeLabel: '落雷・突風注意',
     icon: 'Zap',
     defaultSeverity: 'caution',
     defaultPeriod: '本日午後の大気不安定時',
@@ -155,7 +155,7 @@ export const FORECAST_PRESETS: ForecastPresetDef[] = [
   {
     category: 'crowd_event',
     name: '沿線イベント・混雑注意',
-    badgeLabel: 'イベント混雑注意（※架空）',
+    badgeLabel: 'イベント混雑注意',
     icon: 'Users',
     defaultSeverity: 'caution',
     defaultPeriod: '本日17:00〜22:00頃',
@@ -167,7 +167,7 @@ export const FORECAST_PRESETS: ForecastPresetDef[] = [
   {
     category: 'maintenance',
     name: '計画保守・夜間工事',
-    badgeLabel: '計画保守・夜間工事（※架空）',
+    badgeLabel: '計画保守・夜間工事',
     icon: 'Wrench',
     defaultSeverity: 'caution',
     defaultPeriod: '本日深夜23時以降',
@@ -179,7 +179,7 @@ export const FORECAST_PRESETS: ForecastPresetDef[] = [
   {
     category: 'general',
     name: 'その他・一般運行注意',
-    badgeLabel: '運行注意情報（※架空）',
+    badgeLabel: '運行注意情報',
     icon: 'AlertTriangle',
     defaultSeverity: 'caution',
     defaultPeriod: '本日終日',
