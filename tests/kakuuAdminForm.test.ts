@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../src/utils/accountApi', () => ({ callGas: vi.fn(async () => ({ status: 'success' })) }));
 
-import { disruptionManager, formValuesOf, generateDisruptionText, type LineDisruption } from '../src/utils/disruptionManager';
+import { disruptionManager, FORECAST_PRESETS, formValuesOf, generateDisruptionText, type LineDisruption } from '../src/utils/disruptionManager';
 
 // 画面で見つかった、印の入った保存ずみの値
 const SAVED: LineDisruption = {
@@ -68,5 +68,24 @@ describe('運行乱れの保存し直し', () => {
     expect(`${resaved.durationUntil}${resaved.reason}${resaved.customMessage}`).not.toMatch(MARK);
     // もう一度読み込んでも、同じ
     expect(formValuesOf(resaved)).toEqual({ durationUntil: resaved.durationUntil, reason: resaved.reason, customMessage: resaved.customMessage });
+  });
+});
+
+describe('運行予測の定型: 見出しの「（※架空）」は残し、本文の頭の注記は8件とも同じ1文', () => {
+  const NOTE = '※実際の気象や運行の情報とは一切関係ありません。';
+  it('見出し(バッジ)の「（※架空）」が、8件とも残っている', () => {
+    expect(FORECAST_PRESETS).toHaveLength(8);
+    for (const p of FORECAST_PRESETS) expect(p.badgeLabel, p.category).toMatch(/（※架空）$/);
+  });
+  it('本文は、8件とも同じ注記で始まり、改行のあとに本文が続く。「架空」「シミュレーション」「フィクション」は、本文に無い', () => {
+    for (const p of FORECAST_PRESETS) {
+      const body = p.generateDescription('高宮線', '本日夕方', '全線');
+      expect(body.startsWith(`${NOTE}\n\n`), p.category).toBe(true);
+      expect(body.length, p.category).toBeGreaterThan(NOTE.length + 20);
+      expect(body, p.category).not.toMatch(/架空|シミュレーション|フィクション/);
+    }
+  });
+  it('注記は、本文の頭に1回だけ', () => {
+    for (const p of FORECAST_PRESETS) expect(p.generateDescription('高宮線', '本日', '全線').split(NOTE).length - 1, p.category).toBe(1);
   });
 });
