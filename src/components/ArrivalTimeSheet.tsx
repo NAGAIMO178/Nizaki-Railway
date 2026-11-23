@@ -62,7 +62,7 @@ export const ArrivalTimeSheet: React.FC<ArrivalTimeSheetProps> = ({ isOpen, valu
           <div className="mx-auto h-1.5 w-12 rounded-full bg-[#D1C9E3]" />
         </div>
         <div className="px-4 pb-6 space-y-3 pc:pt-4">
-          <div className="hidden pc:flex justify-end -mb-1">
+          <div className="hidden pc:flex justify-end">
             <button type="button" onClick={onClose} aria-label="閉じる" className="p-1 rounded-lg text-[#6B6380] hover:bg-[#F4F3F8] cursor-pointer">
               <X className="w-5 h-5" />
             </button>

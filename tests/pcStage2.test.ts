@@ -150,9 +150,9 @@ describe('列車位置(PC の幅): 未選択=図が中央 / 選択=図が左・�
   it('下から出る3つのシートは、PC では、右の列に置く(fixed をやめ、下から出る動きもやめる)。つまみは出さず、代わりに、既存の「閉じる」(X)を PC のときだけ出す', () => {
     expect(s.split('pc:animate-none pc:static pc:max-w-none pc:mx-0 pc:border pc:rounded-2xl').length - 1).toBe(3);
     expect(s.split('select-none pc:hidden"').length - 1).toBe(3);
-    // 列車の詳細の2か所(グループ表示・1本だけ)は、×が下の中身に重ならないよう、下の余白をマイナスにしない(駅の詳細の1か所は、これまでどおり)
-    expect(s.split('<div className="hidden pc:flex justify-end">').length - 1).toBe(2);
-    expect(s.split('<div className="hidden pc:flex justify-end -mb-2">').length - 1).toBe(1);
+    // 閉じる行(駅の詳細・列車のグループ表示・1本だけ)は、×が下の中身に重ならないよう、下の余白をマイナスにしない
+    expect(s.split('<div className="hidden pc:flex justify-end">').length - 1).toBe(3);
+    expect(s.split('<div className="hidden pc:flex justify-end -mb-2">').length - 1).toBe(0);
     expect(s).toContain('onClick={() => setSelectedStation(null)}\n              className="p-1.5 rounded-lg text-[#6B6380] hover:bg-[#F4F3F8] cursor-pointer"');
     expect(s.split('onClick={clearTrainSelection}\n              className="p-1.5 rounded-lg text-[#6B6380] hover:bg-[#F4F3F8] cursor-pointer"').length - 1).toBe(2);
   });

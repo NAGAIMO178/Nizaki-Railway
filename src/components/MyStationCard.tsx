@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { DestinationLabel } from './DestinationLabel';
 import { Users, ChevronLeft, ChevronRight, MapPin, Moon, Clock, Navigation } from 'lucide-react';
 import { RegisterableStation } from './MyStationRegisterCard';
 import { findNearestStation } from '../utils/nearestStation';
@@ -21,6 +22,7 @@ export interface DynamicDeparture {
   lineName: string; // 例: '土浦線', '神埼線', '神埼高速線', '埼千環状線'
   trainType: string;
   destination: string;
+  originalDestination?: string; // 運転整理で行き先が変わった列車の、もとの行き先
   departureTime: string; // HH:mm 形式
   departureTimestamp: number; // 発車エポックミリ秒
   isFirstTrain?: boolean; // 初電タグ
@@ -540,7 +542,7 @@ export const MyStationCard: React.FC<MyStationCardProps> = ({
 
                   <div className="flex flex-col min-w-0">
                     <span className={`text-xs xs:text-sm font-bold truncate ${isImminent ? 'text-white font-black' : 'text-[#221C35]'}`}>
-                      {dep.destination} 行き
+                      <DestinationLabel destination={dep.destination} original={dep.originalDestination} onDark={isImminent} />
                     </span>
                   </div>
                 </div>

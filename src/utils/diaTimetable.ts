@@ -328,6 +328,7 @@ export const computeBoard = (data: BoardData, platform: 1 | 2, nowMs: number, li
       isFirstTrain: c.first,
       isLastTrain: c.last,
       isOrigin: normalizeName(trainOriginName(c.line.master, train)) === normalizeName(c.line.master.stations[c.line.stationIdx]?.[0] ?? ''),
+      originalDestination: departs ? view?.origDest.get(train[0]) : undefined,
       delayMinutes: eff.delayMinutes,
       isSuspended: eff.isSuspended,
       platform: departurePlatformOfRow(train, c.line.stationIdx),
@@ -403,6 +404,7 @@ export interface DiaLiveTrain {
   direction: 1 | 2;
   trainType: string;
   destination: string;
+  originalDestination?: string; // 運転整理で行き先が変わった列車の、もとの行き先
   carCount: number;
   // 表示用の駅の並びで「この駅の行(isBetweenなら、この駅と次の駅の間)」に置く駅名
   stationName: string;
@@ -613,6 +615,7 @@ export const computeLiveTrains = (data: LineData, lineId: string, direction: 1 |
       direction,
       trainType: displayType(typeName),
       destination: trainDestName(master, t),
+      originalDestination: view?.origDest.get(t[0]),
       carCount: typeName.includes('特急') || typeName.startsWith('特別快速') ? 10 : 8,
       stationName,
       isBetween,

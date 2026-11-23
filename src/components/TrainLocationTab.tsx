@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { DestinationLabel } from './DestinationLabel';
 import { ChevronRight, ChevronDown, ChevronUp, Info, HelpCircle, AlertCircle, ArrowLeftRight, X, Clock, RotateCcw, CheckCircle2 } from 'lucide-react';
 import { computeLiveTrains as computeDiaLiveTrains, EXPRESS_TYPES, getCachedLineData, getExpressTrainEnds, loadLineData, normalizeStationName, visibleExpressKeys } from '../utils/diaTimetable';
 import { TrainDetailV2 } from './TrainDetailV2';
@@ -49,6 +50,7 @@ export interface LiveTrainPos {
   direction: 1 | 2;
   trainType: string;
   destination: string;
+  originalDestination?: string; // 運転整理で行き先が変わった列車の、もとの行き先
   carCount: number;
   stationId: string; // どの駅（またはその手前）にいるか
   isBetween: boolean; // 駅間走行中かどうか
@@ -406,6 +408,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
           direction: t.direction,
           trainType: t.trainType,
           destination: t.destination,
+          originalDestination: t.originalDestination,
           carCount: t.carCount,
           stationId: st.id,
           isBetween: t.isBetween,
@@ -869,7 +872,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
           </div>
 
           {/* 閉じる(PC の幅だけ。つまみの代わり) */}
-          <div className="hidden pc:flex justify-end -mb-2">
+          <div className="hidden pc:flex justify-end">
             <button
               type="button"
               onClick={() => setSelectedStation(null)}
@@ -979,7 +982,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
                 );
               })()}
               <span className="text-base font-bold text-[#221C35]">
-                {shownTrain.destination} 行き
+                <DestinationLabel destination={shownTrain.destination} original={shownTrain.originalDestination} />
               </span>
               {shownTrain.timetable.length > 0 && (
                 <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-purple-50 text-purple-900 border border-purple-200 shrink-0">
