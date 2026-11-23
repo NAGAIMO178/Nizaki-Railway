@@ -98,11 +98,20 @@ export function stripKakuuMarks(text: string): string {
   return text.replace(KAKUU_MARKS, '');
 }
 
+// 管理者コンソールのフォームに読み込む値: 保存ずみの文字に「架空」の印が残っていても、フォームには入れない(保存し直すと、印のない文字になる)
+export function formValuesOf(d: { durationUntil?: string; reason?: string; customMessage?: string }): { durationUntil: string; reason: string; customMessage: string } {
+  return {
+    durationUntil: stripKakuuMarks(d.durationUntil || ''),
+    reason: stripKakuuMarks(d.reason || '') || '車両点検のため',
+    customMessage: stripKakuuMarks(d.customMessage || ''),
+  };
+}
+
 /**
  * 鉄道公式アナウンス形式の自動文言生成関数
  * 天候要因・復旧未定・時刻見込みなど状況に応じた自然な日本語文言を構築
  */
-export function generateDisruptionText(
+function buildDisruptionText(
   lineName: string,
   statusType: DisruptionStatusType,
   maxDelayMinutes: number,
@@ -179,4 +188,17 @@ export function generateDisruptionText(
     msg += '（天候の状況により遅れが拡大する場合がありますのでご注意ください）';
   }
   return msg;
+}
+
+// どこから文字(理由・見込み)が渡されても、文の中に「架空」の印が出ないようにする
+export function generateDisruptionText(
+  lineName: string,
+  statusType: DisruptionStatusType,
+  maxDelayMinutes: number,
+  section: string,
+  reason: string,
+  durationUntil: string,
+  targetDirection: DisruptionDirection = 'both'
+): string {
+  return stripKakuuMarks(buildDisruptionText(lineName, statusType, maxDelayMinutes, section, reason, durationUntil, targetDirection));
 }

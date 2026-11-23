@@ -102,7 +102,7 @@ export const FORECAST_PRESETS: ForecastPresetDef[] = [
     defaultHoursAhead: 8,
     generateHeadline: (lineName) => `【フィクション】${lineName}：台風接近に伴う列車の遅れ・急遽の運転見合わせの可能性について`,
     generateDescription: (lineName, period, section) =>
-      `※本情報は架空鉄道アプリ内のシミュレーション（フィクション）です。実際の気象警報等とは一切関係ありません。\n\n台風の接近に伴う大雨および強風の影響により、${lineName}（${section}）では、${period}にかけて列車の遅れや急遽の行先変更、一部列車の運休、または運転見合わせが発生する可能性があります。今後の気象情報および最新の運行情報にご注意いただき、お時間に余裕をもってご利用ください。`,
+      `※実際の気象や運行の情報とは一切関係ありません。\n\n台風の接近に伴う大雨および強風の影響により、${lineName}（${section}）では、${period}にかけて列車の遅れや急遽の行先変更、一部列車の運休、または運転見合わせが発生する可能性があります。今後の気象情報および最新の運行情報にご注意いただき、お時間に余裕をもってご利用ください。`,
   },
   {
     category: 'gale',
@@ -114,7 +114,7 @@ export const FORECAST_PRESETS: ForecastPresetDef[] = [
     defaultHoursAhead: 6,
     generateHeadline: (lineName) => `【フィクション】${lineName}：強風による一部列車の遅れ・速度規制の可能性について`,
     generateDescription: (lineName, period, section) =>
-      `※本情報は架空鉄道アプリ内のシミュレーション（フィクション）です。実際の気象情報とは一切関係ありません。\n\n発達する低気圧に伴う強風が予想されているため、${lineName}（${section}）では、${period}に安全確保のため一部区間で徐行運転（速度規制）を行う場合があります。これにより、一部列車に遅れや接続待ちが発生する可能性があります。`,
+      `※実際の気象や運行の情報とは一切関係ありません。\n\n発達する低気圧に伴う強風が予想されているため、${lineName}（${section}）では、${period}に安全確保のため一部区間で徐行運転（速度規制）を行う場合があります。これにより、一部列車に遅れや接続待ちが発生する可能性があります。`,
   },
   {
     category: 'heavy_rain',
@@ -126,7 +126,7 @@ export const FORECAST_PRESETS: ForecastPresetDef[] = [
     defaultHoursAhead: 6,
     generateHeadline: (lineName) => `【フィクション】${lineName}：大雨・集中豪雨に伴う運転見合わせ・遅延の可能性について`,
     generateDescription: (lineName, period, section) =>
-      `※本情報は架空鉄道アプリ内のシミュレーション（フィクション）です。実際の気象情報とは一切関係ありません。\n\n活発な前線の影響による激しい雨が予想されております。${lineName}（${section}）では、${period}に雨量規制値に達した場合、一時的な運転見合わせや速度を落としての運転を行う可能性があります。`,
+      `※実際の気象や運行の情報とは一切関係ありません。\n\n活発な前線の影響による激しい雨が予想されております。${lineName}（${section}）では、${period}に雨量規制値に達した場合、一時的な運転見合わせや速度を落としての運転を行う可能性があります。`,
   },
   {
     category: 'snow',
@@ -138,7 +138,7 @@ export const FORECAST_PRESETS: ForecastPresetDef[] = [
     defaultHoursAhead: 12,
     generateHeadline: (lineName) => `【フィクション】${lineName}：降雪予報に伴う列車の遅れ・運休の可能性について`,
     generateDescription: (lineName, period, section) =>
-      `※本情報は架空鉄道アプリ内のシミュレーション（フィクション）です。実際の降雪予報とは一切関係ありません。\n\n降雪および線路・分岐器の凍結予報に伴い、${lineName}（${section}）では、${period}に列車の遅れや間引き運転、一部列車の運休が発生する可能性があります。お出かけの際は足元に十分ご注意いただき、最新の運行状況をご確認ください。`,
+      `※実際の気象や運行の情報とは一切関係ありません。\n\n降雪および線路・分岐器の凍結予報に伴い、${lineName}（${section}）では、${period}に列車の遅れや間引き運転、一部列車の運休が発生する可能性があります。お出かけの際は足元に十分ご注意いただき、最新の運行状況をご確認ください。`,
   },
   {
     category: 'thunder',
@@ -150,7 +150,7 @@ export const FORECAST_PRESETS: ForecastPresetDef[] = [
     defaultHoursAhead: 4,
     generateHeadline: (lineName) => `【フィクション】${lineName}：急な雷雨・突風に伴う一時的な安全確認の可能性について`,
     generateDescription: (lineName, period, section) =>
-      `※本情報は架空鉄道アプリ内のシミュレーション（フィクション）です。実際の気象情報とは一切関係ありません。\n\n大気の状態が非常に不安定となっております。急な雷雨や突風、落雷による信号設備影響が生じた場合、${lineName}（${section}）では安全確認のため一時的に列車の運転を見合わせる場合があります。`,
+      `※実際の気象や運行の情報とは一切関係ありません。\n\n大気の状態が非常に不安定となっております。急な雷雨や突風、落雷による信号設備影響が生じた場合、${lineName}（${section}）では安全確認のため一時的に列車の運転を見合わせる場合があります。`,
   },
   {
     category: 'crowd_event',
@@ -162,7 +162,7 @@ export const FORECAST_PRESETS: ForecastPresetDef[] = [
     defaultHoursAhead: 5,
     generateHeadline: (lineName) => `【フィクション】${lineName}：沿線イベント開催に伴う混雑および列車遅延の可能性について`,
     generateDescription: (lineName, period, section) =>
-      `※本情報は架空鉄道アプリ内のシミュレーション（フィクション）です。\n\n沿線施設での大規模催事・イベント開催に伴い、${lineName}（${section}）では${period}に主要駅ホームや改札口での大幅な混雑が見込まれます。乗降に通常より時間を要するため、列車に数分から十数分の遅れが発生する場合があります。`,
+      `※実際の気象や運行の情報とは一切関係ありません。\n\n沿線施設での大規模催事・イベント開催に伴い、${lineName}（${section}）では${period}に主要駅ホームや改札口での大幅な混雑が見込まれます。乗降に通常より時間を要するため、列車に数分から十数分の遅れが発生する場合があります。`,
   },
   {
     category: 'maintenance',
@@ -174,7 +174,7 @@ export const FORECAST_PRESETS: ForecastPresetDef[] = [
     defaultHoursAhead: 8,
     generateHeadline: (lineName) => `【フィクション】${lineName}：夜間設備工事に伴う一部列車の時刻変更・行先変更について`,
     generateDescription: (lineName, period, section) =>
-      `※本情報は架空鉄道アプリ内のシミュレーション（フィクション）です。\n\n設備改良および保守工事の実施に伴い、${lineName}（${section}）では、${period}の一部終電車の運転時刻・行先を変更して運転いたします。あらかじめ時刻表をご確認の上ご利用ください。`,
+      `※実際の気象や運行の情報とは一切関係ありません。\n\n設備改良および保守工事の実施に伴い、${lineName}（${section}）では、${period}の一部終電車の運転時刻・行先を変更して運転いたします。あらかじめ時刻表をご確認の上ご利用ください。`,
   },
   {
     category: 'general',
@@ -186,6 +186,6 @@ export const FORECAST_PRESETS: ForecastPresetDef[] = [
     defaultHoursAhead: 6,
     generateHeadline: (lineName) => `【フィクション】${lineName}：今後の運行に関するお知らせ・ご注意`,
     generateDescription: (lineName, period, section) =>
-      `※本情報は架空鉄道アプリ内のシミュレーション（フィクション）です。\n\n${lineName}（${section}）では、${period}にかけて現地の状況により列車の運行に変更が生じる可能性があります。最新の運行情報にご留意ください。`,
+      `※実際の気象や運行の情報とは一切関係ありません。\n\n${lineName}（${section}）では、${period}にかけて現地の状況により列車の運行に変更が生じる可能性があります。最新の運行情報にご留意ください。`,
   },
 ];

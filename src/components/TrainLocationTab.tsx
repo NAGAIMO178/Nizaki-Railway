@@ -902,7 +902,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
             <div className="w-12 h-1.5 bg-[#D1C9E3] group-hover:bg-[#5B21B6] rounded-full transition-colors" />
           </div>
           {/* 閉じる(PC の幅だけ。つまみの代わり) */}
-          <div className="hidden pc:flex justify-end -mb-2">
+          <div className="hidden pc:flex justify-end">
             <button
               type="button"
               onClick={clearTrainSelection}
@@ -947,7 +947,7 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({ onOpenReserv
           </div>
 
           {/* 閉じる(PC の幅だけ。つまみの代わり) */}
-          <div className="hidden pc:flex justify-end -mb-2">
+          <div className="hidden pc:flex justify-end">
             <button
               type="button"
               onClick={clearTrainSelection}

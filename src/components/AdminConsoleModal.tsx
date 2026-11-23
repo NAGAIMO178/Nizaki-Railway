@@ -61,6 +61,7 @@ import {
   COMMON_REASON_CATEGORIES,
   COMMON_SECTIONS,
   generateDisruptionText,
+  formValuesOf,
   getStationsForLine,
   isWeatherRelatedReason,
   getDurationPresetsForReason,
@@ -209,15 +210,16 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
 
     const existing = disruptionManager.getLineDisruption(lineId);
     if (existing) {
+      const form = formValuesOf(existing);
       setDisruptionStatusType(existing.statusType);
       setTargetDirection(existing.targetDirection || 'both');
       setMaxDelayMinutes(existing.maxDelayMinutes || 15);
-      setDurationUntil(existing.durationUntil || '');
+      setDurationUntil(form.durationUntil);
       const existingSec = existing.section || '全線';
       setSection(existingSec);
-      setReason(existing.reason || '車両点検のため');
+      setReason(form.reason);
       setUseCustomMessage(existing.useCustomMessage || false);
-      setCustomMessage(existing.customMessage || '');
+      setCustomMessage(form.customMessage);
       setLinkToSystem(existing.linkToSystem ?? true);
       if (existing.expiresAtTimestamp) {
         setDisruptionExpiryChoice('custom');

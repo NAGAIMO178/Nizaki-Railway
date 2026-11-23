@@ -104,7 +104,7 @@ export type { ForecastPresetDef } from './disruptionPresets';
 
 // 文章づくり・理由に合う候補・自動解除の時刻候補は disruptionText.ts に置き、ここからも今までどおり取り出せるようにする
 import { generateDisruptionText, stripKakuuMarks } from './disruptionText';
-export { generateDisruptionText, getDurationPresetsForReason, getExpiryOptions, isWeatherRelatedReason, stripKakuuMarks } from './disruptionText';
+export { formValuesOf, generateDisruptionText, getDurationPresetsForReason, getExpiryOptions, isWeatherRelatedReason, stripKakuuMarks } from './disruptionText';
 
 let listeners: (() => void)[] = [];
 
